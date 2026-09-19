@@ -42,7 +42,10 @@ class _DayDetailsSheetState extends ConsumerState<DayDetailsSheet> {
     final dateIso = widget.date.toIso8601String().split('T').first;
     
     // Filtramos los hábitos que tocan hoy
-    final activeHabits = allHabits.where((h) => h.activeWeekdays.contains(widget.date.weekday)).toList();
+    final activeHabits = allHabits.where((h) {
+      if (h.frequencyType == 0) return h.activeWeekdays.contains(widget.date.weekday);
+      return true; // Hábitos flexibles aplican a cualquier día
+    }).toList();
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),

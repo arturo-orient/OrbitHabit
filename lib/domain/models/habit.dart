@@ -17,6 +17,10 @@ class Habit {
   final List<int> activeWeekdays; // 1 = Lunes, 7 = Domingo
   final bool hasMonthlyTarget;
 
+  // Nuevos campos de Frecuencia Semanal Flexible
+  final int frequencyType; // 0 = Días Específicos, 1 = Flexible
+  final int targetDaysPerWeek; // ej. 3 días a la semana
+
   Habit({
     required this.id,
     required this.name,
@@ -30,6 +34,8 @@ class Habit {
     Map<String, int>? dailyProgress,
     List<int>? activeWeekdays,
     this.hasMonthlyTarget = true,
+    this.frequencyType = 0,
+    this.targetDaysPerWeek = 3,
   })  : completedDates = completedDates ?? {},
         dailyProgress = dailyProgress ?? {},
         activeWeekdays = activeWeekdays ?? [1, 2, 3, 4, 5, 6, 7];
@@ -49,6 +55,8 @@ class Habit {
     Map<String, int>? dailyProgress,
     List<int>? activeWeekdays,
     bool? hasMonthlyTarget,
+    int? frequencyType,
+    int? targetDaysPerWeek,
   }) {
     return Habit(
       id: id ?? this.id,
@@ -63,6 +71,8 @@ class Habit {
       dailyProgress: dailyProgress ?? this.dailyProgress,
       activeWeekdays: activeWeekdays ?? this.activeWeekdays,
       hasMonthlyTarget: hasMonthlyTarget ?? this.hasMonthlyTarget,
+      frequencyType: frequencyType ?? this.frequencyType,
+      targetDaysPerWeek: targetDaysPerWeek ?? this.targetDaysPerWeek,
     );
   }
 
@@ -81,6 +91,8 @@ class Habit {
       'dailyProgress': dailyProgress,
       'activeWeekdays': activeWeekdays,
       'hasMonthlyTarget': hasMonthlyTarget,
+      'frequencyType': frequencyType,
+      'targetDaysPerWeek': targetDaysPerWeek,
     };
   }
 
@@ -99,6 +111,8 @@ class Habit {
       dailyProgress: (map['dailyProgress'] as Map<dynamic, dynamic>?)?.map((key, value) => MapEntry(key.toString(), value as int)) ?? {},
       activeWeekdays: (map['activeWeekdays'] as List<dynamic>?)?.map((e) => e as int).toList() ?? [1, 2, 3, 4, 5, 6, 7],
       hasMonthlyTarget: map['hasMonthlyTarget'] as bool? ?? true,
+      frequencyType: map['frequencyType'] as int? ?? 0,
+      targetDaysPerWeek: map['targetDaysPerWeek'] as int? ?? 3,
     );
   }
 }

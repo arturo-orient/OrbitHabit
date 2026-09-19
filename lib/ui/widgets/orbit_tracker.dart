@@ -328,17 +328,40 @@ class OrbitPainter extends CustomPainter {
 
     // 4. Glow effect (Apple Watch style) for perfectly completed days
     for (int d = 1; d <= daysInMonth; d++) {
-      final dateIso = DateTime(currentMonth.year, currentMonth.month, d).toIso8601String().split('T').first;
+      final date = DateTime(currentMonth.year, currentMonth.month, d);
+      final dateIso = date.toIso8601String().split('T').first;
       
       bool allCompleted = true;
+      bool hasAnyDue = false;
+      
       for (var habit in habits) {
-        if (!habit.completedDates.contains(dateIso)) {
-          allCompleted = false;
-          break;
+        bool isDueToday = false;
+        
+        if (habit.frequencyType == 0) {
+          isDueToday = habit.activeWeekdays.contains(date.weekday);
+        } else {
+          // Si es flexible, no es "obligatorio" un día en concreto, 
+          // salvo que decidamos que rompa el día perfecto. Lo más justo es que
+          // no lo rompa (no era obligatorio *hoy*). Si lo haces, genial, sale pintado.
+          isDueToday = false; 
+        }
+
+        if (isDueToday) {
+          hasAnyDue = true;
+          if (!habit.completedDates.contains(dateIso)) {
+            allCompleted = false;
+            break;
+          }
+        } else {
+           // If it wasn't due, but we completed it anyway (e.g. flexible habit, or done on off-day),
+           // it still counts as something positive, so we can mark hasAnyDue = true to allow the glow
+           if (habit.completedDates.contains(dateIso)) {
+             hasAnyDue = true;
+           }
         }
       }
 
-      if (allCompleted && habits.isNotEmpty) {
+      if (hasAnyDue && allCompleted && habits.isNotEmpty) {
         final startAngle = startOffsetAngle + ((d - 1) * anglePerDay);
         final sweepAngle = anglePerDay - 0.04;
         final outerRadius = minRadius + (habits.length * ringWidth) - ringPadding;

@@ -21,6 +21,8 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
   // Advanced Fields
   late List<int> _activeWeekdays;
   late bool _hasMonthlyTarget;
+  late int _frequencyType;
+  late int _targetDaysPerWeek;
 
   @override
   void initState() {
@@ -31,11 +33,15 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
       _selectedColor = widget.habitToEdit!.color;
       _activeWeekdays = List.from(widget.habitToEdit!.activeWeekdays);
       _hasMonthlyTarget = widget.habitToEdit!.hasMonthlyTarget;
+      _frequencyType = widget.habitToEdit!.frequencyType;
+      _targetDaysPerWeek = widget.habitToEdit!.targetDaysPerWeek;
     } else {
       _targetDays = 20;
       _selectedColor = const Color(0xFF84A59D); // Verde Salvia
       _activeWeekdays = [1, 2, 3, 4, 5, 6, 7];
       _hasMonthlyTarget = true;
+      _frequencyType = 0;
+      _targetDaysPerWeek = 3;
     }
   }
 
@@ -68,6 +74,8 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
         dailyUnit: '',
         activeWeekdays: _activeWeekdays,
         hasMonthlyTarget: _hasMonthlyTarget,
+        frequencyType: _frequencyType,
+        targetDaysPerWeek: _targetDaysPerWeek,
       );
       ref.read(habitsProvider.notifier).updateHabit(updatedHabit);
     } else {
@@ -82,6 +90,8 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
         dailyUnit: '',
         activeWeekdays: _activeWeekdays,
         hasMonthlyTarget: _hasMonthlyTarget,
+        frequencyType: _frequencyType,
+        targetDaysPerWeek: _targetDaysPerWeek,
       );
       ref.read(habitsProvider.notifier).addHabit(newHabit);
     }
@@ -152,36 +162,123 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
             
             // 2. Frecuencia Semanal
             _buildSectionTitle('Frecuencia'),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [1, 2, 3, 4, 5, 6, 7].map((day) {
-                final isSelected = _activeWeekdays.contains(day);
-                final dayNames = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
-                return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      if (isSelected) {
-                        if (_activeWeekdays.length > 1) _activeWeekdays.remove(day);
-                      } else {
-                        _activeWeekdays.add(day);
-                      }
-                    });
-                  },
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: isSelected ? _selectedColor : Colors.transparent,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: isSelected ? _selectedColor : Colors.grey.withOpacity(0.3)),
+            
+            // Toggle de tipo de frecuencia
+            Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _frequencyType = 0),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: _frequencyType == 0 ? _selectedColor.withOpacity(0.2) : Colors.transparent,
+                          borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          'Días Específicos',
+                          style: TextStyle(
+                            color: _frequencyType == 0 ? _selectedColor : textColor?.withOpacity(0.6),
+                            fontWeight: _frequencyType == 0 ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                      ),
                     ),
-                    alignment: Alignment.center,
-                    child: Text(dayNames[day - 1], style: TextStyle(color: isSelected ? Colors.white : textColor?.withOpacity(0.6), fontWeight: FontWeight.bold)),
                   ),
-                );
-              }).toList(),
+                  Container(width: 1, height: 24, color: Colors.grey.withOpacity(0.3)),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _frequencyType = 1),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: _frequencyType == 1 ? _selectedColor.withOpacity(0.2) : Colors.transparent,
+                          borderRadius: const BorderRadius.horizontal(right: Radius.circular(12)),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          'Veces por Semana',
+                          style: TextStyle(
+                            color: _frequencyType == 1 ? _selectedColor : textColor?.withOpacity(0.6),
+                            fontWeight: _frequencyType == 1 ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(height: 16),
+
+            if (_frequencyType == 0) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [1, 2, 3, 4, 5, 6, 7].map((day) {
+                  final isSelected = _activeWeekdays.contains(day);
+                  final dayNames = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        if (isSelected) {
+                          if (_activeWeekdays.length > 1) _activeWeekdays.remove(day);
+                        } else {
+                          _activeWeekdays.add(day);
+                        }
+                      });
+                    },
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: isSelected ? _selectedColor : Colors.transparent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: isSelected ? _selectedColor : Colors.grey.withOpacity(0.3)),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(dayNames[day - 1], style: TextStyle(color: isSelected ? Colors.white : textColor?.withOpacity(0.6), fontWeight: FontWeight.bold)),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ] else ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Días por semana:', style: TextStyle(color: textColor?.withOpacity(0.7), fontSize: 16)),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.remove, color: textColor?.withOpacity(0.6)),
+                        onPressed: () {
+                          if (_targetDaysPerWeek > 1) setState(() => _targetDaysPerWeek--);
+                        },
+                      ),
+                      Text('$_targetDaysPerWeek', style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold)),
+                      IconButton(
+                        icon: Icon(Icons.add, color: textColor?.withOpacity(0.6)),
+                        onPressed: () {
+                          if (_targetDaysPerWeek < 7) setState(() => _targetDaysPerWeek++);
+                        },
+                      ),
+                    ],
+                  )
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'El hábito aparecerá todos los días hasta que cumplas tu objetivo de $_targetDaysPerWeek días en la semana actual.',
+                style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 12),
+              ),
+            ],
 
             // 3. Meta Mensual Opcional
             _buildSectionTitle('Meta Mensual'),

@@ -1,5 +1,6 @@
 import 'package:home_widget/home_widget.dart';
 import '../domain/models/habit.dart';
+import '../utils/streak_utils.dart';
 
 class WidgetService {
   static const String androidWidgetName = 'OrbitWidgetProvider';
@@ -13,7 +14,16 @@ class WidgetService {
       final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
       
       // Filtramos los que aplican a hoy
-      final todayHabits = activeHabits.where((h) => h.activeWeekdays.contains(now.weekday)).toList();
+      final todayHabits = activeHabits.where((h) {
+        if (h.frequencyType == 0) {
+          return h.activeWeekdays.contains(now.weekday);
+        } else {
+          // Flexible: Si ya se completó hoy, mostrarlo (para que se vea el ✅).
+          // Si no se ha completado hoy, mostrarlo solo si aún no se ha cumplido la meta semanal.
+          final completionsThisWeek = StreakUtils.getCompletionsInWeek(h, now);
+          return h.completedDates.contains(todayStr) || completionsThisWeek < h.targetDaysPerWeek;
+        }
+      }).toList();
       
       String content;
       int progressPercent = 0;
