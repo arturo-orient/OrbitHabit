@@ -97,7 +97,18 @@ lib/
 | Audio | `audioplayers` |
 | Home Widget | `home_widget` |
 
-## 🚀 Getting Started
+## 📲 Download
+
+<p align="center">
+  <a href="https://github.com/arturo-orient/OrbitHabit/releases/latest/download/OrbitHabit.apk">
+    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.0-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
+  </a>
+</p>
+
+> Requires Android 5.0+ · No account needed · 100% offline
+
+<details>
+<summary>🛠️ <strong>Build from source</strong> (for developers)</summary>
 
 ```bash
 # Clone the repository
@@ -112,6 +123,8 @@ flutter run
 ```
 
 **Requirements:** Flutter 3.12+ and an Android device/emulator.
+
+</details>
 
 ## 🎨 Color Palette
 
