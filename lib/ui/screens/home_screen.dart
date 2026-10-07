@@ -21,6 +21,7 @@ import '../widgets/trophy_overlay.dart';
 import '../widgets/orbit_clock_24.dart';
 import '../widgets/add_schedule_block_sheet.dart';
 import '../widgets/schedule_block_card.dart';
+import '../widgets/monthly_work_target_card.dart';
 import 'settings_screen.dart';
 import 'statistics_screen.dart';
 
@@ -131,6 +132,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           (b.isOvernight && b.appliesToWeekday(now.weekday == 1 ? 7 : now.weekday - 1));
     }).toList()
       ..sort((a, b) => a.startInMinutes.compareTo(b.startInMinutes));
+
+    final monthlyWorkBlocks = scheduleBlocks.where((b) => b.hasMonthlyHourTarget).toList();
 
     // Nighttime color smoothing: after 22:00 (10 PM), in Dark or Sage themes,
     // we gently desaturate/dim habit colors to make it extra soothing for the eyes.
@@ -437,16 +440,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                   ),
 
-                  // Lista de Hábitos con cálculo de Rachas
+                  // Lista de Hábitos y Metas Mensuales de Horas
                   Expanded(
                     flex: 4,
-                    child: activeHabits.isEmpty
-                        ? Center(child: Text('Sin hábitos', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.4))))
+                    child: (activeHabits.isEmpty && monthlyWorkBlocks.isEmpty)
+                        ? Center(
+                            child: Text(
+                              'Sin hábitos ni metas',
+                              style: TextStyle(
+                                color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.4),
+                              ),
+                            ),
+                          )
                         : ListView.builder(
                             physics: const BouncingScrollPhysics(),
-                            itemCount: activeHabits.length,
+                            itemCount: monthlyWorkBlocks.length + activeHabits.length,
                             itemBuilder: (context, index) {
-                              final habit = activeHabits[index];
+                              if (index < monthlyWorkBlocks.length) {
+                                final block = monthlyWorkBlocks[index];
+                                return MonthlyWorkTargetCard(
+                                  block: block,
+                                  currentMonth: _currentMonth,
+                                  onTap: () => _editScheduleBlock(block),
+                                );
+                              }
+
+                              final habitIndex = index - monthlyWorkBlocks.length;
+                              final habit = activeHabits[habitIndex];
                               final monthPrefix = '${_currentMonth.year}-${_currentMonth.month.toString().padLeft(2, '0')}';
                               final completedThisMonth = habit.completedDates.where((d) => d.startsWith(monthPrefix)).length;
                               final percentage = habit.hasMonthlyTarget 

@@ -37,6 +37,7 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
 
   late bool _hasMonthlyHourTarget;
   late int _monthlyTargetHours;
+  late List<String> _completedDates;
 
   @override
   void initState() {
@@ -51,6 +52,7 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
       _selectedHabitId = b.habitId;
       _hasMonthlyHourTarget = b.hasMonthlyHourTarget;
       _monthlyTargetHours = b.monthlyTargetHours;
+      _completedDates = List.from(b.completedDates);
     } else {
       _startTime = const TimeOfDay(hour: 23, minute: 0);
       _endTime = const TimeOfDay(hour: 7, minute: 0);
@@ -59,6 +61,7 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
       _selectedHabitId = null;
       _hasMonthlyHourTarget = false;
       _monthlyTargetHours = 120;
+      _completedDates = [];
     }
   }
 
@@ -139,7 +142,7 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
       daysOfWeek: _activeDays,
       hasMonthlyHourTarget: _hasMonthlyHourTarget,
       monthlyTargetHours: _monthlyTargetHours,
-      completedDates: widget.blockToEdit?.completedDates ?? const [],
+      completedDates: _completedDates,
       extraHours: widget.blockToEdit?.extraHours ?? 0.0,
     );
 
@@ -470,11 +473,113 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 14),
+
+              // Selector de días trabajados en este mes
+              Builder(
+                builder: (context) {
+                  final now = DateTime.now();
+                  final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+                  final shiftHours = _durationMinutes / 60.0;
+                  final currentMonthPrefix = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+                  final completedThisMonth = _completedDates.where((d) => d.startsWith(currentMonthPrefix)).length;
+                  final totalWorkedHours = (completedThisMonth * shiftHours);
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Turnos trabajados este mes:',
+                            style: TextStyle(
+                              color: textColor?.withOpacity(0.85),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: _selectedColor.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '$completedThisMonth turnos · ${totalWorkedHours.toStringAsFixed(0)} / ${_monthlyTargetHours}h',
+                              style: GoogleFonts.outfit(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: _selectedColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Toca los días en los que has hecho turno para registrarlos:',
+                        style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 11),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: List.generate(daysInMonth, (index) {
+                          final dayNum = index + 1;
+                          final dateIso = '${now.year}-${now.month.toString().padLeft(2, '0')}-${dayNum.toString().padLeft(2, '0')}';
+                          final isWorked = _completedDates.contains(dateIso);
+                          final isToday = dayNum == now.day;
+
+                          return GestureDetector(
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              setState(() {
+                                if (isWorked) {
+                                  _completedDates.remove(dateIso);
+                                } else {
+                                  _completedDates.add(dateIso);
+                                }
+                              });
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              width: 35,
+                              height: 35,
+                              decoration: BoxDecoration(
+                                color: isWorked ? _selectedColor : Colors.transparent,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: isWorked
+                                      ? _selectedColor
+                                      : isToday
+                                          ? _selectedColor.withOpacity(0.6)
+                                          : Colors.grey.withOpacity(0.25),
+                                  width: isToday ? 1.8 : 1.0,
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                '$dayNum',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 12,
+                                  fontWeight: isWorked || isToday ? FontWeight.bold : FontWeight.normal,
+                                  color: isWorked ? Colors.white : textColor?.withOpacity(0.75),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
             ],
 
             // 5. Días de la semana
-            _buildSectionTitle('Días Activos'),
+            _buildSectionTitle('Días Activos (Repetición semanal)'),
             Wrap(
               spacing: 8,
               runSpacing: 8,
