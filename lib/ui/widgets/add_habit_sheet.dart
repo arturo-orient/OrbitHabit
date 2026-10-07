@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../domain/models/habit.dart';
+import '../../domain/models/schedule_block.dart';
 import '../../providers/habit_provider.dart';
+import '../../providers/schedule_provider.dart';
 
 class AddHabitSheet extends ConsumerStatefulWidget {
   final Habit? habitToEdit;
@@ -24,6 +27,11 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
   late int _frequencyType;
   late int _targetDaysPerWeek;
 
+  // Schedule Sync Fields
+  late bool _addToDailySchedule;
+  late TimeOfDay _scheduleStartTime;
+  late TimeOfDay _scheduleEndTime;
+
   @override
   void initState() {
     super.initState();
@@ -35,6 +43,21 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
       _hasMonthlyTarget = widget.habitToEdit!.hasMonthlyTarget;
       _frequencyType = widget.habitToEdit!.frequencyType;
       _targetDaysPerWeek = widget.habitToEdit!.targetDaysPerWeek;
+
+      final existingBlocks = ref.read(scheduleProvider);
+      final linked = existingBlocks.cast<ScheduleBlock?>().firstWhere(
+            (b) => b?.habitId == widget.habitToEdit!.id,
+            orElse: () => null,
+          );
+      if (linked != null) {
+        _addToDailySchedule = true;
+        _scheduleStartTime = TimeOfDay(hour: linked.startHour, minute: linked.startMinute);
+        _scheduleEndTime = TimeOfDay(hour: linked.endHour, minute: linked.endMinute);
+      } else {
+        _addToDailySchedule = false;
+        _scheduleStartTime = const TimeOfDay(hour: 8, minute: 0);
+        _scheduleEndTime = const TimeOfDay(hour: 9, minute: 0);
+      }
     } else {
       _targetDays = 20;
       _selectedColor = const Color(0xFF84A59D); // Verde Salvia
@@ -42,6 +65,9 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
       _hasMonthlyTarget = true;
       _frequencyType = 0;
       _targetDaysPerWeek = 3;
+      _addToDailySchedule = false;
+      _scheduleStartTime = const TimeOfDay(hour: 8, minute: 0);
+      _scheduleEndTime = const TimeOfDay(hour: 9, minute: 0);
     }
   }
 
@@ -55,6 +81,37 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
     const Color(0xFFA8C2D3), // Gris Invierno
   ];
 
+  Future<void> _pickScheduleTime(bool isStart) async {
+    final initial = isStart ? _scheduleStartTime : _scheduleEndTime;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              colorScheme: Theme.of(context).colorScheme.copyWith(
+                    primary: _selectedColor,
+                  ),
+            ),
+            child: child ?? const SizedBox(),
+          ),
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        if (isStart) {
+          _scheduleStartTime = picked;
+        } else {
+          _scheduleEndTime = picked;
+        }
+      });
+    }
+  }
+
   void _saveHabit() {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
@@ -63,6 +120,8 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
     if (_activeWeekdays.isEmpty) {
       _activeWeekdays = [1, 2, 3, 4, 5, 6, 7];
     }
+
+    final habitId = widget.habitToEdit?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
 
     if (widget.habitToEdit != null) {
       final updatedHabit = widget.habitToEdit!.copyWith(
@@ -80,7 +139,7 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
       ref.read(habitsProvider.notifier).updateHabit(updatedHabit);
     } else {
       final newHabit = Habit(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: habitId,
         name: name,
         colorValue: _selectedColor.value,
         targetDays: _targetDays,
@@ -95,6 +154,33 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
       );
       ref.read(habitsProvider.notifier).addHabit(newHabit);
     }
+
+    // Synchronize Daily Schedule Block
+    final currentBlocks = ref.read(scheduleProvider);
+    final existingBlockIndex = currentBlocks.indexWhere((b) => b.habitId == habitId);
+
+    if (_addToDailySchedule) {
+      final scheduleBlock = ScheduleBlock(
+        id: existingBlockIndex != -1 ? currentBlocks[existingBlockIndex].id : 'block_$habitId',
+        title: name,
+        startHour: _scheduleStartTime.hour,
+        startMinute: _scheduleStartTime.minute,
+        endHour: _scheduleEndTime.hour,
+        endMinute: _scheduleEndTime.minute,
+        colorValue: _selectedColor.value,
+        habitId: habitId,
+        daysOfWeek: _frequencyType == 0 ? _activeWeekdays : [1, 2, 3, 4, 5, 6, 7],
+      );
+
+      if (existingBlockIndex != -1) {
+        ref.read(scheduleProvider.notifier).updateBlock(scheduleBlock);
+      } else {
+        ref.read(scheduleProvider.notifier).addBlock(scheduleBlock);
+      }
+    } else if (existingBlockIndex != -1) {
+      ref.read(scheduleProvider.notifier).deleteBlock(currentBlocks[existingBlockIndex].id);
+    }
+
     Navigator.pop(context);
   }
 
@@ -280,7 +366,79 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
               ),
             ],
 
-            // 3. Meta Mensual Opcional
+            // 3. Horario en Reloj 24h (Opcional)
+            _buildSectionTitle('Horario en Reloj 24h (Opcional)'),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('Añadir bloque a mi reloj diario', style: TextStyle(color: textColor)),
+              subtitle: Text(
+                'Aparecerá en tu horario de 24h y podrás marcarlo desde ambos modos.',
+                style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 12),
+              ),
+              activeColor: _selectedColor,
+              value: _addToDailySchedule,
+              onChanged: (val) => setState(() => _addToDailySchedule = val),
+            ),
+            if (_addToDailySchedule) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => _pickScheduleTime(true),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Inicio', style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 11)),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${_scheduleStartTime.hour.toString().padLeft(2, '0')}:${_scheduleStartTime.minute.toString().padLeft(2, '0')}',
+                              style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Icon(Icons.arrow_forward, color: textColor?.withOpacity(0.3), size: 16),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => _pickScheduleTime(false),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Fin', style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 11)),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${_scheduleEndTime.hour.toString().padLeft(2, '0')}:${_scheduleEndTime.minute.toString().padLeft(2, '0')}',
+                              style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+
+            // 4. Meta Mensual Opcional
             _buildSectionTitle('Meta Mensual'),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -378,6 +536,13 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
                     );
 
                     if (confirm == true && mounted) {
+                      // Delete any linked schedule block too!
+                      final currentBlocks = ref.read(scheduleProvider);
+                      for (final b in currentBlocks) {
+                        if (b.habitId == widget.habitToEdit!.id) {
+                          ref.read(scheduleProvider.notifier).deleteBlock(b.id);
+                        }
+                      }
                       ref.read(habitsProvider.notifier).deleteHabit(widget.habitToEdit!.id);
                       Navigator.pop(context); // Close the sheet
                     }
