@@ -38,6 +38,7 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
   late bool _hasMonthlyHourTarget;
   late int _monthlyTargetHours;
   late List<String> _completedDates;
+  late bool _syncWithOrbit;
 
   @override
   void initState() {
@@ -50,6 +51,7 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
       _selectedColor = b.color;
       _activeDays = List.from(b.daysOfWeek);
       _selectedHabitId = b.habitId;
+      _syncWithOrbit = b.habitId != null || b.hasMonthlyHourTarget;
       _hasMonthlyHourTarget = b.hasMonthlyHourTarget;
       _monthlyTargetHours = b.monthlyTargetHours;
       final habitDates = <String>{};
@@ -68,6 +70,7 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
       _selectedColor = const Color(0xFF9EA1D4);
       _activeDays = [1, 2, 3, 4, 5, 6, 7];
       _selectedHabitId = null;
+      _syncWithOrbit = true;
       _hasMonthlyHourTarget = false;
       _monthlyTargetHours = 120;
       _completedDates = [];
@@ -139,6 +142,64 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
       _activeDays = [1, 2, 3, 4, 5, 6, 7];
     }
 
+    String? finalHabitId = _selectedHabitId;
+
+    if (_syncWithOrbit) {
+      final habits = ref.read(habitsProvider);
+      if (finalHabitId != null) {
+        final habitIndex = habits.indexWhere((h) => h.id == finalHabitId);
+        if (habitIndex != -1) {
+          final linkedHabit = habits[habitIndex];
+          final updatedDates = {...linkedHabit.completedDates, ..._completedDates};
+          ref.read(habitsProvider.notifier).updateHabit(
+            linkedHabit.copyWith(
+              name: title,
+              colorValue: _selectedColor.value,
+              completedDates: updatedDates,
+              activeWeekdays: _activeDays,
+            ),
+          );
+        }
+      } else {
+        // Si no seleccionó un hábito específico, buscar coincidencia por nombre o crear uno nuevo
+        final existingByName = habits.cast<Habit?>().firstWhere(
+              (h) => h != null && h.name.trim().toLowerCase() == title.toLowerCase(),
+              orElse: () => null,
+            );
+
+        if (existingByName != null) {
+          finalHabitId = existingByName.id;
+          final updatedDates = {...existingByName.completedDates, ..._completedDates};
+          ref.read(habitsProvider.notifier).updateHabit(
+            existingByName.copyWith(
+              completedDates: updatedDates,
+              activeWeekdays: _activeDays,
+            ),
+          );
+        } else {
+          // Crear un NUEVO hábito automáticamente en Modo Órbita
+          final newHabitId = DateTime.now().millisecondsSinceEpoch.toString();
+          final newHabit = Habit(
+            id: newHabitId,
+            name: title,
+            colorValue: _selectedColor.value,
+            targetDays: 20,
+            orderIndex: habits.length,
+            isNumeric: false,
+            dailyTarget: 1,
+            dailyUnit: '',
+            activeWeekdays: _activeDays,
+            hasMonthlyTarget: _hasMonthlyHourTarget,
+            frequencyType: 0,
+            targetDaysPerWeek: 3,
+            completedDates: Set<String>.from(_completedDates),
+          );
+          ref.read(habitsProvider.notifier).addHabit(newHabit);
+          finalHabitId = newHabitId;
+        }
+      }
+    }
+
     final block = ScheduleBlock(
       id: widget.blockToEdit?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
       title: title,
@@ -147,7 +208,7 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
       endHour: _endTime.hour,
       endMinute: _endTime.minute,
       colorValue: _selectedColor.value,
-      habitId: _selectedHabitId,
+      habitId: finalHabitId,
       daysOfWeek: _activeDays,
       hasMonthlyHourTarget: _hasMonthlyHourTarget,
       monthlyTargetHours: _monthlyTargetHours,
@@ -159,18 +220,6 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
       ref.read(scheduleProvider.notifier).updateBlock(block);
     } else {
       ref.read(scheduleProvider.notifier).addBlock(block);
-    }
-
-    if (_selectedHabitId != null) {
-      final habits = ref.read(habitsProvider);
-      final habitIndex = habits.indexWhere((h) => h.id == _selectedHabitId);
-      if (habitIndex != -1) {
-        final linkedHabit = habits[habitIndex];
-        final updatedDates = {...linkedHabit.completedDates, ..._completedDates};
-        ref.read(habitsProvider.notifier).updateHabit(
-          linkedHabit.copyWith(completedDates: updatedDates),
-        );
-      }
     }
 
     HapticFeedback.mediumImpact();
@@ -258,9 +307,32 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
               ),
             ),
 
-            // 2. Vincular con un Hábito existente
-            if (habits.isNotEmpty) ...[
-              _buildSectionTitle('Vincular a un Hábito (Opcional)'),
+            // 2. Sincronización con Modo Órbita
+            _buildSectionTitle('Sincronización con Modo Órbita'),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                'Mostrar también como hábito en la Órbita',
+                style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 15),
+              ),
+              subtitle: Text(
+                'Aparecerá en la rueda orbital y podrás marcar tus días desde ambos modos.',
+                style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 12),
+              ),
+              activeColor: _selectedColor,
+              value: _syncWithOrbit,
+              onChanged: (val) {
+                setState(() {
+                  _syncWithOrbit = val;
+                  if (!val) {
+                    _selectedHabitId = null;
+                  }
+                });
+              },
+            ),
+
+            if (_syncWithOrbit && habits.isNotEmpty) ...[
+              const SizedBox(height: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 decoration: BoxDecoration(
@@ -274,15 +346,15 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
                     isExpanded: true,
                     dropdownColor: theme.cardColor,
                     hint: Text(
-                      '🌱 Rutina libre (Sin hábito vinculado)',
-                      style: TextStyle(color: textColor?.withOpacity(0.6), fontSize: 14),
+                      '✨ Crear nuevo hábito automático con este nombre',
+                      style: TextStyle(color: textColor?.withOpacity(0.6), fontSize: 13),
                     ),
                     items: [
                       DropdownMenuItem<String?>(
                         value: null,
                         child: Text(
-                          '🌱 Rutina libre (Sin hábito vinculado)',
-                          style: TextStyle(color: textColor?.withOpacity(0.7), fontSize: 14),
+                          '✨ Crear nuevo hábito con este nombre',
+                          style: TextStyle(color: _selectedColor, fontWeight: FontWeight.w600, fontSize: 13),
                         ),
                       ),
                       ...habits.map((h) {
@@ -300,7 +372,7 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
                               ),
                               const SizedBox(width: 10),
                               Text(
-                                h.name,
+                                'Vincular a: ${h.name}',
                                 style: TextStyle(
                                   color: textColor,
                                   fontWeight: FontWeight.w600,
