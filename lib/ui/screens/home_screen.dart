@@ -149,6 +149,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           }).toList()
         : habits;
 
+    // Filter out habits that already have their dedicated rich MonthlyWorkTargetCard
+    final regularHabits = activeHabits.where((h) {
+      return !monthlyWorkBlocks.any((b) =>
+          b.habitId == h.id ||
+          b.title.trim().toLowerCase() == h.name.trim().toLowerCase());
+    }).toList();
+
     // Dynamic reactive listener to trigger the vector Confetti Celebration on "Perfect Days"
     // and slide in the premium PlayStation-style Achievement Unlocked Popup!
     ref.listen<List<Habit>>(habitsProvider, (previous, next) {
@@ -443,7 +450,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   // Lista de Hábitos y Metas Mensuales de Horas
                   Expanded(
                     flex: 4,
-                    child: (activeHabits.isEmpty && monthlyWorkBlocks.isEmpty)
+                    child: (regularHabits.isEmpty && monthlyWorkBlocks.isEmpty)
                         ? Center(
                             child: Text(
                               'Sin hábitos ni metas',
@@ -454,7 +461,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           )
                         : ListView.builder(
                             physics: const BouncingScrollPhysics(),
-                            itemCount: monthlyWorkBlocks.length + activeHabits.length,
+                            itemCount: monthlyWorkBlocks.length + regularHabits.length,
                             itemBuilder: (context, index) {
                               if (index < monthlyWorkBlocks.length) {
                                 final block = monthlyWorkBlocks[index];
@@ -466,7 +473,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               }
 
                               final habitIndex = index - monthlyWorkBlocks.length;
-                              final habit = activeHabits[habitIndex];
+                              final habit = regularHabits[habitIndex];
                               final monthPrefix = '${_currentMonth.year}-${_currentMonth.month.toString().padLeft(2, '0')}';
                               final completedThisMonth = habit.completedDates.where((d) => d.startsWith(monthPrefix)).length;
                               final percentage = habit.hasMonthlyTarget 
