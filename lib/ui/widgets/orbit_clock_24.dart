@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../domain/models/schedule_block.dart';
 import '../../domain/models/habit.dart';
 import '../../providers/habit_provider.dart';
+import '../../providers/schedule_provider.dart';
 import '../../services/sound_service.dart';
 
 class OrbitClock24 extends ConsumerStatefulWidget {
@@ -262,6 +263,64 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
                             ],
                           ),
                         ),
+                      ),
+                    ],
+
+                    // Quick Shift Completion Button if it has a monthly hour target (like night shift work!)
+                    if (linkedHabit == null && activeBlock.hasMonthlyHourTarget) ...[
+                      const SizedBox(height: 8),
+                      Builder(
+                        builder: (context) {
+                          final isShiftDoneToday = activeBlock.completedDates.contains(todayIso);
+                          final shiftColor = activeBlock.color;
+
+                          return GestureDetector(
+                            onTap: () {
+                              HapticFeedback.mediumImpact();
+                              SoundService().playCheck();
+                              ref.read(scheduleProvider.notifier).toggleDateForBlock(activeBlock.id, todayIso);
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 250),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isShiftDoneToday
+                                    ? shiftColor.withOpacity(0.2)
+                                    : shiftColor,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: shiftColor, width: 1.5),
+                                boxShadow: isShiftDoneToday
+                                    ? []
+                                    : [
+                                        BoxShadow(
+                                          color: shiftColor.withOpacity(0.35),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        )
+                                      ],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    isShiftDoneToday ? Icons.check_circle : Icons.work_outline,
+                                    size: 14,
+                                    color: isShiftDoneToday ? shiftColor : Colors.white,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    isShiftDoneToday ? 'Turno Registrado' : 'Registrar Turno',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: isShiftDoneToday ? shiftColor : Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ] else ...[

@@ -158,6 +158,41 @@ void main() {
       expect(gymBlock.formattedDuration, '1h 30m');
       expect(gymBlock.isActiveAt(DateTime(2026, 10, 6, 8, 30)), isTrue);
       expect(gymBlock.isActiveAt(DateTime(2026, 10, 6, 10, 0)), isFalse);
+
+      // 3. Monthly hour target: 120h work goal with overtime and Dedicado achievement
+      final workMonth = DateTime(2026, 10, 1);
+      final workBlock = ScheduleBlock(
+        id: 'work_120',
+        title: 'Trabajo Turno',
+        startHour: 23,
+        startMinute: 0,
+        endHour: 7,
+        endMinute: 0,
+        colorValue: 0xFF9EA1D4,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        hasMonthlyHourTarget: true,
+        monthlyTargetHours: 120,
+        completedDates: List.generate(14, (i) => '2026-10-${(i + 1).toString().padLeft(2, '0')}'), // 14 shifts * 8h = 112h
+        extraHours: 0.0,
+      );
+
+      expect(workBlock.getMonthlyWorkedHours(workMonth), 112.0);
+      expect(workBlock.isTargetReached(workMonth), isFalse);
+
+      // Add 2 more shifts (16 shifts * 8h = 128h) -> reaches and exceeds 120h!
+      final completedWorkBlock = workBlock.copyWith(
+        completedDates: List.generate(16, (i) => '2026-10-${(i + 1).toString().padLeft(2, '0')}'),
+      );
+
+      expect(completedWorkBlock.getMonthlyWorkedHours(workMonth), 128.0);
+      expect(completedWorkBlock.isTargetReached(workMonth), isTrue);
+      expect(completedWorkBlock.getOvertimeHours(workMonth), 8.0); // 8h extra!
+
+      // Test Achievement 'ee_dedicated'
+      final achievementsWithWork = Achievement.calculate([], [], [completedWorkBlock]);
+      final dedicatedTrophy = achievementsWithWork.firstWhere((a) => a.id == 'ee_dedicated');
+      expect(dedicatedTrophy.isUnlocked, isTrue);
+      expect(dedicatedTrophy.title, '🔥 Dedicado');
     });
   });
 }

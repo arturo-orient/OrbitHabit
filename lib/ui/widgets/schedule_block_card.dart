@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../domain/models/schedule_block.dart';
 import '../../domain/models/habit.dart';
 import '../../providers/habit_provider.dart';
+import '../../providers/schedule_provider.dart';
+import '../../services/sound_service.dart';
 
 class ScheduleBlockCard extends ConsumerWidget {
   final ScheduleBlock block;
@@ -181,6 +184,95 @@ class ScheduleBlockCard extends ConsumerWidget {
                       ],
                     ],
                   ),
+
+                  // Monthly hour target progress if enabled!
+                  if (block.hasMonthlyHourTarget) ...[
+                    const SizedBox(height: 10),
+                    Builder(
+                      builder: (context) {
+                        final workedHours = block.getMonthlyWorkedHours(now);
+                        final target = block.monthlyTargetHours;
+                        final progress = target > 0 ? (workedHours / target).clamp(0.0, 1.0) : 0.0;
+                        final isCompleted = workedHours >= target;
+                        final overtime = block.getOvertimeHours(now);
+                        final isShiftDoneToday = block.completedDates.contains(todayIso);
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  isCompleted
+                                      ? 'Meta cumplida ✨ ${overtime > 0 ? "(+${overtime.toStringAsFixed(0)}h extras)" : ""}'
+                                      : 'Meta: ${workedHours.toStringAsFixed(0)} / ${target}h al mes',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: isCompleted
+                                        ? const Color(0xFFFFB74D)
+                                        : textColor?.withOpacity(0.65),
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () {
+                                    HapticFeedback.mediumImpact();
+                                    SoundService().playCheck();
+                                    ref.read(scheduleProvider.notifier).toggleDateForBlock(block.id, todayIso);
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: isShiftDoneToday
+                                          ? cardColor.withOpacity(0.2)
+                                          : cardColor.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: isShiftDoneToday ? cardColor : cardColor.withOpacity(0.3),
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          isShiftDoneToday ? Icons.check_circle : Icons.check,
+                                          size: 11,
+                                          color: cardColor,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          isShiftDoneToday ? 'Turno Hecho' : 'Completar Turno',
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: cardColor,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: progress,
+                                minHeight: 5,
+                                backgroundColor: Colors.grey.withOpacity(0.12),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  isCompleted ? const Color(0xFFFFB74D) : cardColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
                 ],
               ),
             ),

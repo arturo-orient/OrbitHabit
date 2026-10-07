@@ -10,6 +10,10 @@ class ScheduleBlock {
   final int colorValue;
   final String? habitId; // Optional link to an existing Habit ID
   final List<int> daysOfWeek; // 1 = Monday, ..., 7 = Sunday
+  final bool hasMonthlyHourTarget;
+  final int monthlyTargetHours; // e.g. 120
+  final List<String> completedDates; // Dates in YYYY-MM-DD when this shift was completed
+  final double extraHours; // Extra overtime hours logged
 
   const ScheduleBlock({
     required this.id,
@@ -21,6 +25,10 @@ class ScheduleBlock {
     required this.colorValue,
     this.habitId,
     required this.daysOfWeek,
+    this.hasMonthlyHourTarget = false,
+    this.monthlyTargetHours = 120,
+    this.completedDates = const [],
+    this.extraHours = 0.0,
   });
 
   Color get color => Color(colorValue);
@@ -102,6 +110,27 @@ class ScheduleBlock {
     }
   }
 
+  /// Calculate total worked hours in a specific month
+  double getMonthlyWorkedHours(DateTime month) {
+    final prefix = '${month.year}-${month.month.toString().padLeft(2, '0')}';
+    final completedInMonth = completedDates.where((d) => d.startsWith(prefix)).length;
+    final shiftHours = durationInMinutes / 60.0;
+    return (completedInMonth * shiftHours) + extraHours;
+  }
+
+  /// Whether the monthly target has been reached or exceeded
+  bool isTargetReached(DateTime month) {
+    if (!hasMonthlyHourTarget) return false;
+    return getMonthlyWorkedHours(month) >= monthlyTargetHours;
+  }
+
+  /// Overtime hours worked beyond the monthly target
+  double getOvertimeHours(DateTime month) {
+    if (!hasMonthlyHourTarget) return 0.0;
+    final total = getMonthlyWorkedHours(month);
+    return total > monthlyTargetHours ? total - monthlyTargetHours : 0.0;
+  }
+
   ScheduleBlock copyWith({
     String? id,
     String? title,
@@ -113,6 +142,10 @@ class ScheduleBlock {
     String? habitId,
     bool clearHabitId = false,
     List<int>? daysOfWeek,
+    bool? hasMonthlyHourTarget,
+    int? monthlyTargetHours,
+    List<String>? completedDates,
+    double? extraHours,
   }) {
     return ScheduleBlock(
       id: id ?? this.id,
@@ -124,6 +157,10 @@ class ScheduleBlock {
       colorValue: colorValue ?? this.colorValue,
       habitId: clearHabitId ? null : (habitId ?? this.habitId),
       daysOfWeek: daysOfWeek ?? this.daysOfWeek,
+      hasMonthlyHourTarget: hasMonthlyHourTarget ?? this.hasMonthlyHourTarget,
+      monthlyTargetHours: monthlyTargetHours ?? this.monthlyTargetHours,
+      completedDates: completedDates ?? this.completedDates,
+      extraHours: extraHours ?? this.extraHours,
     );
   }
 
@@ -138,6 +175,10 @@ class ScheduleBlock {
       'colorValue': colorValue,
       'habitId': habitId,
       'daysOfWeek': daysOfWeek,
+      'hasMonthlyHourTarget': hasMonthlyHourTarget,
+      'monthlyTargetHours': monthlyTargetHours,
+      'completedDates': completedDates,
+      'extraHours': extraHours,
     };
   }
 
@@ -152,6 +193,10 @@ class ScheduleBlock {
       colorValue: map['colorValue'] as int? ?? 0xFF84A59D,
       habitId: map['habitId'] as String?,
       daysOfWeek: (map['daysOfWeek'] as List<dynamic>?)?.map((e) => e as int).toList() ?? [1, 2, 3, 4, 5, 6, 7],
+      hasMonthlyHourTarget: map['hasMonthlyHourTarget'] as bool? ?? false,
+      monthlyTargetHours: map['monthlyTargetHours'] as int? ?? 120,
+      completedDates: (map['completedDates'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      extraHours: (map['extraHours'] as num?)?.toDouble() ?? 0.0,
     );
   }
 }

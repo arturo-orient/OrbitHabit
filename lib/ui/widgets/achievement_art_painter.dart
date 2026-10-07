@@ -349,6 +349,24 @@ class AchievementArtPainter extends CustomPainter {
         canvas.drawLine(vTopR, vMidL, facetPaint);
         break;
 
+      case 'ee_dedicated':
+        // ⏱️ RELOJ & ESTRELLA DE DEDICACIÓN Y HORAS EXTRA
+        artPaint.style = PaintingStyle.stroke;
+        artPaint.strokeWidth = 2.0;
+        // Outer gear / circular dial
+        canvas.drawCircle(center, radius * 0.45, artPaint);
+        // Ticks at 12, 3, 6, 9
+        canvas.drawLine(Offset(center.dx, center.dy - radius * 0.45), Offset(center.dx, center.dy - radius * 0.35), artPaint);
+        canvas.drawLine(Offset(center.dx + radius * 0.45, center.dy), Offset(center.dx + radius * 0.35, center.dy), artPaint);
+        canvas.drawLine(Offset(center.dx, center.dy + radius * 0.45), Offset(center.dx, center.dy + radius * 0.35), artPaint);
+        canvas.drawLine(Offset(center.dx - radius * 0.45, center.dy), Offset(center.dx - radius * 0.35, center.dy), artPaint);
+        // Clock hands showing dedication
+        canvas.drawLine(center, Offset(center.dx, center.dy - radius * 0.28), artPaint);
+        canvas.drawLine(center, Offset(center.dx + radius * 0.22, center.dy - radius * 0.1), artPaint);
+        // Center pin
+        canvas.drawCircle(center, 2.5, Paint()..color = artPaint.color..style = PaintingStyle.fill);
+        break;
+
       default:
         // Default circular abstract art
         canvas.drawCircle(center, radius * 0.3, artPaint);

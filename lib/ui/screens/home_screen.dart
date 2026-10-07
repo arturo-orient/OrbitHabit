@@ -165,8 +165,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
       // 2. Check for Newly Unlocked Achievements
       try {
-        final prevAchievements = Achievement.calculate(previous);
-        final nextAchievements = Achievement.calculate(next);
+        final prevAchievements = Achievement.calculate(previous, settings.vacationDates, scheduleBlocks);
+        final nextAchievements = Achievement.calculate(next, settings.vacationDates, scheduleBlocks);
 
         for (final nextAch in nextAchievements) {
           if (nextAch.isUnlocked) {
@@ -195,6 +195,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       } catch (e) {
         // Silent robust catch
       }
+    });
+
+    // Reactive listener for Schedule changes (e.g. unlocking "Dedicado" when reaching 120h of work!)
+    ref.listen<List<ScheduleBlock>>(scheduleProvider, (previous, next) {
+      if (previous == null || previous.isEmpty || next.isEmpty) return;
+      try {
+        final currentHabits = ref.read(habitsProvider);
+        final prevAchievements = Achievement.calculate(currentHabits, settings.vacationDates, previous);
+        final nextAchievements = Achievement.calculate(currentHabits, settings.vacationDates, next);
+
+        for (final nextAch in nextAchievements) {
+          if (nextAch.isUnlocked) {
+            final prevAch = prevAchievements.firstWhere(
+              (a) => a.id == nextAch.id,
+              orElse: () => Achievement(
+                id: nextAch.id,
+                title: nextAch.title,
+                description: nextAch.description,
+                progress: 0.0,
+                progressText: '',
+                isUnlocked: false,
+                colorValue: nextAch.colorValue,
+              ),
+            );
+
+            if (!prevAch.isUnlocked) {
+              SoundService().playTrophy();
+              HapticFeedback.heavyImpact();
+              TrophyOverlay.show(context, nextAch);
+            }
+          }
+        }
+      } catch (_) {}
     });
 
     return Scaffold(

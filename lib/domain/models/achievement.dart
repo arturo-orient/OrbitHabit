@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import '../../utils/streak_utils.dart';
 import 'habit.dart';
+import 'schedule_block.dart';
 
 class Achievement {
   final String id;
@@ -21,8 +22,12 @@ class Achievement {
     required this.colorValue,
   });
 
-  /// Dynamically computes the status of all 12 trophies based on the active habits
-  static List<Achievement> calculate(List<Habit> habits, [List<String> vacationDates = const []]) {
+  /// Dynamically computes the status of all trophies based on active habits and schedule
+  static List<Achievement> calculate(
+    List<Habit> habits, [
+    List<String> vacationDates = const [],
+    List<ScheduleBlock> scheduleBlocks = const [],
+  ]) {
     // 1. Calculate general statistics
     final int habitsCount = habits.length;
     
@@ -84,6 +89,25 @@ class Achievement {
     final bool hasVacation = vacationDates.isNotEmpty;
     final bool hasWeekendWarrior = hasSaturday && hasSunday;
     final bool hasJackpot = totalCompletions >= 77;
+
+    // 27. Dedicado: Superar el objetivo de horas de trabajo mensual (ej. 120h)
+    bool hasDedicatedWorker = false;
+    double maxHoursWorked = 0.0;
+    int targetHours = 120;
+    final currentMonth = DateTime.now();
+
+    for (final block in scheduleBlocks) {
+      if (block.hasMonthlyHourTarget) {
+        targetHours = block.monthlyTargetHours;
+        final hours = block.getMonthlyWorkedHours(currentMonth);
+        if (hours > maxHoursWorked) {
+          maxHoursWorked = hours;
+        }
+        if (hours >= block.monthlyTargetHours) {
+          hasDedicatedWorker = true;
+        }
+      }
+    }
 
     // 2. Define the achievements list
     return [
@@ -352,6 +376,20 @@ class Achievement {
         progressText: hasIndividual100 ? '¡Descubierto!' : 'Oculto',
         isUnlocked: hasIndividual100,
         color: 0xFFE0E0E0, // Plata
+      ),
+      // 27. Dedicado (Horas Extra & Turnos)
+      _buildTrophy(
+        id: 'ee_dedicated',
+        title: hasDedicatedWorker ? '🔥 Dedicado' : '???',
+        description: hasDedicatedWorker
+            ? 'Superaste tu objetivo de $targetHours horas mensuales de trabajo. ¡Dedicación absoluta!'
+            : 'Logro secreto. Las horas de trabajo y el esfuerzo constante dan sus frutos.',
+        progress: targetHours > 0 ? (maxHoursWorked / targetHours).clamp(0.0, 1.0) : 0.0,
+        progressText: hasDedicatedWorker
+            ? '¡${maxHoursWorked.toStringAsFixed(0)}h completadas!'
+            : '${maxHoursWorked.toStringAsFixed(0)} / ${targetHours}h',
+        isUnlocked: hasDedicatedWorker,
+        color: 0xFFFFB74D, // Oro/Ámbar
       ),
     ];
   }

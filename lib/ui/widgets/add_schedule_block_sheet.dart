@@ -35,6 +35,9 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
     Color(0xFFA8C2D3), // Gris Invierno
   ];
 
+  late bool _hasMonthlyHourTarget;
+  late int _monthlyTargetHours;
+
   @override
   void initState() {
     super.initState();
@@ -46,12 +49,16 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
       _selectedColor = b.color;
       _activeDays = List.from(b.daysOfWeek);
       _selectedHabitId = b.habitId;
+      _hasMonthlyHourTarget = b.hasMonthlyHourTarget;
+      _monthlyTargetHours = b.monthlyTargetHours;
     } else {
       _startTime = const TimeOfDay(hour: 23, minute: 0);
       _endTime = const TimeOfDay(hour: 7, minute: 0);
       _selectedColor = const Color(0xFF9EA1D4);
       _activeDays = [1, 2, 3, 4, 5, 6, 7];
       _selectedHabitId = null;
+      _hasMonthlyHourTarget = false;
+      _monthlyTargetHours = 120;
     }
   }
 
@@ -130,6 +137,10 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
       colorValue: _selectedColor.value,
       habitId: _selectedHabitId,
       daysOfWeek: _activeDays,
+      hasMonthlyHourTarget: _hasMonthlyHourTarget,
+      monthlyTargetHours: _monthlyTargetHours,
+      completedDates: widget.blockToEdit?.completedDates ?? const [],
+      extraHours: widget.blockToEdit?.extraHours ?? 0.0,
     );
 
     if (widget.blockToEdit != null) {
@@ -402,7 +413,67 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
               ),
             ),
 
-            // 4. Días de la semana
+            // 4. Meta Mensual de Horas (Turnos / Trabajo de 120h)
+            _buildSectionTitle('Objetivo Mensual de Horas (Opcional)'),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('Establecer objetivo de horas al mes', style: TextStyle(color: textColor)),
+              subtitle: Text(
+                'Ideal para turnos rotativos (ej. 120h). Lleva la cuenta de horas acumuladas y horas extra.',
+                style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 12),
+              ),
+              activeColor: _selectedColor,
+              value: _hasMonthlyHourTarget,
+              onChanged: (val) => setState(() => _hasMonthlyHourTarget = val),
+            ),
+            if (_hasMonthlyHourTarget) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Horas objetivo al mes:',
+                      style: TextStyle(color: textColor?.withOpacity(0.7), fontSize: 15)),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.remove_circle_outline, color: textColor?.withOpacity(0.6)),
+                        onPressed: () {
+                          if (_monthlyTargetHours > 10) {
+                            setState(() => _monthlyTargetHours -= 10);
+                          }
+                        },
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: theme.scaffoldBackgroundColor,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: _selectedColor.withOpacity(0.3)),
+                        ),
+                        child: Text(
+                          '$_monthlyTargetHours h',
+                          style: GoogleFonts.outfit(
+                            color: _selectedColor,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.add_circle_outline, color: textColor?.withOpacity(0.6)),
+                        onPressed: () {
+                          if (_monthlyTargetHours < 300) {
+                            setState(() => _monthlyTargetHours += 10);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+            ],
+
+            // 5. Días de la semana
             _buildSectionTitle('Días Activos'),
             Wrap(
               spacing: 8,

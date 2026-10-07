@@ -38,6 +38,8 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
         endMinute: 0,
         colorValue: 0xFF9EA1D4, // Periwinkle
         daysOfWeek: [1, 2, 3, 4, 5], // Lunes a Viernes
+        hasMonthlyHourTarget: true,
+        monthlyTargetHours: 120, // 120 horas al mes
       ),
       const ScheduleBlock(
         id: 'default_gym',
@@ -77,6 +79,32 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
     state = [
       for (final b in state)
         if (b.id == updated.id) updated else b,
+    ];
+    await _persist();
+  }
+
+  Future<void> toggleDateForBlock(String blockId, String dateIso) async {
+    state = [
+      for (final b in state)
+        if (b.id == blockId)
+          b.copyWith(
+            completedDates: b.completedDates.contains(dateIso)
+                ? (List<String>.from(b.completedDates)..remove(dateIso))
+                : (List<String>.from(b.completedDates)..add(dateIso)),
+          )
+        else
+          b,
+    ];
+    await _persist();
+  }
+
+  Future<void> addExtraHours(String blockId, double hours) async {
+    state = [
+      for (final b in state)
+        if (b.id == blockId)
+          b.copyWith(extraHours: (b.extraHours + hours).clamp(0.0, 500.0))
+        else
+          b,
     ];
     await _persist();
   }
