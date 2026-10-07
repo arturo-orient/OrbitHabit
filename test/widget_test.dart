@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:orbithabit/main.dart';
 import 'package:orbithabit/domain/models/habit.dart';
 import 'package:orbithabit/domain/models/achievement.dart';
+import 'package:orbithabit/domain/models/schedule_block.dart';
 import 'package:orbithabit/data/database_service.dart';
 import 'package:orbithabit/providers/habit_provider.dart';
 
@@ -104,6 +105,59 @@ void main() {
 
       expect(firstStepsWithCompletion.isUnlocked, isTrue);
       expect(firstStepsWithCompletion.progress, 1.0);
+    });
+
+    test('ScheduleBlock overnight shift and active state logic', () {
+      // 1. Overnight night-shift block: 23:00 to 07:00, Monday to Friday
+      const nightShift = ScheduleBlock(
+        id: 'shift_1',
+        title: 'Trabajo Nocturno',
+        startHour: 23,
+        startMinute: 0,
+        endHour: 7,
+        endMinute: 0,
+        colorValue: 0xFF9EA1D4,
+        daysOfWeek: [1, 2, 3, 4, 5], // L-V
+      );
+
+      expect(nightShift.isOvernight, isTrue);
+      expect(nightShift.durationInMinutes, 8 * 60); // 8 hours
+      expect(nightShift.formattedDuration, '8h');
+      expect(nightShift.formattedTimeRange, '23:00 - 07:00');
+
+      // Monday night at 23:30 -> Active!
+      final mondayNight = DateTime(2026, 10, 5, 23, 30); // 2026-10-05 was a Monday
+      expect(nightShift.isActiveAt(mondayNight), isTrue);
+
+      // Tuesday early morning at 03:00 -> Active! (started Monday night)
+      final tuesdayEarlyMorning = DateTime(2026, 10, 6, 3, 0); // Tuesday
+      expect(nightShift.isActiveAt(tuesdayEarlyMorning), isTrue);
+
+      // Tuesday afternoon at 14:00 -> Not active
+      final tuesdayAfternoon = DateTime(2026, 10, 6, 14, 0);
+      expect(nightShift.isActiveAt(tuesdayAfternoon), isFalse);
+
+      // Saturday night at 23:30 -> Not active (Saturday is not in [1,2,3,4,5])
+      final saturdayNight = DateTime(2026, 10, 10, 23, 30);
+      expect(nightShift.isActiveAt(saturdayNight), isFalse);
+
+      // 2. Daytime block: Gym 08:00 to 09:30
+      const gymBlock = ScheduleBlock(
+        id: 'gym_1',
+        title: 'Gym',
+        startHour: 8,
+        startMinute: 0,
+        endHour: 9,
+        endMinute: 30,
+        colorValue: 0xFF84A59D,
+        daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
+      );
+
+      expect(gymBlock.isOvernight, isFalse);
+      expect(gymBlock.durationInMinutes, 90);
+      expect(gymBlock.formattedDuration, '1h 30m');
+      expect(gymBlock.isActiveAt(DateTime(2026, 10, 6, 8, 30)), isTrue);
+      expect(gymBlock.isActiveAt(DateTime(2026, 10, 6, 10, 0)), isFalse);
     });
   });
 }

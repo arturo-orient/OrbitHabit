@@ -39,6 +39,7 @@
 Most habit trackers use boring checkboxes or simple calendars. **OrbitHabit visualizes your month as a horseshoe-shaped orbital ring** — each habit is a concentric arc, and completed days light up in color. It's inspired by the Apple Watch activity rings, but reimagined as a celestial orbit.
 
 **Key highlights:**
+- ⏰ **24-Hour Orbit Clock & Schedule Mode (NEW in v1.1)** — Circular 24h time-blocking dial that natively supports night shifts (e.g., 23:00 - 07:00 crossing midnight seamlessly), live time satellite indicator, and 1-tap habit completion synced with your monthly orbits.
 - 🎨 **Custom orbital visualization** — Entirely hand-painted with Flutter's `CustomPaint` API (no libraries). Days are arc segments, habits are rings, and "perfect days" glow.
 - 🏆 **26 unique achievements** — Each with hand-drawn vector art (geometric illustrations painted with `CustomPainter`). Includes 14 hidden easter eggs.
 - 🎮 **Gamification system** — Streak tiers (Bronze → Silver → Gold → Diamond) with animated glowing borders and haptic feedback.
@@ -57,10 +58,12 @@ lib/
 │   └── database_service.dart          # Hive persistence layer (2 boxes)
 ├── domain/models/
 │   ├── habit.dart                     # Core Habit model + Hive TypeAdapter
+│   ├── schedule_block.dart            # Schedule block model (overnight shift support)
 │   ├── user_settings.dart             # User preferences model
 │   └── achievement.dart               # 26 dynamically computed achievements
 ├── providers/
 │   ├── habit_provider.dart            # Riverpod Notifier — habit CRUD + state
+│   ├── schedule_provider.dart         # Riverpod Notifier — daily schedule blocks
 │   └── settings_provider.dart         # Riverpod Notifier — settings + confetti
 ├── services/
 │   ├── notification_service.dart      # Daily reminders (flutter_local_notifications)
@@ -70,6 +73,9 @@ lib/
 │   ├── screens/                       # 5 screens (Home, Onboarding, Settings, Stats, Manage)
 │   └── widgets/
 │       ├── orbit_tracker.dart         # ⭐ The signature widget — horseshoe orbital chart
+│       ├── orbit_clock_24.dart        # ⏰ 24-hour circular dial with live time tracking
+│       ├── add_schedule_block_sheet.dart # Time block creation with habit linking
+│       ├── schedule_block_card.dart   # Daily timeline cards
 │       ├── achievement_art_painter.dart # Vector art for each trophy (CustomPainter)
 │       ├── confetti_overlay.dart       # Custom particle physics system
 │       ├── trophy_overlay.dart         # PlayStation-style achievement popup
@@ -82,7 +88,7 @@ lib/
 **Design decisions:**
 - **Riverpod 3.x** with manual `Notifier<T>` (no code generation) for full control and readability.
 - **Hive** for blazing-fast local storage with a custom `TypeAdapter` for the Habit model.
-- **Zero external UI libraries** for the orbital chart, confetti, and trophy art — all hand-painted with `CustomPaint` and `Canvas` API.
+- **Zero external UI libraries** for the orbital chart, 24h clock, confetti, and trophy art — all hand-painted with `CustomPaint` and `Canvas` API.
 - **Dependency injection** via `ProviderScope.overrides` — the `DatabaseService` can be swapped for a fake in tests.
 
 ## 🛠️ Tech Stack
@@ -101,7 +107,7 @@ lib/
 
 <p align="center">
   <a href="https://github.com/arturo-orient/OrbitHabit/releases/latest/download/OrbitHabit.apk">
-    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.0-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
+    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.1-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
   </a>
 </p>
 

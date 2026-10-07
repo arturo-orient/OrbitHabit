@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../domain/models/habit.dart';
 import '../../providers/habit_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -14,7 +15,12 @@ import '../widgets/habit_progress_card.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/achievements_sheet.dart';
 import '../../domain/models/achievement.dart';
+import '../../domain/models/schedule_block.dart';
+import '../../providers/schedule_provider.dart';
 import '../widgets/trophy_overlay.dart';
+import '../widgets/orbit_clock_24.dart';
+import '../widgets/add_schedule_block_sheet.dart';
+import '../widgets/schedule_block_card.dart';
 import 'settings_screen.dart';
 import 'statistics_screen.dart';
 
@@ -27,11 +33,40 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   DateTime _currentMonth = DateTime.now();
+  int _selectedView = 0; // 0 = Órbita Mensual, 1 = Reloj Horario 24h
 
   void _changeMonth(int delta) {
     setState(() {
       _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + delta, 1);
     });
+  }
+
+  void _showAddScheduleBlockSheet() {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const AddScheduleBlockSheet(),
+    );
+  }
+
+  void _editScheduleBlock(ScheduleBlock block) {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => AddScheduleBlockSheet(blockToEdit: block),
+    );
+  }
+
+  String _getTodayDateLabel() {
+    final now = DateTime.now();
+    const dayNames = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    final dayName = dayNames[now.weekday - 1];
+    final monthName = _getMonthName(now.month);
+    return '$dayName, ${now.day} de $monthName'.toUpperCase();
   }
 
   void _showAddHabitSheet() {
@@ -85,8 +120,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final habits = ref.watch(habitsProvider);
     final settings = ref.watch(settingsProvider);
+    final scheduleBlocks = ref.watch(scheduleProvider);
     final showConfetti = ref.watch(confettiStateProvider);
     final monthName = _getMonthName(_currentMonth.month);
+
+    final now = DateTime.now();
+    // Filter and sort today's schedule blocks (including overnight shifts from yesterday)
+    final todayBlocks = scheduleBlocks.where((b) {
+      return b.appliesToWeekday(now.weekday) ||
+          (b.isOvernight && b.appliesToWeekday(now.weekday == 1 ? 7 : now.weekday - 1));
+    }).toList()
+      ..sort((a, b) => a.startInMinutes.compareTo(b.startInMinutes));
 
     // Nighttime color smoothing: after 22:00 (10 PM), in Dark or Sage themes,
     // we gently desaturate/dim habit colors to make it extra soothing for the eyes.
@@ -259,140 +303,298 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 32),
-                
-                // Botón del Mes (Pastilla central)
+                const SizedBox(height: 20),
+
+                // Selector de Vista Zen: [ 🪐 Órbita ] | [ ⏰ Reloj 24h ]
                 Center(
                   child: Container(
+                    padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
                       color: Theme.of(context).cardColor,
-                      borderRadius: BorderRadius.circular(24),
+                      borderRadius: BorderRadius.circular(22),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withOpacity(0.03),
                           blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        )
+                          offset: const Offset(0, 3),
+                        ),
                       ],
+                      border: Border.all(
+                        color: Colors.grey.withOpacity(0.12),
+                      ),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.chevron_left, color: Color(0xFFE6A590)),
-                          onPressed: () => _changeMonth(-1),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                        const SizedBox(width: 16),
-                        Text(
-                          settings.vacationDates.contains(DateTime.now().toIso8601String().split('T').first) 
-                            ? 'EN PAUSA 🏖️' 
-                            : monthName.toUpperCase(),
-                          style: TextStyle(
-                            color: settings.vacationDates.contains(DateTime.now().toIso8601String().split('T').first)
-                              ? const Color(0xFF4FC3F7) // Azul piscina para vacaciones
-                              : const Color(0xFFE6A590),
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        IconButton(
-                          icon: const Icon(Icons.chevron_right, color: Color(0xFFE6A590)),
-                          onPressed: () => _changeMonth(1),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
+                        _buildViewTab(0, '🪐 Órbita'),
+                        _buildViewTab(1, '⏰ Reloj 24h'),
                       ],
                     ),
                   ),
                 ),
+                const SizedBox(height: 14),
 
-                // Orbit Tracker (La Rueda)
-                Expanded(
-                  flex: 5,
-                  child: Center(
-                    child: AspectRatio(
-                      aspectRatio: 1.0,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: OrbitTracker(
-                          habits: activeHabits, // Render dimmed colors at night!
-                          currentMonth: _currentMonth,
-                          onDayColumnTapped: _showDayDetails,
-                        ),
+                // VISTA 0: ÓRBITA MENSUAL CLÁSICA
+                if (_selectedView == 0) ...[
+                  // Botón del Mes (Pastilla central)
+                  Center(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).cardColor,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.03),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          )
+                        ],
                       ),
-                    ),
-                  ),
-                ),
-
-                // Lista de Hábitos con cálculo de Rachas
-                Expanded(
-                  flex: 4,
-                  child: activeHabits.isEmpty
-                      ? Center(child: Text('Sin hábitos', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.4))))
-                      : ListView.builder(
-                          physics: const BouncingScrollPhysics(),
-                          itemCount: activeHabits.length,
-                          itemBuilder: (context, index) {
-                            final habit = activeHabits[index];
-                            final monthPrefix = '${_currentMonth.year}-${_currentMonth.month.toString().padLeft(2, '0')}';
-                            final completedThisMonth = habit.completedDates.where((d) => d.startsWith(monthPrefix)).length;
-                            final percentage = habit.hasMonthlyTarget 
-                                ? (completedThisMonth / habit.targetDays * 100).clamp(0, 100).toInt()
-                                : null;
-                            
-                            final streak = StreakUtils.calculateCurrentStreak(habit, settings.vacationDates);
-
-                            return GestureDetector(
-                              onTap: () => _editHabit(habit),
-                              child: HabitProgressCard(
-                                name: habit.name,
-                                color: habit.color,
-                                percentage: percentage,
-                                streak: streak,
-                              ),
-                            );
-                          },
-                        ),
-                ),
-
-                // Botón Añadir Hábito (Inferior)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: _showAddHabitSheet,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFA2B395), // Verde salvia
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(28),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
+                          IconButton(
+                            icon: const Icon(Icons.chevron_left, color: Color(0xFFE6A590)),
+                            onPressed: () => _changeMonth(-1),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                          const SizedBox(width: 16),
                           Text(
-                            'Añadir Hábito',
+                            settings.vacationDates.contains(DateTime.now().toIso8601String().split('T').first) 
+                              ? 'EN PAUSA 🏖️' 
+                              : monthName.toUpperCase(),
                             style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
+                              color: settings.vacationDates.contains(DateTime.now().toIso8601String().split('T').first)
+                                ? const Color(0xFF4FC3F7) // Azul piscina para vacaciones
+                                : const Color(0xFFE6A590),
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.2,
                             ),
                           ),
-                          SizedBox(width: 8),
-                          Icon(Icons.add, color: Colors.white),
+                          const SizedBox(width: 16),
+                          IconButton(
+                            icon: const Icon(Icons.chevron_right, color: Color(0xFFE6A590)),
+                            onPressed: () => _changeMonth(1),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
                         ],
                       ),
                     ),
                   ),
-                ),
+
+                  // Orbit Tracker (La Rueda)
+                  Expanded(
+                    flex: 5,
+                    child: Center(
+                      child: AspectRatio(
+                        aspectRatio: 1.0,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: OrbitTracker(
+                            habits: activeHabits, // Render dimmed colors at night!
+                            currentMonth: _currentMonth,
+                            onDayColumnTapped: _showDayDetails,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Lista de Hábitos con cálculo de Rachas
+                  Expanded(
+                    flex: 4,
+                    child: activeHabits.isEmpty
+                        ? Center(child: Text('Sin hábitos', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.4))))
+                        : ListView.builder(
+                            physics: const BouncingScrollPhysics(),
+                            itemCount: activeHabits.length,
+                            itemBuilder: (context, index) {
+                              final habit = activeHabits[index];
+                              final monthPrefix = '${_currentMonth.year}-${_currentMonth.month.toString().padLeft(2, '0')}';
+                              final completedThisMonth = habit.completedDates.where((d) => d.startsWith(monthPrefix)).length;
+                              final percentage = habit.hasMonthlyTarget 
+                                  ? (completedThisMonth / habit.targetDays * 100).clamp(0, 100).toInt()
+                                  : null;
+                              
+                              final streak = StreakUtils.calculateCurrentStreak(habit, settings.vacationDates);
+
+                              return GestureDetector(
+                                onTap: () => _editHabit(habit),
+                                child: HabitProgressCard(
+                                  name: habit.name,
+                                  color: habit.color,
+                                  percentage: percentage,
+                                  streak: streak,
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+
+                  // Botón Añadir Hábito (Inferior)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: _showAddHabitSheet,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFA2B395), // Verde salvia
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Añadir Hábito',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Icon(Icons.add, color: Colors.white),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ] else ...[
+                  // VISTA 1: RELOJ ORBITAL 24H (HORARIO / RUTINA)
+                  // Pastilla de Fecha de Hoy
+                  Center(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).cardColor,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.03),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          )
+                        ],
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.today, size: 16, color: Color(0xFFE6A590)),
+                          const SizedBox(width: 8),
+                          Text(
+                            _getTodayDateLabel(),
+                            style: GoogleFonts.outfit(
+                              color: const Color(0xFFE6A590),
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Reloj Orbital de 24 Horas
+                  Expanded(
+                    flex: 5,
+                    child: Center(
+                      child: AspectRatio(
+                        aspectRatio: 1.0,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: OrbitClock24(
+                            blocks: todayBlocks,
+                            onBlockTapped: _editScheduleBlock,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Lista de Bloques del Horario de Hoy
+                  Expanded(
+                    flex: 4,
+                    child: todayBlocks.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'Sin bloques para hoy',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.6),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Añade tus turnos de trabajo, descanso y hábitos.',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 12,
+                                    color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.4),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            physics: const BouncingScrollPhysics(),
+                            itemCount: todayBlocks.length,
+                            itemBuilder: (context, index) {
+                              final block = todayBlocks[index];
+                              return ScheduleBlockCard(
+                                block: block,
+                                onTap: () => _editScheduleBlock(block),
+                              );
+                            },
+                          ),
+                  ),
+
+                  // Botón Añadir Bloque Horario (Inferior)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: _showAddScheduleBlockSheet,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF9EA1D4), // Periwinkle
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Añadir Bloque Horario',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Icon(Icons.add, color: Colors.white),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
             
@@ -414,5 +616,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _getMonthName(int month) {
     const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     return months[month - 1];
+  }
+
+  Widget _buildViewTab(int index, String title) {
+    final isSelected = _selectedView == index;
+    final theme = Theme.of(context);
+    const activeColor = Color(0xFF84A59D); // Verde salvia Zen
+
+    return GestureDetector(
+      onTap: () {
+        if (_selectedView != index) {
+          HapticFeedback.selectionClick();
+          setState(() {
+            _selectedView = index;
+          });
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? activeColor.withOpacity(0.18) : Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+          border: isSelected
+              ? Border.all(color: activeColor.withOpacity(0.4), width: 1)
+              : Border.all(color: Colors.transparent, width: 1),
+        ),
+        child: Text(
+          title,
+          style: GoogleFonts.outfit(
+            fontSize: 14,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected
+                ? activeColor
+                : theme.textTheme.bodyLarge?.color?.withOpacity(0.6),
+          ),
+        ),
+      ),
+    );
   }
 }
