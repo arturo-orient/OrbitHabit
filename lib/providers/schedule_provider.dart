@@ -83,19 +83,59 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
     await _persist();
   }
 
-  Future<void> toggleDateForBlock(String blockId, String dateIso) async {
+  Future<void> syncDateWithHabit(String habitId, String dateIso, bool isCompleted) async {
     state = [
       for (final b in state)
-        if (b.id == blockId)
+        if (b.habitId == habitId)
           b.copyWith(
-            completedDates: b.completedDates.contains(dateIso)
-                ? (List<String>.from(b.completedDates)..remove(dateIso))
-                : (List<String>.from(b.completedDates)..add(dateIso)),
+            completedDates: isCompleted
+                ? (b.completedDates.contains(dateIso)
+                    ? b.completedDates
+                    : [...b.completedDates, dateIso])
+                : (b.completedDates.where((d) => d != dateIso).toList()),
           )
         else
           b,
     ];
     await _persist();
+  }
+
+  Future<void> toggleDateForBlock(String blockId, String dateIso) async {
+    String? linkedHabitId;
+    bool isNowDone = false;
+
+    state = [
+      for (final b in state)
+        if (b.id == blockId) ...[
+          (() {
+            linkedHabitId = b.habitId;
+            final isDone = b.completedDates.contains(dateIso);
+            isNowDone = !isDone;
+            return b.copyWith(
+              completedDates: isDone
+                  ? (List<String>.from(b.completedDates)..remove(dateIso))
+                  : (List<String>.from(b.completedDates)..add(dateIso)),
+            );
+          })()
+        ] else
+          b,
+    ];
+    await _persist();
+
+    if (linkedHabitId != null) {
+      final habits = ref.read(habitsProvider);
+      final habitIndex = habits.indexWhere((h) => h.id == linkedHabitId);
+      if (habitIndex != -1) {
+        final habit = habits[habitIndex];
+        final newDates = Set<String>.from(habit.completedDates);
+        if (isNowDone) {
+          newDates.add(dateIso);
+        } else {
+          newDates.remove(dateIso);
+        }
+        await ref.read(habitsProvider.notifier).updateHabit(habit.copyWith(completedDates: newDates));
+      }
+    }
   }
 
   Future<void> addExtraHours(String blockId, double hours) async {

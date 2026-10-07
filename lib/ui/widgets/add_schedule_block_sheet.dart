@@ -52,7 +52,16 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
       _selectedHabitId = b.habitId;
       _hasMonthlyHourTarget = b.hasMonthlyHourTarget;
       _monthlyTargetHours = b.monthlyTargetHours;
-      _completedDates = List.from(b.completedDates);
+      final habitDates = <String>{};
+      if (b.habitId != null) {
+        final habits = ref.read(habitsProvider);
+        final linked = habits.cast<Habit?>().firstWhere(
+          (h) => h?.id == b.habitId,
+          orElse: () => null,
+        );
+        if (linked != null) habitDates.addAll(linked.completedDates);
+      }
+      _completedDates = {...b.completedDates, ...habitDates}.toList();
     } else {
       _startTime = const TimeOfDay(hour: 23, minute: 0);
       _endTime = const TimeOfDay(hour: 7, minute: 0);
@@ -150,6 +159,18 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
       ref.read(scheduleProvider.notifier).updateBlock(block);
     } else {
       ref.read(scheduleProvider.notifier).addBlock(block);
+    }
+
+    if (_selectedHabitId != null) {
+      final habits = ref.read(habitsProvider);
+      final habitIndex = habits.indexWhere((h) => h.id == _selectedHabitId);
+      if (habitIndex != -1) {
+        final linkedHabit = habits[habitIndex];
+        final updatedDates = {...linkedHabit.completedDates, ..._completedDates};
+        ref.read(habitsProvider.notifier).updateHabit(
+          linkedHabit.copyWith(completedDates: updatedDates),
+        );
+      }
     }
 
     HapticFeedback.mediumImpact();
@@ -300,6 +321,7 @@ class _AddScheduleBlockSheetState extends ConsumerState<AddScheduleBlockSheet> {
                             _titleController.text = h.name;
                           }
                           _selectedColor = h.color;
+                          _completedDates = {..._completedDates, ...h.completedDates}.toList();
                         }
                       });
                     },

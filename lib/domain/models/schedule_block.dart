@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'habit.dart';
 
 class ScheduleBlock {
   final String id;
@@ -110,24 +111,34 @@ class ScheduleBlock {
     }
   }
 
+  /// Effective completed dates combining block's own dates and linked habit's dates
+  List<String> getEffectiveCompletedDates([Habit? linkedHabit]) {
+    final set = Set<String>.from(completedDates);
+    if (linkedHabit != null) {
+      set.addAll(linkedHabit.completedDates);
+    }
+    return set.toList();
+  }
+
   /// Calculate total worked hours in a specific month
-  double getMonthlyWorkedHours(DateTime month) {
+  double getMonthlyWorkedHours(DateTime month, [Habit? linkedHabit]) {
     final prefix = '${month.year}-${month.month.toString().padLeft(2, '0')}';
-    final completedInMonth = completedDates.where((d) => d.startsWith(prefix)).length;
+    final allDates = getEffectiveCompletedDates(linkedHabit);
+    final completedInMonth = allDates.where((d) => d.startsWith(prefix)).length;
     final shiftHours = durationInMinutes / 60.0;
     return (completedInMonth * shiftHours) + extraHours;
   }
 
   /// Whether the monthly target has been reached or exceeded
-  bool isTargetReached(DateTime month) {
+  bool isTargetReached(DateTime month, [Habit? linkedHabit]) {
     if (!hasMonthlyHourTarget) return false;
-    return getMonthlyWorkedHours(month) >= monthlyTargetHours;
+    return getMonthlyWorkedHours(month, linkedHabit) >= monthlyTargetHours;
   }
 
   /// Overtime hours worked beyond the monthly target
-  double getOvertimeHours(DateTime month) {
+  double getOvertimeHours(DateTime month, [Habit? linkedHabit]) {
     if (!hasMonthlyHourTarget) return 0.0;
-    final total = getMonthlyWorkedHours(month);
+    final total = getMonthlyWorkedHours(month, linkedHabit);
     return total > monthlyTargetHours ? total - monthlyTargetHours : 0.0;
   }
 

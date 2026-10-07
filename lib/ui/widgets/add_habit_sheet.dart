@@ -31,6 +31,8 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
   late bool _addToDailySchedule;
   late TimeOfDay _scheduleStartTime;
   late TimeOfDay _scheduleEndTime;
+  late bool _hasMonthlyHourTarget;
+  late int _monthlyTargetHours;
 
   @override
   void initState() {
@@ -53,10 +55,14 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
         _addToDailySchedule = true;
         _scheduleStartTime = TimeOfDay(hour: linked.startHour, minute: linked.startMinute);
         _scheduleEndTime = TimeOfDay(hour: linked.endHour, minute: linked.endMinute);
+        _hasMonthlyHourTarget = linked.hasMonthlyHourTarget;
+        _monthlyTargetHours = linked.monthlyTargetHours;
       } else {
         _addToDailySchedule = false;
         _scheduleStartTime = const TimeOfDay(hour: 8, minute: 0);
         _scheduleEndTime = const TimeOfDay(hour: 9, minute: 0);
+        _hasMonthlyHourTarget = false;
+        _monthlyTargetHours = 120;
       }
     } else {
       _targetDays = 20;
@@ -68,6 +74,8 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
       _addToDailySchedule = false;
       _scheduleStartTime = const TimeOfDay(hour: 8, minute: 0);
       _scheduleEndTime = const TimeOfDay(hour: 9, minute: 0);
+      _hasMonthlyHourTarget = false;
+      _monthlyTargetHours = 120;
     }
   }
 
@@ -160,8 +168,15 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
     final existingBlockIndex = currentBlocks.indexWhere((b) => b.habitId == habitId);
 
     if (_addToDailySchedule) {
+      final existingBlock = existingBlockIndex != -1 ? currentBlocks[existingBlockIndex] : null;
+      final habitDates = widget.habitToEdit?.completedDates ?? <String>{};
+      final mergedDates = {
+        ...?existingBlock?.completedDates,
+        ...habitDates,
+      }.toList();
+
       final scheduleBlock = ScheduleBlock(
-        id: existingBlockIndex != -1 ? currentBlocks[existingBlockIndex].id : 'block_$habitId',
+        id: existingBlock?.id ?? 'block_$habitId',
         title: name,
         startHour: _scheduleStartTime.hour,
         startMinute: _scheduleStartTime.minute,
@@ -170,6 +185,10 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
         colorValue: _selectedColor.value,
         habitId: habitId,
         daysOfWeek: _frequencyType == 0 ? _activeWeekdays : [1, 2, 3, 4, 5, 6, 7],
+        hasMonthlyHourTarget: _hasMonthlyHourTarget,
+        monthlyTargetHours: _monthlyTargetHours,
+        completedDates: mergedDates,
+        extraHours: existingBlock?.extraHours ?? 0.0,
       );
 
       if (existingBlockIndex != -1) {
@@ -435,6 +454,43 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('Objetivo de horas al mes (Turnos/Trabajo)', style: TextStyle(color: textColor, fontSize: 15)),
+                subtitle: Text(
+                  'Ideal para turnos rotativos (ej. 120 horas al mes).',
+                  style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 12),
+                ),
+                activeColor: _selectedColor,
+                value: _hasMonthlyHourTarget,
+                onChanged: (val) => setState(() => _hasMonthlyHourTarget = val),
+              ),
+              if (_hasMonthlyHourTarget) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Horas al mes:', style: TextStyle(color: textColor?.withOpacity(0.7), fontSize: 15)),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.remove, color: textColor?.withOpacity(0.6)),
+                          onPressed: () {
+                            if (_monthlyTargetHours > 10) setState(() => _monthlyTargetHours -= 10);
+                          },
+                        ),
+                        Text('$_monthlyTargetHours h', style: TextStyle(color: textColor, fontSize: 17, fontWeight: FontWeight.bold)),
+                        IconButton(
+                          icon: Icon(Icons.add, color: textColor?.withOpacity(0.6)),
+                          onPressed: () {
+                            if (_monthlyTargetHours < 300) setState(() => _monthlyTargetHours += 10);
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 8),
             ],
 

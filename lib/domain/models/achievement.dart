@@ -99,7 +99,19 @@ class Achievement {
     for (final block in scheduleBlocks) {
       if (block.hasMonthlyHourTarget) {
         targetHours = block.monthlyTargetHours;
-        final hours = block.getMonthlyWorkedHours(currentMonth);
+        Habit? linkedHabit;
+        if (block.habitId != null) {
+          linkedHabit = habits.cast<Habit?>().firstWhere(
+            (h) => h?.id == block.habitId,
+            orElse: () => null,
+          );
+        } else {
+          linkedHabit = habits.cast<Habit?>().firstWhere(
+            (h) => h != null && h.name.trim().toLowerCase() == block.title.trim().toLowerCase(),
+            orElse: () => null,
+          );
+        }
+        final hours = block.getMonthlyWorkedHours(currentMonth, linkedHabit);
         if (hours > maxHoursWorked) {
           maxHoursWorked = hours;
         }

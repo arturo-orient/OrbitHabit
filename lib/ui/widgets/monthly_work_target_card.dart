@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../domain/models/schedule_block.dart';
+import '../../domain/models/habit.dart';
 import '../../providers/schedule_provider.dart';
+import '../../providers/habit_provider.dart';
 import '../../services/sound_service.dart';
 
 class MonthlyWorkTargetCard extends ConsumerWidget {
@@ -20,25 +22,40 @@ class MonthlyWorkTargetCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final habits = ref.watch(habitsProvider);
+    Habit? linkedHabit;
+    if (block.habitId != null) {
+      linkedHabit = habits.cast<Habit?>().firstWhere(
+            (h) => h?.id == block.habitId,
+            orElse: () => null,
+          );
+    } else {
+      linkedHabit = habits.cast<Habit?>().firstWhere(
+            (h) => h != null && h.name.trim().toLowerCase() == block.title.trim().toLowerCase(),
+            orElse: () => null,
+          );
+    }
+
     final theme = Theme.of(context);
     final textColor = theme.textTheme.bodyLarge?.color;
     final blockColor = block.color;
 
-    final workedHours = block.getMonthlyWorkedHours(currentMonth);
+    final workedHours = block.getMonthlyWorkedHours(currentMonth, linkedHabit);
     final target = block.monthlyTargetHours;
     final progress = target > 0 ? (workedHours / target).clamp(0.0, 1.0) : 0.0;
-    final isCompleted = block.isTargetReached(currentMonth);
-    final overtime = block.getOvertimeHours(currentMonth);
+    final isCompleted = block.isTargetReached(currentMonth, linkedHabit);
+    final overtime = block.getOvertimeHours(currentMonth, linkedHabit);
 
     final now = DateTime.now();
     final todayIso = now.toIso8601String().split('T').first;
     final isCurrentMonthSelected =
         now.year == currentMonth.year && now.month == currentMonth.month;
-    final isTodayDone = block.completedDates.contains(todayIso);
+    final effectiveDates = block.getEffectiveCompletedDates(linkedHabit);
+    final isTodayDone = effectiveDates.contains(todayIso);
 
     final prefix = '${currentMonth.year}-${currentMonth.month.toString().padLeft(2, '0')}';
     final completedShiftsInMonth =
-        block.completedDates.where((d) => d.startsWith(prefix)).length;
+        effectiveDates.where((d) => d.startsWith(prefix)).length;
 
     return GestureDetector(
       onTap: onTap,
@@ -194,6 +211,11 @@ class MonthlyWorkTargetCard extends ConsumerWidget {
                       ref
                           .read(scheduleProvider.notifier)
                           .toggleDateForBlock(block.id, todayIso);
+                      if (block.habitId != null) {
+                        ref
+                            .read(habitsProvider.notifier)
+                            .toggleDay(block.habitId!, todayIso);
+                      }
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(

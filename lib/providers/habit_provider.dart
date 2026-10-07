@@ -3,6 +3,8 @@ import '../domain/models/habit.dart';
 import '../data/database_service.dart';
 import '../services/widget_service.dart';
 
+import 'schedule_provider.dart';
+
 final databaseProvider = Provider<DatabaseService>((ref) {
   throw UnimplementedError('DatabaseService should be overridden in main');
 });
@@ -70,12 +72,17 @@ class HabitNotifier extends Notifier<List<Habit>> {
     
     final habit = state[habitIndex];
     final newDates = Set<String>.from(habit.completedDates);
-    if (newDates.contains(dateIso)) {
-      newDates.remove(dateIso);
-    } else {
+    final isAdding = !newDates.contains(dateIso);
+    if (isAdding) {
       newDates.add(dateIso);
+    } else {
+      newDates.remove(dateIso);
     }
     await updateHabit(habit.copyWith(completedDates: newDates));
+
+    try {
+      ref.read(scheduleProvider.notifier).syncDateWithHabit(habitId, dateIso, isAdding);
+    } catch (_) {}
   }
 
   Future<void> updateProgress(String habitId, String dateIso, int delta) async {

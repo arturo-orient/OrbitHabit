@@ -30,6 +30,11 @@ class ScheduleBlockCard extends ConsumerWidget {
             (h) => h?.id == block.habitId,
             orElse: () => null,
           );
+    } else {
+      linkedHabit = habits.cast<Habit?>().firstWhere(
+            (h) => h != null && h.name.trim().toLowerCase() == block.title.trim().toLowerCase(),
+            orElse: () => null,
+          );
     }
 
     final cardColor = linkedHabit?.color ?? block.color;
@@ -190,12 +195,13 @@ class ScheduleBlockCard extends ConsumerWidget {
                     const SizedBox(height: 10),
                     Builder(
                       builder: (context) {
-                        final workedHours = block.getMonthlyWorkedHours(now);
+                        final workedHours = block.getMonthlyWorkedHours(now, linkedHabit);
                         final target = block.monthlyTargetHours;
                         final progress = target > 0 ? (workedHours / target).clamp(0.0, 1.0) : 0.0;
-                        final isCompleted = workedHours >= target;
-                        final overtime = block.getOvertimeHours(now);
-                        final isShiftDoneToday = block.completedDates.contains(todayIso);
+                        final isCompleted = block.isTargetReached(now, linkedHabit);
+                        final overtime = block.getOvertimeHours(now, linkedHabit);
+                        final effectiveDates = block.getEffectiveCompletedDates(linkedHabit);
+                        final isShiftDoneToday = effectiveDates.contains(todayIso);
 
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -220,6 +226,9 @@ class ScheduleBlockCard extends ConsumerWidget {
                                     HapticFeedback.mediumImpact();
                                     SoundService().playCheck();
                                     ref.read(scheduleProvider.notifier).toggleDateForBlock(block.id, todayIso);
+                                    if (block.habitId != null) {
+                                      ref.read(habitsProvider.notifier).toggleDay(block.habitId!, todayIso);
+                                    }
                                   },
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),

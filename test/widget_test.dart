@@ -194,5 +194,40 @@ void main() {
       expect(dedicatedTrophy.isUnlocked, isTrue);
       expect(dedicatedTrophy.title, '🔥 Dedicado');
     });
+
+    test('Past days filled in habit (days 1 to 4) are counted in schedule block monthly hours', () {
+      final workMonth = DateTime(2026, 10, 8);
+      // User filled days 1 to 4 in Habit 'Trabajo'
+      final habitTrabajo = Habit(
+        id: 'habit_trabajo',
+        name: 'Trabajo',
+        colorValue: 0xFF9EA1D4,
+        targetDays: 20,
+        orderIndex: 0,
+        completedDates: {'2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04'},
+      );
+
+      // Block created today (day 8) with empty block.completedDates but linked to habitTrabajo
+      final scheduleTrabajo = const ScheduleBlock(
+        id: 'block_trabajo',
+        title: 'Trabajo',
+        startHour: 23,
+        startMinute: 0,
+        endHour: 7,
+        endMinute: 0,
+        colorValue: 0xFF9EA1D4,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        hasMonthlyHourTarget: true,
+        monthlyTargetHours: 120,
+        habitId: 'habit_trabajo',
+        completedDates: [], // empty inside the block itself!
+        extraHours: 0.0,
+      );
+
+      // 4 shifts * 8h = 32 hours should be counted from linked habit!
+      final workedHours = scheduleTrabajo.getMonthlyWorkedHours(workMonth, habitTrabajo);
+      expect(workedHours, 32.0);
+      expect(scheduleTrabajo.getEffectiveCompletedDates(habitTrabajo).length, 4);
+    });
   });
 }
