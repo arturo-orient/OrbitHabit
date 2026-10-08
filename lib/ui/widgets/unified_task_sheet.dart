@@ -35,13 +35,16 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
   late Color _selectedColor;
 
-  // 1. Horario en Reloj 24h
+  // 1. Visibilidad y Modos
   late bool _hasSchedule;
+  late bool _showInOrbit;
+
+  // 2. Horario en Reloj 24h
   late TimeOfDay _startTime;
   late TimeOfDay _endTime;
   late List<int> _activeWeekdays;
 
-  // 2. Modos de Meta
+  // 3. Modos de Meta
   late TaskTargetMode _targetMode;
 
   // Parámetros de meta por días
@@ -96,15 +99,17 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       _nameController.text = title;
       _selectedColor = habit?.color ?? block?.color ?? const Color(0xFF9EA1D4);
 
+      // Visibilidad y Modos
+      _hasSchedule = block != null;
+      _showInOrbit = habit != null;
+
       // Horario
       if (block != null) {
-        _hasSchedule = true;
         _startTime = TimeOfDay(hour: block.startHour, minute: block.startMinute);
         _endTime = TimeOfDay(hour: block.endHour, minute: block.endMinute);
         _activeWeekdays = List.from(block.daysOfWeek);
         _extraHours = block.extraHours;
       } else {
-        _hasSchedule = false;
         _startTime = const TimeOfDay(hour: 23, minute: 0);
         _endTime = const TimeOfDay(hour: 7, minute: 0);
         _activeWeekdays = habit != null ? List.from(habit.activeWeekdays) : [1, 2, 3, 4, 5, 6, 7];
@@ -136,6 +141,8 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       // Nueva tarea desde cero
       _selectedColor = const Color(0xFF9EA1D4);
       _hasSchedule = widget.defaultEnableSchedule;
+      _showInOrbit = !widget.defaultEnableSchedule; // Si se crea desde el reloj, puede ser solo guía
+
       _startTime = const TimeOfDay(hour: 23, minute: 0);
       _endTime = const TimeOfDay(hour: 7, minute: 0);
       _activeWeekdays = [1, 2, 3, 4, 5, 6, 7];
@@ -242,31 +249,47 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       blockId = existingBlock?.id ?? 'block_$habitId';
     }
 
-    // 3. Guardar / Actualizar Hábito en Modo Órbita
-    final isNewHabit = !habits.any((h) => h.id == habitId);
-    final habit = Habit(
-      id: habitId,
-      name: title,
-      colorValue: _selectedColor.value,
-      targetDays: _targetMode == TaskTargetMode.days ? _targetDays : 20,
-      orderIndex: isNewHabit ? habits.length : (widget.habitToEdit?.orderIndex ?? 0),
-      isNumeric: false,
-      dailyTarget: 1,
-      dailyUnit: '',
-      activeWeekdays: _activeWeekdays,
-      hasMonthlyTarget: _targetMode == TaskTargetMode.days,
-      frequencyType: _targetMode == TaskTargetMode.days ? _frequencyType : 0,
-      targetDaysPerWeek: _targetDaysPerWeek,
-      completedDates: Set<String>.from(_completedDates),
-    );
+    // 3. Manejo de Modo Órbita (Rueda de Hábitos)
+    if (_showInOrbit) {
+      final isNewHabit = !habits.any((h) => h.id == habitId);
+      final habit = Habit(
+        id: habitId,
+        name: title,
+        colorValue: _selectedColor.value,
+        targetDays: _targetMode == TaskTargetMode.days ? _targetDays : 20,
+        orderIndex: isNewHabit ? habits.length : (widget.habitToEdit?.orderIndex ?? 0),
+        isNumeric: false,
+        dailyTarget: 1,
+        dailyUnit: '',
+        activeWeekdays: _activeWeekdays,
+        hasMonthlyTarget: _targetMode == TaskTargetMode.days,
+        frequencyType: _targetMode == TaskTargetMode.days ? _frequencyType : 0,
+        targetDaysPerWeek: _targetDaysPerWeek,
+        completedDates: Set<String>.from(_completedDates),
+      );
 
-    if (isNewHabit) {
-      ref.read(habitsProvider.notifier).addHabit(habit);
+      if (isNewHabit) {
+        ref.read(habitsProvider.notifier).addHabit(habit);
+      } else {
+        ref.read(habitsProvider.notifier).updateHabit(habit);
+      }
     } else {
-      ref.read(habitsProvider.notifier).updateHabit(habit);
+      // Si el usuario decide NO mostrarlo en la Órbita (ej. Dormir como guía del reloj)
+      // Eliminamos cualquier hábito vinculado para que no contamine la rueda orbital
+      if (widget.habitToEdit != null) {
+        ref.read(habitsProvider.notifier).deleteHabit(widget.habitToEdit!.id);
+      } else {
+        final existingByName = habits.cast<Habit?>().firstWhere(
+              (h) => h != null && h.name.trim().toLowerCase() == title.toLowerCase(),
+              orElse: () => null,
+            );
+        if (existingByName != null) {
+          ref.read(habitsProvider.notifier).deleteHabit(existingByName.id);
+        }
+      }
     }
 
-    // 4. Guardar / Actualizar o Eliminar Bloque en Modo Reloj
+    // 4. Manejo de Modo Reloj 24h
     final isNewBlock = !blocks.any((b) => b.id == blockId);
     if (_hasSchedule) {
       final scheduleBlock = ScheduleBlock(
@@ -277,12 +300,12 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         endHour: _endTime.hour,
         endMinute: _endTime.minute,
         colorValue: _selectedColor.value,
-        habitId: habitId,
+        habitId: _showInOrbit ? habitId : null,
         daysOfWeek: _activeWeekdays,
-        hasMonthlyHourTarget: _targetMode == TaskTargetMode.hours,
+        hasMonthlyHourTarget: _showInOrbit && _targetMode == TaskTargetMode.hours,
         monthlyTargetHours: _monthlyTargetHours,
-        completedDates: _completedDates,
-        extraHours: _extraHours,
+        completedDates: _showInOrbit ? _completedDates : [],
+        extraHours: _showInOrbit ? _extraHours : 0.0,
       );
 
       if (isNewBlock) {
@@ -291,7 +314,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         ref.read(scheduleProvider.notifier).updateBlock(scheduleBlock);
       }
     } else if (!isNewBlock) {
-      // Si el usuario desactivó el horario y antes tenía bloque, se elimina
+      // Si el usuario desactivó el horario y antes tenía bloque, se elimina del reloj
       ref.read(scheduleProvider.notifier).deleteBlock(blockId);
     }
 
@@ -309,7 +332,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: const Text('¿Eliminar tarea?'),
         content: Text(
-          'Se eliminará "$title" tanto del Modo Órbita como de tu Reloj diario. Esta acción no se puede deshacer.',
+          'Se eliminará "$title" de OrbitHabit. Esta acción no se puede deshacer.',
         ),
         actions: [
           TextButton(
@@ -387,6 +410,13 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     final theme = Theme.of(context);
     final textColor = theme.textTheme.bodyLarge?.color;
 
+    String modeBadgeText = 'Modo Órbita';
+    if (_hasSchedule && _showInOrbit) {
+      modeBadgeText = 'Órbita + Reloj';
+    } else if (_hasSchedule && !_showInOrbit) {
+      modeBadgeText = 'Solo Reloj (Guía)';
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: theme.cardColor,
@@ -450,7 +480,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        _hasSchedule ? 'Órbita + Reloj' : 'Modo Órbita',
+                        modeBadgeText,
                         style: GoogleFonts.outfit(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
@@ -470,7 +500,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
               style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 16),
               decoration: InputDecoration(
                 labelText: 'Nombre de la tarea',
-                hintText: 'ej. Trabajar, Gimnasio, Meditar...',
+                hintText: 'ej. Trabajar, Dormir, Gimnasio...',
                 hintStyle: TextStyle(color: textColor?.withOpacity(0.35)),
                 labelStyle: TextStyle(color: textColor?.withOpacity(0.6)),
                 filled: true,
@@ -517,44 +547,107 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
               }).toList(),
             ),
 
-            // 3. Sección: Horario en el Reloj 24h
-            _buildSectionTitle('Horario en Reloj 24h (Opcional)'),
+            // 3. Sección: Visibilidad y Modos (¿Dónde se muestra?)
+            _buildSectionTitle('Visibilidad y Modos'),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
                 color: theme.scaffoldBackgroundColor,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: _hasSchedule
-                      ? _selectedColor.withOpacity(0.4)
-                      : Colors.grey.withOpacity(0.15),
-                ),
+                border: Border.all(color: Colors.grey.withOpacity(0.15)),
               ),
-              child: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  'Asignar horas en el Reloj 24h',
-                  style: TextStyle(
-                    color: textColor,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Row(
+                      children: [
+                        const Text('⏰ ', style: TextStyle(fontSize: 16)),
+                        Text(
+                          'Reloj 24h (Rutina diaria)',
+                          style: TextStyle(
+                            color: textColor,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                    subtitle: Text(
+                      'Se dibuja en tu reloj circular de 24 horas con horario fijo.',
+                      style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 11.5),
+                    ),
+                    activeColor: _selectedColor,
+                    value: _hasSchedule,
+                    onChanged: (val) {
+                      if (!val && !_showInOrbit) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('La tarea debe aparecer al menos en el Reloj o en la Órbita.'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                        return;
+                      }
+                      HapticFeedback.selectionClick();
+                      setState(() => _hasSchedule = val);
+                    },
                   ),
-                ),
-                subtitle: Text(
-                  'Se dibujará en tu rutina diaria circular y podrás marcarlo en el reloj.',
-                  style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 12),
-                ),
-                activeColor: _selectedColor,
-                value: _hasSchedule,
-                onChanged: (val) {
-                  HapticFeedback.selectionClick();
-                  setState(() => _hasSchedule = val);
-                },
+                  const Divider(height: 8),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Row(
+                      children: [
+                        const Text('🪐 ', style: TextStyle(fontSize: 16)),
+                        Text(
+                          'Modo Órbita (Rueda de hábitos)',
+                          style: TextStyle(
+                            color: textColor,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                    subtitle: Text(
+                      _showInOrbit
+                          ? 'Crea un anillo en la rueda para trackear días y rachas.'
+                          : 'Desactivado: Bloque guía para el reloj (ej. Dormir / Descanso).',
+                      style: TextStyle(
+                        color: _showInOrbit
+                            ? textColor?.withOpacity(0.5)
+                            : const Color(0xFFE5989B),
+                        fontSize: 11.5,
+                      ),
+                    ),
+                    activeColor: _selectedColor,
+                    value: _showInOrbit,
+                    onChanged: (val) {
+                      if (!val && !_hasSchedule) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('La tarea debe aparecer al menos en el Reloj o en la Órbita.'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                        return;
+                      }
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        _showInOrbit = val;
+                        if (!val) {
+                          _targetMode = TaskTargetMode.none;
+                        }
+                      });
+                    },
+                  ),
+                ],
               ),
             ),
 
+            // 4. Sección Horario (Solo si _hasSchedule está activado)
             if (_hasSchedule) ...[
-              const SizedBox(height: 12),
+              _buildSectionTitle('Horario en el Reloj'),
               Row(
                 children: [
                   // Desde
@@ -660,7 +753,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
               ),
             ],
 
-            // 4. Días de la Semana Activos (Repetición)
+            // 5. Días de la Semana Activos (Repetición)
             _buildSectionTitle('Días de la Semana (Repetición habitual)'),
             Wrap(
               spacing: 8,
@@ -704,102 +797,104 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
               }).toList(),
             ),
 
-            // 5. Tipo de Medición / Meta (Pastillas Selectoras)
-            _buildSectionTitle('Tipo de Meta / Seguimiento'),
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: theme.scaffoldBackgroundColor,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey.withOpacity(0.15)),
-              ),
-              child: Row(
-                children: [
-                  _buildTabOption(TaskTargetMode.none, '⚪ Sin meta'),
-                  _buildTabOption(TaskTargetMode.days, '📅 Por Días'),
-                  _buildTabOption(TaskTargetMode.hours, '💼 Por Horas'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // 6. Sub-panel según tipo de meta
-            if (_targetMode == TaskTargetMode.days) ...[
+            // 6. Tipo de Medición / Meta (Solo visible si está activo en Modo Órbita)
+            if (_showInOrbit) ...[
+              _buildSectionTitle('Tipo de Meta / Seguimiento'),
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
                   color: theme.scaffoldBackgroundColor,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.grey.withOpacity(0.15)),
                 ),
-                child: Column(
+                child: Row(
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Días objetivo al mes:', style: TextStyle(color: textColor?.withOpacity(0.8), fontSize: 14, fontWeight: FontWeight.w600)),
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: Icon(Icons.remove, color: textColor?.withOpacity(0.6)),
-                              onPressed: () {
-                                if (_targetDays > 1) setState(() => _targetDays--);
-                              },
-                            ),
-                            Text('$_targetDays días', style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold)),
-                            IconButton(
-                              icon: Icon(Icons.add, color: textColor?.withOpacity(0.6)),
-                              onPressed: () {
-                                if (_targetDays < 31) setState(() => _targetDays++);
-                              },
-                            ),
-                          ],
-                        )
-                      ],
-                    ),
+                    _buildTabOption(TaskTargetMode.none, '⚪ Sin meta'),
+                    _buildTabOption(TaskTargetMode.days, '📅 Por Días'),
+                    _buildTabOption(TaskTargetMode.hours, '💼 Por Horas'),
                   ],
                 ),
               ),
-            ] else if (_targetMode == TaskTargetMode.hours) ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.scaffoldBackgroundColor,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _selectedColor.withOpacity(0.3)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Contador de Horas Meta
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Objetivo al mes:',
-                          style: TextStyle(
-                            color: textColor?.withOpacity(0.8),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: Icon(Icons.remove, color: textColor?.withOpacity(0.6)),
-                              onPressed: () {
-                                if (_monthlyTargetHours > 10) {
-                                  setState(() => _monthlyTargetHours -= 10);
-                                }
-                              },
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: _selectedColor.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(8),
+              const SizedBox(height: 12),
+
+              // Sub-panel según tipo de meta
+              if (_targetMode == TaskTargetMode.days) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: theme.scaffoldBackgroundColor,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.grey.withOpacity(0.15)),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Días objetivo al mes:', style: TextStyle(color: textColor?.withOpacity(0.8), fontSize: 14, fontWeight: FontWeight.w600)),
+                          Row(
+                            children: [
+                              IconButton(
+                                icon: Icon(Icons.remove, color: textColor?.withOpacity(0.6)),
+                                onPressed: () {
+                                  if (_targetDays > 1) setState(() => _targetDays--);
+                                },
                               ),
-                              child: Text(
+                              Text('$_targetDays días', style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold)),
+                              IconButton(
+                                icon: Icon(Icons.add, color: textColor?.withOpacity(0.6)),
+                                onPressed: () {
+                                  if (_targetDays < 31) setState(() => _targetDays++);
+                                },
+                              ),
+                            ],
+                          )
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (_targetMode == TaskTargetMode.hours) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: theme.scaffoldBackgroundColor,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: _selectedColor.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Contador de Horas Meta
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Objetivo al mes:',
+                            style: TextStyle(
+                              color: textColor?.withOpacity(0.8),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              IconButton(
+                                icon: Icon(Icons.remove, color: textColor?.withOpacity(0.6)),
+                                onPressed: () {
+                                  if (_monthlyTargetHours > 10) {
+                                    setState(() => _monthlyTargetHours -= 10);
+                                  }
+                                },
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _selectedColor.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              Text(
                                 '$_monthlyTargetHours h',
                                 style: GoogleFonts.outfit(
                                   fontSize: 16,
@@ -807,158 +902,158 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                                   color: _selectedColor,
                                 ),
                               ),
-                            ),
-                            IconButton(
-                              icon: Icon(Icons.add, color: textColor?.withOpacity(0.6)),
-                              onPressed: () {
-                                if (_monthlyTargetHours < 300) {
-                                  setState(() => _monthlyTargetHours += 10);
-                                }
-                              },
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 20),
+                              IconButton(
+                                icon: Icon(Icons.add, color: textColor?.withOpacity(0.6)),
+                                onPressed: () {
+                                  if (_monthlyTargetHours < 300) {
+                                    setState(() => _monthlyTargetHours += 10);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 20),
 
-                    // Horas Extra
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Horas extra acumuladas:',
-                          style: TextStyle(color: textColor?.withOpacity(0.7), fontSize: 13),
-                        ),
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: Icon(Icons.remove, color: textColor?.withOpacity(0.6)),
-                              onPressed: () {
-                                if (_extraHours > 0) {
-                                  setState(() => _extraHours = (_extraHours - 1.0).clamp(0.0, 300.0));
-                                }
-                              },
-                            ),
-                            Text(
-                              '+${_extraHours.toStringAsFixed(0)} h',
-                              style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 14),
-                            ),
-                            IconButton(
-                              icon: Icon(Icons.add, color: textColor?.withOpacity(0.6)),
-                              onPressed: () {
-                                setState(() => _extraHours += 1.0);
-                              },
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 20),
+                      // Horas Extra
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Horas extra acumuladas:',
+                            style: TextStyle(color: textColor?.withOpacity(0.7), fontSize: 13),
+                          ),
+                          Row(
+                            children: [
+                              IconButton(
+                                icon: Icon(Icons.remove, color: textColor?.withOpacity(0.6)),
+                                onPressed: () {
+                                  if (_extraHours > 0) {
+                                    setState(() => _extraHours = (_extraHours - 1.0).clamp(0.0, 300.0));
+                                  }
+                                },
+                              ),
+                              Text(
+                                '+${_extraHours.toStringAsFixed(0)} h',
+                                style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.add, color: textColor?.withOpacity(0.6)),
+                                onPressed: () {
+                                  setState(() => _extraHours += 1.0);
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 20),
 
-                    // Selector de días trabajados en el mes actual (1..31)
-                    Builder(
-                      builder: (context) {
-                        final now = DateTime.now();
-                        final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
-                        final shiftHours = _durationMinutes / 60.0;
-                        final currentMonthPrefix = '${now.year}-${now.month.toString().padLeft(2, '0')}';
-                        final completedThisMonth = _completedDates.where((d) => d.startsWith(currentMonthPrefix)).length;
-                        final totalWorkedHours = (completedThisMonth * shiftHours) + _extraHours;
+                      // Selector de días trabajados en el mes actual (1..31)
+                      Builder(
+                        builder: (context) {
+                          final now = DateTime.now();
+                          final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+                          final shiftHours = _durationMinutes / 60.0;
+                          final currentMonthPrefix = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+                          final completedThisMonth = _completedDates.where((d) => d.startsWith(currentMonthPrefix)).length;
+                          final totalWorkedHours = (completedThisMonth * shiftHours) + _extraHours;
 
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'Turnos este mes:',
-                                  style: TextStyle(
-                                    color: textColor?.withOpacity(0.85),
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: _selectedColor.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    '$completedThisMonth turnos · ${totalWorkedHours.toStringAsFixed(0)} / ${_monthlyTargetHours}h',
-                                    style: GoogleFonts.outfit(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: _selectedColor,
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Turnos este mes:',
+                                    style: TextStyle(
+                                      color: textColor?.withOpacity(0.85),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Toca los días en los que has hecho turno:',
-                              style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 11),
-                            ),
-                            const SizedBox(height: 10),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: List.generate(daysInMonth, (index) {
-                                final dayNum = index + 1;
-                                final dateIso = '${now.year}-${now.month.toString().padLeft(2, '0')}-${dayNum.toString().padLeft(2, '0')}';
-                                final isWorked = _completedDates.contains(dateIso);
-                                final isToday = dayNum == now.day;
-
-                                return GestureDetector(
-                                  onTap: () {
-                                    HapticFeedback.selectionClick();
-                                    setState(() {
-                                      if (isWorked) {
-                                        _completedDates.remove(dateIso);
-                                      } else {
-                                        _completedDates.add(dateIso);
-                                      }
-                                    });
-                                  },
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 150),
-                                    width: 35,
-                                    height: 35,
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                                     decoration: BoxDecoration(
-                                      color: isWorked ? _selectedColor : Colors.transparent,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: isWorked
-                                            ? _selectedColor
-                                            : isToday
-                                                ? _selectedColor.withOpacity(0.6)
-                                                : Colors.grey.withOpacity(0.25),
-                                        width: isToday ? 1.8 : 1.0,
-                                      ),
+                                      color: _selectedColor.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
-                                    alignment: Alignment.center,
                                     child: Text(
-                                      '$dayNum',
+                                      '$completedThisMonth turnos · ${totalWorkedHours.toStringAsFixed(0)} / ${_monthlyTargetHours}h',
                                       style: GoogleFonts.outfit(
                                         fontSize: 12,
-                                        fontWeight: isWorked || isToday ? FontWeight.bold : FontWeight.normal,
-                                        color: isWorked ? Colors.white : textColor?.withOpacity(0.75),
+                                        fontWeight: FontWeight.bold,
+                                        color: _selectedColor,
                                       ),
                                     ),
                                   ),
-                                );
-                              }),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ],
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Toca los días en los que has hecho turno:',
+                                style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 11),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: List.generate(daysInMonth, (index) {
+                                  final dayNum = index + 1;
+                                  final dateIso = '${now.year}-${now.month.toString().padLeft(2, '0')}-${dayNum.toString().padLeft(2, '0')}';
+                                  final isWorked = _completedDates.contains(dateIso);
+                                  final isToday = dayNum == now.day;
+
+                                  return GestureDetector(
+                                    onTap: () {
+                                      HapticFeedback.selectionClick();
+                                      setState(() {
+                                        if (isWorked) {
+                                          _completedDates.remove(dateIso);
+                                        } else {
+                                          _completedDates.add(dateIso);
+                                        }
+                                      });
+                                    },
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 150),
+                                      width: 35,
+                                      height: 35,
+                                      decoration: BoxDecoration(
+                                        color: isWorked ? _selectedColor : Colors.transparent,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: isWorked
+                                              ? _selectedColor
+                                              : isToday
+                                                  ? _selectedColor.withOpacity(0.6)
+                                                  : Colors.grey.withOpacity(0.25),
+                                          width: isToday ? 1.8 : 1.0,
+                                        ),
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: Text(
+                                        '$dayNum',
+                                        style: GoogleFonts.outfit(
+                                          fontSize: 12,
+                                          fontWeight: isWorked || isToday ? FontWeight.bold : FontWeight.normal,
+                                          color: isWorked ? Colors.white : textColor?.withOpacity(0.75),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+              ],
             ],
 
             const SizedBox(height: 28),
