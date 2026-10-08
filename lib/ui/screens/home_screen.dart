@@ -22,6 +22,7 @@ import '../widgets/orbit_clock_24.dart';
 import '../widgets/add_schedule_block_sheet.dart';
 import '../widgets/schedule_block_card.dart';
 import '../widgets/monthly_work_target_card.dart';
+import '../widgets/unified_task_sheet.dart';
 import 'settings_screen.dart';
 import 'statistics_screen.dart';
 
@@ -48,7 +49,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => const AddScheduleBlockSheet(),
+      builder: (context) => const UnifiedTaskSheet(defaultEnableSchedule: true),
     );
   }
 
@@ -58,7 +59,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => AddScheduleBlockSheet(blockToEdit: block),
+      builder: (context) => UnifiedTaskSheet(blockToEdit: block),
     );
   }
 
@@ -79,11 +80,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
 
+    HapticFeedback.selectionClick();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => const AddHabitSheet(),
+      builder: (context) => const UnifiedTaskSheet(defaultEnableSchedule: false),
     );
   }
 
@@ -93,7 +95,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => AddHabitSheet(habitToEdit: habit),
+      builder: (context) => UnifiedTaskSheet(habitToEdit: habit),
     );
   }
 
