@@ -34,14 +34,29 @@
   <em>Home & Orbit Tracker · New Habit · Statistics · Zen Settings</em>
 </p>
 
-## ✨ What makes OrbitHabit different?
+## 🚀 What's New in v1.1
+
+OrbitHabit v1.1 introduces full daily routine scheduling and monthly professional tracking while keeping the Zen, uncluttered experience:
+
+- ⏰ **24-Hour Orbit Clock (`OrbitClock24`)**: A bespoke circular 24h dial inspired by astronomical dials. Features a live orbiting satellite indicator, color-coded time blocks, and effortless 1-tap habit completion.
+- 🌙 **Overnight & Rotating Shifts Support**: Seamlessly cross midnight without breaking timeline calculations (e.g. night shifts like `23:00 → 07:00` are rendered smoothly across the day boundary).
+- 💼 **Monthly Work Hours Target (120h)**:
+  - Designed for shift workers and professionals needing monthly hour goals rather than daily streaks.
+  - Interactive 1..31 calendar modal to log hours on any past or present day of the month with quick presets (4h, 6h, 7.5h, 8h, 10h, 12h) or custom values.
+  - Live overtime calculation (+Xh) and instant progress rings with dynamic color shifts as you approach your goal.
+- 🎛️ **Unified Zen Task Sheet (`UnifiedTaskSheet`)**: Progressive-disclosure creation sheet that consolidates Habit tracking and Schedule blocking into one clean workflow.
+  - **Visibility Controls**: Decide whether a block lives in the **Orbit**, in the **Clock**, or in **both** (perfect for passive routines like "Dormir" that guide your day on the clock without cluttering the monthly ring).
+  - Clean categorization, frequency selectors, and time-block pickers.
+- 🔄 **Bidirectional Sync & Clean Views**: Habits linked to schedule blocks automatically update each other. Habits with monthly targets display a dedicated Zen target card and won't produce duplicate percentage cards.
+- 🏆 **New Secret Achievement #27 ("🔥 Dedicado")**: Unlocked upon logging 120 or more hours of work in a single month, complete with PlayStation-style trophy popup and sound.
+
+## ✨ Core Features
 
 Most habit trackers use boring checkboxes or simple calendars. **OrbitHabit visualizes your month as a horseshoe-shaped orbital ring** — each habit is a concentric arc, and completed days light up in color. It's inspired by the Apple Watch activity rings, but reimagined as a celestial orbit.
 
 **Key highlights:**
-- ⏰ **24-Hour Orbit Clock & Schedule Mode (NEW in v1.1)** — Circular 24h time-blocking dial that natively supports night shifts (e.g., 23:00 - 07:00 crossing midnight seamlessly), live time satellite indicator, and 1-tap habit completion synced with your monthly orbits.
 - 🎨 **Custom orbital visualization** — Entirely hand-painted with Flutter's `CustomPaint` API (no libraries). Days are arc segments, habits are rings, and "perfect days" glow.
-- 🏆 **26 unique achievements** — Each with hand-drawn vector art (geometric illustrations painted with `CustomPainter`). Includes 14 hidden easter eggs.
+- 🏆 **27 unique achievements** — Each with hand-drawn vector art (geometric illustrations painted with `CustomPainter`). Includes 15 hidden trophies and easter eggs.
 - 🎮 **Gamification system** — Streak tiers (Bronze → Silver → Gold → Diamond) with animated glowing borders and haptic feedback.
 - 🔔 **PlayStation-style trophy popups** — Slide-in notifications when you unlock an achievement, with custom sounds.
 - 🎉 **Zen confetti physics** — 65 particles with custom fall speed, sway, and rotation. No libraries — pure math.
@@ -55,14 +70,14 @@ Most habit trackers use boring checkboxes or simple calendars. **OrbitHabit visu
 lib/
 ├── main.dart                          # App entry point + theme definitions
 ├── data/
-│   └── database_service.dart          # Hive persistence layer (2 boxes)
+│   └── database_service.dart          # Hive persistence layer (2 boxes: habits & schedule)
 ├── domain/models/
-│   ├── habit.dart                     # Core Habit model + Hive TypeAdapter
+│   ├── habit.dart                     # Core Habit model + Hive TypeAdapter + monthly hours
 │   ├── schedule_block.dart            # Schedule block model (overnight shift support)
 │   ├── user_settings.dart             # User preferences model
-│   └── achievement.dart               # 26 dynamically computed achievements
+│   └── achievement.dart               # 27 dynamically computed achievements
 ├── providers/
-│   ├── habit_provider.dart            # Riverpod Notifier — habit CRUD + state
+│   ├── habit_provider.dart            # Riverpod Notifier — habit CRUD + monthly hour logs
 │   ├── schedule_provider.dart         # Riverpod Notifier — daily schedule blocks
 │   └── settings_provider.dart         # Riverpod Notifier — settings + confetti
 ├── services/
@@ -72,14 +87,15 @@ lib/
 ├── ui/
 │   ├── screens/                       # 5 screens (Home, Onboarding, Settings, Stats, Manage)
 │   └── widgets/
-│       ├── orbit_tracker.dart         # ⭐ The signature widget — horseshoe orbital chart
-│       ├── orbit_clock_24.dart        # ⏰ 24-hour circular dial with live time tracking
-│       ├── add_schedule_block_sheet.dart # Time block creation with habit linking
+│       ├── orbit_tracker.dart         # ⭐ Signature widget — horseshoe orbital chart
+│       ├── orbit_clock_24.dart        # ⏰ 24-hour circular dial with live satellite tracking
+│       ├── unified_task_sheet.dart    # 🎛️ Unified habit & routine creator with visibility toggles
+│       ├── monthly_work_target_card.dart # 💼 120h work target card with interactive month logger
 │       ├── schedule_block_card.dart   # Daily timeline cards
 │       ├── achievement_art_painter.dart # Vector art for each trophy (CustomPainter)
 │       ├── confetti_overlay.dart       # Custom particle physics system
 │       ├── trophy_overlay.dart         # PlayStation-style achievement popup
-│       └── ...                        # 5 more UI widgets
+│       └── ...                        # Zen UI components
 └── utils/
     ├── date_utils.dart                # Date helpers
     └── streak_utils.dart              # Streak calculation (supports 2 frequency types)
@@ -87,7 +103,7 @@ lib/
 
 **Design decisions:**
 - **Riverpod 3.x** with manual `Notifier<T>` (no code generation) for full control and readability.
-- **Hive** for blazing-fast local storage with a custom `TypeAdapter` for the Habit model.
+- **Hive** for blazing-fast local storage with custom `TypeAdapter`s.
 - **Zero external UI libraries** for the orbital chart, 24h clock, confetti, and trophy art — all hand-painted with `CustomPaint` and `Canvas` API.
 - **Dependency injection** via `ProviderScope.overrides` — the `DatabaseService` can be swapped for a fake in tests.
 

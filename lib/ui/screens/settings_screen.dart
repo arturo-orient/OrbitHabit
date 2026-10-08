@@ -563,9 +563,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 24),
+            Center(
+              child: Text(
+                'OrbitHabit v1.1.0 · Sintoniza tu Vida 🪐',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: textColor?.withOpacity(0.4),
+                  letterSpacing: 0.8,
+                ),
+              ),
+            ),
             const SizedBox(height: 16),
-
-
           ],
         ),
       ),
