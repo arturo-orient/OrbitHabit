@@ -34,9 +34,30 @@
   <em>Home & Orbit Tracker · New Habit · Statistics · Zen Settings</em>
 </p>
 
-## 🚀 What's New in v1.1
+## 🚀 What's New in v1.1.1
 
-OrbitHabit v1.1 introduces full daily routine scheduling and monthly professional tracking while keeping the Zen, uncluttered experience:
+OrbitHabit v1.1.1 introduces comprehensive schedule planning, multi-slot routine architecture, precision color customization, and refined Swiss negative-space design:
+
+- 🗓️ **Interactive Shift & Schedule Planner (`ShiftCalendarScreen`)**:
+  - Dedicated monthly cuadrante calendar to plan, assign, and visualize rotating work shifts, study schedules, or custom routines across any month.
+  - Multi-shift palette with instant day painting (`1-tap to schedule`, `1-tap to erase`).
+  - Real-time monthly hours tracker calculating projected workload and shifts count.
+  - Direct shift deletion (`✕` badge & confirmation) with automatic cascading cleanup of orphan entries.
+- 🎛️ **Multi-Schedule Architecture in Task Creator (`UnifiedTaskSheet`)**:
+  - Define multiple schedule slots per activity directly from the task creator (*e.g., "Mañana: 07:00 - 15:00"* and *"Noche: 23:00 - 07:00"* under a single parent habit *"Trabajo"*).
+  - Universal terminology (*"Añadir Horario"*, *"Nuevo Horario"*, *"Sesiones este mes"*) adapted for any discipline (work, study, workout, mindfulness, sleep).
+  - Intelligent schedule conflict resolution: specific slots automatically supersede base placeholder hours to prevent visual clock collisions.
+- 🎨 **Full-Spectrum Chromatic Color Picker (`CustomColorPickerDialog`)**:
+  - Interactive HSV color spectrum with real-time hue bar, saturation-value canvas, and live preview.
+  - Direct 6-character HEX code input with auto-validation for surgical branding precision.
+  - Quick-access curated Zen author palettes alongside full custom RGB spectrum.
+- 🧘 **True Zen Negative Space (Clean Off-Days)**:
+  - **24-Hour Orbit Clock**: On rest days or unscheduled dates, the clock remains 100% clean and diaphanous—no ghost blocks cluttering your free time.
+  - **Monthly Orbit Wheel**: Non-scheduled days (weekends, off-shift days) display pure negative space with only the fine orbital guide rail, highlighting the natural rhythm of work and rest without toothless or broken grid artifacts.
+  - **Scheduled vs. Completed Distinction**: Scheduled pending days show a subtle 8% ghost cell; completed days light up in full author color.
+
+<details>
+<summary>📜 <strong>Previous Changelog: v1.1 Highlights</strong></summary>
 
 - ⏰ **24-Hour Orbit Clock (`OrbitClock24`)**: A bespoke circular 24h dial inspired by astronomical dials. Features a live orbiting satellite indicator, color-coded time blocks, and effortless 1-tap habit completion.
 - 🌙 **Overnight & Rotating Shifts Support**: Seamlessly cross midnight without breaking timeline calculations (e.g. night shifts like `23:00 → 07:00` are rendered smoothly across the day boundary).
@@ -49,6 +70,8 @@ OrbitHabit v1.1 introduces full daily routine scheduling and monthly professiona
   - Clean categorization, frequency selectors, and time-block pickers.
 - 🔄 **Bidirectional Sync & Clean Views**: Habits linked to schedule blocks automatically update each other. Habits with monthly targets display a dedicated Zen target card and won't produce duplicate percentage cards.
 - 🏆 **New Secret Achievement #27 ("🔥 Dedicado")**: Unlocked upon logging 120 or more hours of work in a single month, complete with PlayStation-style trophy popup and sound.
+
+</details>
 
 ## ✨ Core Features
 
@@ -85,11 +108,12 @@ lib/
 │   ├── sound_service.dart             # 3 precached audio effects (audioplayers)
 │   └── widget_service.dart            # Android home widget sync (home_widget)
 ├── ui/
-│   ├── screens/                       # 5 screens (Home, Onboarding, Settings, Stats, Manage)
+│   ├── screens/                       # 6 screens (Home, Shift Calendar, Onboarding, Settings, Stats, Manage)
 │   └── widgets/
-│       ├── orbit_tracker.dart         # ⭐ Signature widget — horseshoe orbital chart
+│       ├── orbit_tracker.dart         # ⭐ Signature widget — horseshoe orbital chart with clean rest gaps
 │       ├── orbit_clock_24.dart        # ⏰ 24-hour circular dial with live satellite tracking
-│       ├── unified_task_sheet.dart    # 🎛️ Unified habit & routine creator with visibility toggles
+│       ├── unified_task_sheet.dart    # 🎛️ Unified habit & multi-schedule creator with visibility toggles
+│       ├── custom_color_picker_dialog.dart # 🎨 Full-spectrum chromatic color picker with HEX support
 │       ├── monthly_work_target_card.dart # 💼 120h work target card with interactive month logger
 │       ├── schedule_block_card.dart   # Daily timeline cards
 │       ├── achievement_art_painter.dart # Vector art for each trophy (CustomPainter)
@@ -123,7 +147,7 @@ lib/
 
 <p align="center">
   <a href="https://github.com/arturo-orient/OrbitHabit/releases/latest/download/OrbitHabit.apk">
-    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.1-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
+    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.1.1-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
   </a>
 </p>
 

@@ -534,6 +534,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                           padding: const EdgeInsets.all(16.0),
                           child: OrbitTracker(
                             habits: activeHabits,
+                            scheduleBlocks: scheduleBlocks,
                             currentMonth: _currentMonth,
                             onDayColumnTapped: _showDayDetails,
                           ),

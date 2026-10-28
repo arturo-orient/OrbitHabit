@@ -2,17 +2,20 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../domain/models/habit.dart';
+import '../../domain/models/schedule_block.dart';
 import '../../utils/date_utils.dart';
 import '../theme/app_theme.dart';
 
 class OrbitTracker extends StatefulWidget {
   final List<Habit> habits;
+  final List<ScheduleBlock> scheduleBlocks;
   final DateTime currentMonth;
   final Function(DateTime date) onDayColumnTapped;
 
   const OrbitTracker({
     Key? key,
     required this.habits,
+    this.scheduleBlocks = const [],
     required this.currentMonth,
     required this.onDayColumnTapped,
   }) : super(key: key);
@@ -169,6 +172,7 @@ class _OrbitTrackerState extends State<OrbitTracker> with SingleTickerProviderSt
                 size: size,
                 painter: OrbitPainter(
                   habits: widget.habits,
+                  scheduleBlocks: widget.scheduleBlocks,
                   currentMonth: widget.currentMonth,
                   hoveredDay: _hoveredDay,
                   animatingDate: _lastTappedDate,
@@ -187,6 +191,7 @@ class _OrbitTrackerState extends State<OrbitTracker> with SingleTickerProviderSt
 
 class OrbitPainter extends CustomPainter {
   final List<Habit> habits;
+  final List<ScheduleBlock> scheduleBlocks;
   final DateTime currentMonth;
   final int? hoveredDay;
   final DateTime? animatingDate;
@@ -196,6 +201,7 @@ class OrbitPainter extends CustomPainter {
 
   OrbitPainter({
     required this.habits,
+    this.scheduleBlocks = const [],
     required this.currentMonth,
     this.hoveredDay,
     this.animatingDate,
@@ -339,6 +345,12 @@ class OrbitPainter extends CustomPainter {
       // Desfase concéntrico entre anillos (el anillo exterior sigue al interior)
       final ringLag = (h / math.max(habits.length, 1)) * 0.10;
 
+      // Buscar bloques de horario vinculados a este hábito
+      final relatedBlocks = scheduleBlocks.where((b) =>
+          b.habitId == habit.id ||
+          b.title.trim().toLowerCase() == habit.name.trim().toLowerCase()).toList();
+      final hasAssignedCalendarDates = relatedBlocks.any((b) => b.assignedDates.isNotEmpty);
+
       for (int d = 1; d <= daysInMonth; d++) {
         final dayFraction = (d - 1) / (daysInMonth > 0 ? daysInMonth : 1);
         final cellStart = (dayFraction * 0.72 + ringLag).clamp(0.0, 0.88);
@@ -352,8 +364,26 @@ class OrbitPainter extends CustomPainter {
           cellProgress = const Cubic(0.16, 1.0, 0.3, 1.0).transform(cellProgress);
         }
 
-        final dateIso = DateTime(currentMonth.year, currentMonth.month, d).toIso8601String().split('T').first;
+        final date = DateTime(currentMonth.year, currentMonth.month, d);
+        final dateIso = date.toIso8601String().split('T').first;
         final isCompleted = habit.completedDates.contains(dateIso);
+
+        // Determinamos si el hábito está programado para este día
+        bool isScheduled = true;
+        if (relatedBlocks.isNotEmpty) {
+          if (hasAssignedCalendarDates) {
+            isScheduled = relatedBlocks.any((b) => b.assignedDates.contains(dateIso));
+          } else {
+            isScheduled = relatedBlocks.any((b) => b.daysOfWeek.contains(date.weekday));
+          }
+        } else if (habit.frequencyType == 0) {
+          isScheduled = habit.activeWeekdays.contains(date.weekday);
+        }
+
+        // Si NO está programado para este día y NO está completado, dejamos el hueco limpio (espacio negativo puro)
+        if (!isScheduled && !isCompleted) {
+          continue;
+        }
         
         final startAngle = startOffsetAngle + ((d - 1) * anglePerDay);
         // Cada casilla se abre como un fuelle de acordeón a lo largo del arco
@@ -372,7 +402,7 @@ class OrbitPainter extends CustomPainter {
         if (isCompleted) {
           paint.color = habit.color.withValues(alpha: cellProgress);
         } else {
-          paint.color = habit.color.withValues(alpha: 0.05 * cellProgress);
+          paint.color = habit.color.withValues(alpha: 0.08 * cellProgress);
         }
 
         canvas.drawPath(path, paint);

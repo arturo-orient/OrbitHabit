@@ -16,6 +16,47 @@ enum TaskTargetMode {
   hours,  // Meta por horas / turnos (ej: 120 horas al mes)
 }
 
+class _ScheduleItem {
+  String id;
+  String title;
+  TimeOfDay startTime;
+  TimeOfDay endTime;
+
+  _ScheduleItem({
+    required this.id,
+    required this.title,
+    required this.startTime,
+    required this.endTime,
+  });
+
+  int get startMinutes => startTime.hour * 60 + startTime.minute;
+  int get endMinutes => endTime.hour * 60 + endTime.minute;
+  bool get isOvernight => endMinutes <= startMinutes;
+
+  int get durationMinutes {
+    if (isOvernight) {
+      return (1440 - startMinutes) + endMinutes;
+    }
+    return endMinutes - startMinutes;
+  }
+
+  String get formattedDuration {
+    final h = durationMinutes ~/ 60;
+    final m = durationMinutes % 60;
+    if (h > 0 && m > 0) return '${h}h ${m}m';
+    if (h > 0) return '${h}h';
+    return '${m}m';
+  }
+
+  String get formattedRange {
+    final sH = startTime.hour.toString().padLeft(2, '0');
+    final sM = startTime.minute.toString().padLeft(2, '0');
+    final eH = endTime.hour.toString().padLeft(2, '0');
+    final eM = endTime.minute.toString().padLeft(2, '0');
+    return '$sH:$sM - $eH:$eM';
+  }
+}
+
 class UnifiedTaskSheet extends ConsumerStatefulWidget {
   final Habit? habitToEdit;
   final ScheduleBlock? blockToEdit;
@@ -44,6 +85,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
   String? _linkedHabitId; // ID de hábito existente vinculado (para múltiples turnos)
 
   // 2. Horario en Reloj 24h
+  final List<_ScheduleItem> _schedules = [];
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
   late List<int> _activeWeekdays;
@@ -109,7 +151,29 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       _showInOrbit = habit != null;
       _linkedHabitId = block?.habitId;
 
-      // Horario
+      // Horario y Franjas asociadas
+      if (habit != null) {
+        final related = blocks.where((b) => b.habitId == habit!.id || b.title.trim().toLowerCase() == habit!.name.trim().toLowerCase()).toList();
+        for (final b in related) {
+          _schedules.add(_ScheduleItem(
+            id: b.id,
+            title: b.title,
+            startTime: TimeOfDay(hour: b.startHour, minute: b.startMinute),
+            endTime: TimeOfDay(hour: b.endHour, minute: b.endMinute),
+          ));
+        }
+        if (_schedules.isNotEmpty) {
+          _hasSchedule = true;
+        }
+      } else if (block != null) {
+        _schedules.add(_ScheduleItem(
+          id: block.id,
+          title: block.title,
+          startTime: TimeOfDay(hour: block.startHour, minute: block.startMinute),
+          endTime: TimeOfDay(hour: block.endHour, minute: block.endMinute),
+        ));
+      }
+
       if (block != null) {
         _startTime = TimeOfDay(hour: block.startHour, minute: block.startMinute);
         _endTime = TimeOfDay(hour: block.endHour, minute: block.endMinute);
@@ -149,8 +213,8 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       _hasSchedule = widget.defaultEnableSchedule;
       _showInOrbit = !widget.defaultEnableSchedule; // Si se crea desde el reloj, puede ser solo guía
 
-      _startTime = null;
-      _endTime = null;
+      _startTime = widget.defaultEnableSchedule ? const TimeOfDay(hour: 8, minute: 0) : null;
+      _endTime = widget.defaultEnableSchedule ? const TimeOfDay(hour: 16, minute: 0) : null;
       _activeWeekdays = [1, 2, 3, 4, 5, 6, 7];
 
       _targetMode = widget.defaultEnableSchedule ? TaskTargetMode.hours : TaskTargetMode.days;
@@ -221,6 +285,396 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         } else {
           _endTime = picked;
         }
+      });
+    }
+  }
+
+  Future<void> _showAddScheduleDialog() async {
+    HapticFeedback.selectionClick();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final parentTaskName = _nameController.text.trim();
+
+    TimeOfDay startTime = const TimeOfDay(hour: 8, minute: 0);
+    TimeOfDay endTime = const TimeOfDay(hour: 16, minute: 0);
+
+    if (_startTime != null && _endTime != null && _schedules.isEmpty) {
+      startTime = _startTime!;
+      endTime = _endTime!;
+    }
+
+    final scheduleTitleController = TextEditingController(
+      text: _schedules.isEmpty && parentTaskName.isNotEmpty ? parentTaskName : '',
+    );
+
+    final result = await showDialog<_ScheduleItem>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final startM = startTime.hour * 60 + startTime.minute;
+            final endM = endTime.hour * 60 + endTime.minute;
+            final isOvernight = endM <= startM;
+            final durationM = isOvernight ? (1440 - startM) + endM : endM - startM;
+            final durH = durationM ~/ 60;
+            final durMin = durationM % 60;
+            final durationStr = durH > 0 && durMin > 0
+                ? '${durH}h ${durMin}m'
+                : durH > 0
+                    ? '${durH}h'
+                    : '${durMin}m';
+
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 380),
+                  child: Container(
+                    padding: const EdgeInsets.all(22),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+                      borderRadius: AppTheme.radiusSm,
+                      border: Border.all(
+                        color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                        width: AppTheme.borderPrecision,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.08),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Header
+                        Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: _selectedColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Añadir Horario',
+                              style: AppTheme.displayStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                              ),
+                            ),
+                            const Spacer(),
+                            GestureDetector(
+                              onTap: () => Navigator.pop(dialogContext),
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: 20,
+                                color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Configura una franja horaria para esta actividad.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+
+                        // Nombre de la franja / horario
+                        Text(
+                          'NOMBRE DEL HORARIO (OPCIONAL)',
+                          style: AppTheme.monoStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.8,
+                            color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextField(
+                          controller: scheduleTitleController,
+                          style: TextStyle(
+                            color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                            fontSize: 14,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'ej. Mañana, Tarde, Bloque 1...',
+                            hintStyle: TextStyle(
+                              color: isDark ? Colors.white30 : Colors.black26,
+                              fontSize: 13,
+                            ),
+                            filled: true,
+                            fillColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: AppTheme.radiusSm,
+                              borderSide: BorderSide(
+                                color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                                width: AppTheme.borderPrecision,
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: AppTheme.radiusSm,
+                              borderSide: BorderSide(
+                                color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                                width: AppTheme.borderPrecision,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: AppTheme.radiusSm,
+                              borderSide: BorderSide(
+                                color: _selectedColor,
+                                width: 1.4,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Horas: Desde / Hasta
+                        Text(
+                          'HORAS',
+                          style: AppTheme.monoStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.8,
+                            color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            // Desde
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () async {
+                                  final p = await showTimePicker(
+                                    context: context,
+                                    initialTime: startTime,
+                                    builder: (context, child) => MediaQuery(
+                                      data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+                                      child: Theme(
+                                        data: Theme.of(context).copyWith(
+                                          colorScheme: Theme.of(context).colorScheme.copyWith(primary: _selectedColor),
+                                        ),
+                                        child: child ?? const SizedBox(),
+                                      ),
+                                    ),
+                                  );
+                                  if (p != null) {
+                                    setDialogState(() => startTime = p);
+                                  }
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                                    borderRadius: AppTheme.radiusSm,
+                                    border: Border.all(
+                                      color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                                      width: AppTheme.borderPrecision,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Desde',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}',
+                                        style: AppTheme.monoStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Icon(Icons.arrow_forward_rounded, size: 14, color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted),
+                            const SizedBox(width: 8),
+                            // Hasta
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () async {
+                                  final p = await showTimePicker(
+                                    context: context,
+                                    initialTime: endTime,
+                                    builder: (context, child) => MediaQuery(
+                                      data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+                                      child: Theme(
+                                        data: Theme.of(context).copyWith(
+                                          colorScheme: Theme.of(context).colorScheme.copyWith(primary: _selectedColor),
+                                        ),
+                                        child: child ?? const SizedBox(),
+                                      ),
+                                    ),
+                                  );
+                                  if (p != null) {
+                                    setDialogState(() => endTime = p);
+                                  }
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                                    borderRadius: AppTheme.radiusSm,
+                                    border: Border.all(
+                                      color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                                      width: AppTheme.borderPrecision,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Hasta',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}',
+                                        style: AppTheme.monoStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Duración badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isOvernight ? const Color(0xFF9EA1D4).withValues(alpha: 0.14) : _selectedColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: isOvernight ? const Color(0xFF9EA1D4).withValues(alpha: 0.3) : _selectedColor.withValues(alpha: 0.25),
+                              width: 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isOvernight ? Icons.nights_stay_rounded : Icons.schedule_rounded,
+                                size: 13,
+                                color: isOvernight ? const Color(0xFF9EA1D4) : _selectedColor,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Duración: $durationStr${isOvernight ? ' · 🌙 Cruza medianoche' : ''}',
+                                style: AppTheme.monoStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: isOvernight ? const Color(0xFF9EA1D4) : _selectedColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Action Buttons
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => Navigator.pop(dialogContext),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                  side: BorderSide(
+                                    color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                                    width: AppTheme.borderPrecision,
+                                  ),
+                                  shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
+                                  padding: const EdgeInsets.symmetric(vertical: 13),
+                                ),
+                                child: const Text('Cancelar', style: TextStyle(fontSize: 13)),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  final titleText = scheduleTitleController.text.trim();
+                                  final finalTitle = titleText.isNotEmpty
+                                      ? titleText
+                                      : (parentTaskName.isNotEmpty ? parentTaskName : 'Horario');
+                                  Navigator.pop(
+                                    dialogContext,
+                                    _ScheduleItem(
+                                      id: 'block_${DateTime.now().millisecondsSinceEpoch}_${_schedules.length}',
+                                      title: finalTitle,
+                                      startTime: startTime,
+                                      endTime: endTime,
+                                    ),
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _selectedColor,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
+                                  padding: const EdgeInsets.symmetric(vertical: 13),
+                                ),
+                                child: const Text(
+                                  'Añadir Horario',
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    scheduleTitleController.dispose();
+
+    if (result != null && mounted) {
+      HapticFeedback.mediumImpact();
+      setState(() {
+        _schedules.add(result);
+        _hasSchedule = true;
       });
     }
   }
@@ -351,38 +805,80 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     }
 
     // 4. Manejo de Modo Reloj 24h
-    final isNewBlock = !blocks.any((b) => b.id == blockId);
-    if (_hasSchedule && _startTime != null && _endTime != null) {
+    if (_hasSchedule) {
       final finalHabitId = _linkedHabitId ?? (_showInOrbit ? habitId : null);
       final hasHourTarget = (_showInOrbit && _targetMode == TaskTargetMode.hours) ||
           (_linkedHabitId != null &&
               (habits.cast<Habit?>().firstWhere((h) => h?.id == _linkedHabitId, orElse: () => null)?.hasMonthlyTarget ?? false));
 
-      final scheduleBlock = ScheduleBlock(
-        id: blockId,
-        title: title,
-        startHour: _startTime!.hour,
-        startMinute: _startTime!.minute,
-        endHour: _endTime!.hour,
-        endMinute: _endTime!.minute,
-        colorValue: _selectedColor.value,
-        habitId: finalHabitId,
-        daysOfWeek: _activeWeekdays,
-        hasMonthlyHourTarget: hasHourTarget,
-        monthlyTargetHours: _monthlyTargetHours,
-        completedDates: _completedDates,
-        assignedDates: widget.blockToEdit?.assignedDates ?? [],
-        extraHours: _extraHours,
-      );
+      // Guardar todos los horarios definidos en la lista _schedules:
+      for (final s in _schedules) {
+        final isNew = !blocks.any((b) => b.id == s.id);
+        final scheduleBlock = ScheduleBlock(
+          id: s.id,
+          title: s.title,
+          startHour: s.startTime.hour,
+          startMinute: s.startTime.minute,
+          endHour: s.endTime.hour,
+          endMinute: s.endTime.minute,
+          colorValue: _selectedColor.value,
+          habitId: finalHabitId,
+          daysOfWeek: _activeWeekdays,
+          hasMonthlyHourTarget: hasHourTarget,
+          monthlyTargetHours: _monthlyTargetHours,
+          completedDates: _completedDates,
+          assignedDates: widget.blockToEdit?.id == s.id ? widget.blockToEdit!.assignedDates : [],
+          extraHours: _extraHours,
+        );
 
-      if (isNewBlock) {
-        ref.read(scheduleProvider.notifier).addBlock(scheduleBlock);
-      } else {
-        ref.read(scheduleProvider.notifier).updateBlock(scheduleBlock);
+        if (isNew) {
+          ref.read(scheduleProvider.notifier).addBlock(scheduleBlock);
+        } else {
+          ref.read(scheduleProvider.notifier).updateBlock(scheduleBlock);
+        }
       }
-    } else if (!isNewBlock) {
-      // Si el usuario desactivó el horario y antes tenía bloque, se elimina del reloj
-      ref.read(scheduleProvider.notifier).deleteBlock(blockId);
+
+      if (_schedules.isNotEmpty) {
+        // Si antes había un bloque individual genérico y ahora se usan franjas múltiples, eliminar el genérico viejo para que no choquen horas:
+        if (editingBlockId != null && !_schedules.any((s) => s.id == editingBlockId)) {
+          ref.read(scheduleProvider.notifier).deleteBlock(editingBlockId);
+        }
+      } else {
+        // Si no se usó la lista de franjas, guardar el horario base único (con fallback seguro a 08:00 - 16:00):
+        final start = _startTime ?? const TimeOfDay(hour: 8, minute: 0);
+        final end = _endTime ?? const TimeOfDay(hour: 16, minute: 0);
+        final isNewBlock = !blocks.any((b) => b.id == blockId);
+        final scheduleBlock = ScheduleBlock(
+          id: blockId,
+          title: title,
+          startHour: start.hour,
+          startMinute: start.minute,
+          endHour: end.hour,
+          endMinute: end.minute,
+          colorValue: _selectedColor.value,
+          habitId: finalHabitId,
+          daysOfWeek: _activeWeekdays,
+          hasMonthlyHourTarget: hasHourTarget,
+          monthlyTargetHours: _monthlyTargetHours,
+          completedDates: _completedDates,
+          assignedDates: widget.blockToEdit?.assignedDates ?? [],
+          extraHours: _extraHours,
+        );
+
+        if (isNewBlock) {
+          ref.read(scheduleProvider.notifier).addBlock(scheduleBlock);
+        } else {
+          ref.read(scheduleProvider.notifier).updateBlock(scheduleBlock);
+        }
+      }
+    } else {
+      // Si el horario está desactivado, limpiar bloques asociados
+      for (final s in _schedules) {
+        ref.read(scheduleProvider.notifier).deleteBlock(s.id);
+      }
+      if (editingBlockId != null) {
+        ref.read(scheduleProvider.notifier).deleteBlock(editingBlockId);
+      }
     }
 
     HapticFeedback.mediumImpact();
@@ -432,15 +928,12 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       }
 
       final blockId = widget.blockToEdit?.id;
-      if (blockId != null) {
-        ref.read(scheduleProvider.notifier).deleteBlock(blockId);
-      } else if (habitId != null) {
-        final match = blocks.cast<ScheduleBlock?>().firstWhere(
-              (b) => b?.habitId == habitId,
-              orElse: () => null,
-            );
-        if (match != null) {
-          ref.read(scheduleProvider.notifier).deleteBlock(match.id);
+      // Borrar en cascada todos los bloques asociados por habitId, por blockId o por título coincidente
+      for (final b in blocks) {
+        if ((habitId != null && b.habitId == habitId) ||
+            b.id == blockId ||
+            (title.isNotEmpty && b.title.trim().toLowerCase() == title.toLowerCase())) {
+          ref.read(scheduleProvider.notifier).deleteBlock(b.id);
         }
       }
 
@@ -472,7 +965,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
     String modeBadgeText = 'Modo Órbita';
     if (_linkedHabitId != null) {
-      modeBadgeText = 'Turno Vinculado';
+      modeBadgeText = 'Horario Vinculado';
     } else if (_hasSchedule && _showInOrbit) {
       modeBadgeText = 'Órbita + Reloj';
     } else if (_hasSchedule && !_showInOrbit) {
@@ -737,7 +1230,13 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                         return;
                       }
                       HapticFeedback.selectionClick();
-                      setState(() => _hasSchedule = val);
+                      setState(() {
+                        _hasSchedule = val;
+                        if (val && _startTime == null && _endTime == null && _schedules.isEmpty) {
+                          _startTime = const TimeOfDay(hour: 8, minute: 0);
+                          _endTime = const TimeOfDay(hour: 16, minute: 0);
+                        }
+                      });
                     },
                   ),
                   const Divider(height: 8),
@@ -798,73 +1297,35 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
             // 4. Sección Horario (Solo si _hasSchedule está activado)
             if (_hasSchedule) ...[
-              _buildSectionTitle('Horario en el Reloj'),
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Desde
-                  Expanded(
+                  _buildSectionTitle('Horarios en el Reloj 24h'),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
                     child: GestureDetector(
-                      onTap: () => _pickTime(true),
+                      onTap: _showAddScheduleDialog,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: theme.scaffoldBackgroundColor,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                          color: _selectedColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _selectedColor.withValues(alpha: 0.35),
+                            width: 1.0,
+                          ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
+                            Icon(Icons.add_rounded, size: 14, color: _selectedColor),
+                            const SizedBox(width: 4),
                             Text(
-                              'Desde',
-                              style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 12),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _startTime != null
-                                  ? '${_startTime!.hour.toString().padLeft(2, '0')}:${_startTime!.minute.toString().padLeft(2, '0')}'
-                                  : '--:--',
-                              style: GoogleFonts.outfit(
-                                fontSize: 20,
+                              'Añadir Horario',
+                              style: TextStyle(
+                                color: _selectedColor,
+                                fontSize: 11.5,
                                 fontWeight: FontWeight.bold,
-                                color: _startTime != null ? textColor : textColor?.withOpacity(0.35),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Icon(Icons.arrow_forward, color: textColor?.withOpacity(0.3), size: 16),
-                  const SizedBox(width: 10),
-                  // Hasta
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => _pickTime(false),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                        decoration: BoxDecoration(
-                          color: theme.scaffoldBackgroundColor,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.grey.withOpacity(0.2)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Hasta',
-                              style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 12),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _endTime != null
-                                  ? '${_endTime!.hour.toString().padLeft(2, '0')}:${_endTime!.minute.toString().padLeft(2, '0')}'
-                                  : '--:--',
-                              style: GoogleFonts.outfit(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: _endTime != null ? textColor : textColor?.withOpacity(0.35),
                               ),
                             ),
                           ],
@@ -874,69 +1335,209 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              if (_hasSelectedTimes) ...[
-                // Badge de duración & aviso nocturno
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: _isOvernight
-                        ? const Color(0xFF9EA1D4).withOpacity(0.12)
-                        : _selectedColor.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _isOvernight ? Icons.nights_stay : Icons.schedule,
-                        size: 15,
-                        color: _isOvernight ? const Color(0xFF9EA1D4) : _selectedColor,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _isOvernight
-                            ? '$_formattedDuration · 🌙 Cruza medianoche (Turno nocturno)'
-                            : 'Duración: $_formattedDuration',
-                        style: TextStyle(
-                          color: _isOvernight ? const Color(0xFF9EA1D4) : _selectedColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+
+              // Lista de Franjas configuradas
+              if (_schedules.isNotEmpty) ...[
+                ..._schedules.map((item) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: AppTheme.bentoCard(
+                      isLight: !isDark,
+                      borderRadius: AppTheme.radiusSm,
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: _selectedColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.title,
+                                style: AppTheme.displayStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                ),
+                              ),
+                              Text(
+                                '${item.formattedRange} · ${item.formattedDuration}${item.isOvernight ? ' · 🌙 Nocturno' : ''}',
+                                style: AppTheme.monoStyle(
+                                  fontSize: 10.5,
+                                  color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _schedules.remove(item));
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Icon(Icons.close_rounded, size: 14, color: Colors.redAccent),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+                const SizedBox(height: 6),
+              ] else ...[
+                Row(
+                  children: [
+                    // Desde
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => _pickTime(true),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                          decoration: BoxDecoration(
+                            color: theme.scaffoldBackgroundColor,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Desde',
+                                style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 12),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _startTime != null
+                                    ? '${_startTime!.hour.toString().padLeft(2, '0')}:${_startTime!.minute.toString().padLeft(2, '0')}'
+                                    : '--:--',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: _startTime != null ? textColor : textColor?.withOpacity(0.35),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 10),
+                    Icon(Icons.arrow_forward, color: textColor?.withOpacity(0.3), size: 16),
+                    const SizedBox(width: 10),
+                    // Hasta
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => _pickTime(false),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                          decoration: BoxDecoration(
+                            color: theme.scaffoldBackgroundColor,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Hasta',
+                                style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 12),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _endTime != null
+                                    ? '${_endTime!.hour.toString().padLeft(2, '0')}:${_endTime!.minute.toString().padLeft(2, '0')}'
+                                    : '--:--',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: _endTime != null ? textColor : textColor?.withOpacity(0.35),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ] else ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: (theme.brightness == Brightness.dark ? Colors.white : Colors.black).withOpacity(0.04),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: (theme.brightness == Brightness.dark ? Colors.white : Colors.black).withOpacity(0.08),
+                const SizedBox(height: 8),
+                if (_hasSelectedTimes) ...[
+                  // Badge de duración & aviso nocturno
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _isOvernight
+                          ? const Color(0xFF9EA1D4).withOpacity(0.12)
+                          : _selectedColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _isOvernight ? Icons.nights_stay : Icons.schedule,
+                          size: 15,
+                          color: _isOvernight ? const Color(0xFF9EA1D4) : _selectedColor,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _isOvernight
+                              ? '$_formattedDuration · 🌙 Cruza medianoche (Nocturno)'
+                              : 'Duración: $_formattedDuration',
+                          style: TextStyle(
+                            color: _isOvernight ? const Color(0xFF9EA1D4) : _selectedColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.touch_app_outlined,
-                        size: 15,
-                        color: textColor?.withOpacity(0.5),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: (theme.brightness == Brightness.dark ? Colors.white : Colors.black).withOpacity(0.04),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: (theme.brightness == Brightness.dark ? Colors.white : Colors.black).withOpacity(0.08),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Toca "Desde" y "Hasta" para asignar el tramo horario',
-                        style: TextStyle(
-                          color: textColor?.withOpacity(0.55),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.touch_app_outlined,
+                          size: 15,
+                          color: textColor?.withOpacity(0.5),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Text(
+                          'Toca "Desde" y "Hasta" o pulsa "Añadir Horario" para crear variantes',
+                          style: TextStyle(
+                            color: textColor?.withOpacity(0.55),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ],
             ],
 
@@ -1154,7 +1755,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
-                                    'Turnos este mes:',
+                                    'Sesiones este mes:',
                                     style: TextStyle(
                                       color: textColor?.withOpacity(0.85),
                                       fontSize: 13,
@@ -1168,7 +1769,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(
-                                      '$completedThisMonth turnos · ${totalWorkedHours.toStringAsFixed(0)} / ${_monthlyTargetHours}h',
+                                      '$completedThisMonth sesiones · ${totalWorkedHours.toStringAsFixed(0)} / ${_monthlyTargetHours}h',
                                       style: GoogleFonts.outfit(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
@@ -1180,7 +1781,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                'Toca los días en los que has hecho turno:',
+                                'Toca los días en los que has completado el horario:',
                                 style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 11),
                               ),
                               const SizedBox(height: 10),
@@ -1365,8 +1966,8 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         const SizedBox(height: 3),
         Text(
           linkedHabit != null
-              ? 'Este turno sumará automáticamente al objetivo de "${linkedHabit.name}".'
-              : 'Selecciona si este turno es una variante de un hábito existente:',
+              ? 'Este horario sumará automáticamente al objetivo de "${linkedHabit.name}".'
+              : 'Selecciona si este horario es una variante de un hábito existente:',
           style: TextStyle(
             color: linkedHabit != null ? AppTheme.dynamicAccent(isDark) : textColor?.withOpacity(0.5),
             fontSize: 11.5,

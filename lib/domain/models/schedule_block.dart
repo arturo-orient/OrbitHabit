@@ -81,6 +81,11 @@ class ScheduleBlock {
     if (assignedDates.isNotEmpty) {
       return assignedDates.contains(iso);
     }
+    // Si es un turno/actividad planificable con meta de horas mensual
+    // y aún no se ha asignado a ningún día en el calendario, no debe dibujarse todos los días:
+    if (hasMonthlyHourTarget) {
+      return false;
+    }
     return appliesToWeekday(date.weekday);
   }
 
@@ -88,17 +93,8 @@ class ScheduleBlock {
   /// Correctly handles overnight shifts crossing midnight!
   bool isActiveAt(DateTime now) {
     final currentMinutes = now.hour * 60 + now.minute;
-    final todayIso = now.toIso8601String().split('T').first;
-    final yesterdayIso = now.subtract(const Duration(days: 1)).toIso8601String().split('T').first;
-    final todayWeekday = now.weekday;
-    final yesterdayWeekday = todayWeekday == 1 ? 7 : todayWeekday - 1;
-
-    final appliesToday = assignedDates.isNotEmpty
-        ? assignedDates.contains(todayIso)
-        : daysOfWeek.contains(todayWeekday);
-    final appliesYesterday = assignedDates.isNotEmpty
-        ? assignedDates.contains(yesterdayIso)
-        : daysOfWeek.contains(yesterdayWeekday);
+    final appliesToday = appliesToDate(now);
+    final appliesYesterday = appliesToDate(now.subtract(const Duration(days: 1)));
 
     if (!isOvernight) {
       // Normal block within same day (e.g. 08:00 - 09:00)

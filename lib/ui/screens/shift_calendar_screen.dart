@@ -57,6 +57,62 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
     });
   }
 
+  void _confirmDeleteShift(ScheduleBlock block) async {
+    HapticFeedback.selectionClick();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          '¿Eliminar "${block.title}"?',
+          style: AppTheme.displayStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+          ),
+        ),
+        content: Text(
+          'Se eliminará este horario (${block.formattedTimeRange}) y sus asignaciones del calendario.',
+          style: AppTheme.bodyStyle(
+            fontSize: 13,
+            color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancelar',
+              style: TextStyle(
+                color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE11D48),
+              foregroundColor: Colors.white,
+              elevation: 0,
+            ),
+            child: const Text('Eliminar Horario'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      ref.read(scheduleProvider.notifier).deleteBlock(block.id);
+      setState(() {
+        if (_activeShiftId == block.id) {
+          _activeShiftId = null;
+        }
+      });
+    }
+  }
+
   void _createNewShift() {
     HapticFeedback.selectionClick();
     showModalBottomSheet(
@@ -109,7 +165,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
       backgroundColor: isDark ? AppTheme.obsidianCanvas : AppTheme.boneCanvas,
       appBar: AppBar(
         title: Text(
-          'Planificador de Turnos',
+          'Planificador de Horarios',
           style: AppTheme.displayStyle(
             fontSize: 17,
             fontWeight: FontWeight.w700,
@@ -198,9 +254,9 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // 2. Paleta de Turnos (Selector de qué turno pintar)
+                // 2. Paleta de Horarios (Selector de qué horario pintar)
                 Text(
-                  'Elige un turno y toca los días del calendario:',
+                  'Elige un horario y toca los días del calendario:',
                   style: AppTheme.bodyStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -229,6 +285,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                 _activeShiftId = block.id;
                               });
                             },
+                            onLongPress: () => _confirmDeleteShift(block),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 160),
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -276,6 +333,24 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                           : AppTheme.boneTextMuted,
                                     ),
                                   ),
+                                  if (isSelected) ...[
+                                    const SizedBox(width: 8),
+                                    GestureDetector(
+                                      onTap: () => _confirmDeleteShift(block),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.redAccent.withValues(alpha: 0.2),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.close_rounded,
+                                          size: 13,
+                                          color: Colors.redAccent,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -358,7 +433,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                'Nuevo Turno',
+                                'Nuevo Horario',
                                 style: AppTheme.displayStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
@@ -529,7 +604,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '$totalAssignedShifts turnos planificados',
+                            '$totalAssignedShifts días planificados',
                             style: AppTheme.displayStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
