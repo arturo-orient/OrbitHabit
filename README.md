@@ -21,20 +21,28 @@
 ---
 
 <p align="center">
-  <img src="assets/img/Home.jpeg" width="200" alt="Home Screen"/>
+  <img src="assets/img/Home.jpeg" width="180" alt="Home Screen"/>
   &nbsp;&nbsp;
-  <img src="assets/img/Agregar Tarea.jpeg" width="200" alt="Add Habit"/>
+  <img src="assets/img/planificador_turnos_v111.png" width="180" alt="Planificador de Horarios"/>
   &nbsp;&nbsp;
-  <img src="assets/img/Estadisticas.jpeg" width="200" alt="Statistics"/>
+  <img src="assets/img/Agregar Tarea.jpeg" width="180" alt="Add Habit"/>
   &nbsp;&nbsp;
-  <img src="assets/img/Perfil.jpeg" width="200" alt="Settings"/>
+  <img src="assets/img/Estadisticas.jpeg" width="180" alt="Statistics"/>
+  &nbsp;&nbsp;
+  <img src="assets/img/Perfil.jpeg" width="180" alt="Settings"/>
 </p>
 
 <p align="center">
-  <em>Home & Orbit Tracker · New Habit · Statistics · Zen Settings</em>
+  <em>Home & Orbit Tracker · 🗓️ Planificador de Horarios (v1.1.1) · New Habit · Statistics · Zen Settings</em>
 </p>
 
 ## 🚀 What's New in v1.1.1
+
+<p align="center">
+  <img src="assets/img/planificador_turnos_v111.png" width="300" alt="Planificador de Horarios & Turnos"/>
+  <br/>
+  <em>🗓️ Planificador de Horarios y Cuadrante de Turnos Rotativos en OrbitHabit v1.1.1</em>
+</p>
 
 OrbitHabit v1.1.1 introduces comprehensive schedule planning, multi-slot routine architecture, precision color customization, and refined Swiss negative-space design:
 
