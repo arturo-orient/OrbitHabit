@@ -10,58 +10,22 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
     final db = ref.read(databaseProvider);
     final rawList = db.getSetting(_storageKey);
 
-    if (rawList == null || (rawList is List && rawList.isEmpty)) {
-      // Default initial schedule template (especially tailored for night-shift & healthy habit rhythm)
-      return _defaultSchedule();
+    if (rawList == null) {
+      return const [];
     }
 
     try {
       if (rawList is List) {
-        return rawList
+        final list = rawList
             .map((item) => ScheduleBlock.fromMap(Map<dynamic, dynamic>.from(item as Map)))
+            .where((b) => !b.id.startsWith('default_'))
             .toList();
+        return list;
       }
     } catch (_) {
-      // Fallback
+      return const [];
     }
-    return _defaultSchedule();
-  }
-
-  static List<ScheduleBlock> _defaultSchedule() {
-    return [
-      const ScheduleBlock(
-        id: 'default_work',
-        title: 'Trabajo Nocturno',
-        startHour: 23,
-        startMinute: 0,
-        endHour: 7,
-        endMinute: 0,
-        colorValue: 0xFF9EA1D4, // Periwinkle
-        daysOfWeek: [1, 2, 3, 4, 5], // Lunes a Viernes
-        hasMonthlyHourTarget: true,
-        monthlyTargetHours: 120, // 120 horas al mes
-      ),
-      const ScheduleBlock(
-        id: 'default_gym',
-        title: 'Entrenamiento / Gym',
-        startHour: 8,
-        startMinute: 0,
-        endHour: 9,
-        endMinute: 30,
-        colorValue: 0xFF84A59D, // Verde Salvia
-        daysOfWeek: [1, 2, 3, 4, 5, 6],
-      ),
-      const ScheduleBlock(
-        id: 'default_sleep',
-        title: 'Descanso & Sueño',
-        startHour: 10,
-        startMinute: 30,
-        endHour: 17,
-        endMinute: 30,
-        colorValue: 0xFFB5A6C9, // Azul Lavanda
-        daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
-      ),
-    ];
+    return const [];
   }
 
   Future<void> _persist() async {

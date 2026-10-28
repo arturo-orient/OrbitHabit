@@ -7,6 +7,7 @@ import '../../domain/models/schedule_block.dart';
 import '../../providers/habit_provider.dart';
 import '../../providers/schedule_provider.dart';
 import '../../services/sound_service.dart';
+import '../theme/app_theme.dart';
 
 enum TaskTargetMode {
   none,   // Sin meta fija
@@ -32,6 +33,7 @@ class UnifiedTaskSheet extends ConsumerStatefulWidget {
 
 class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
   final _nameController = TextEditingController();
+  String? _nameError;
 
   late Color _selectedColor;
 
@@ -77,19 +79,15 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     Habit? habit = widget.habitToEdit;
     ScheduleBlock? block = widget.blockToEdit;
 
-    // Vinculación cruzada inteligente
+    // Vinculación cruzada por ID explícito
     if (habit != null && block == null) {
       block = blocks.cast<ScheduleBlock?>().firstWhere(
-            (b) =>
-                b?.habitId == habit!.id ||
-                b?.title.trim().toLowerCase() == habit.name.trim().toLowerCase(),
+            (b) => b?.habitId == habit!.id,
             orElse: () => null,
           );
-    } else if (block != null && habit == null) {
+    } else if (block != null && habit == null && block.habitId != null) {
       habit = habits.cast<Habit?>().firstWhere(
-            (h) =>
-                h?.id == block!.habitId ||
-                h?.name.trim().toLowerCase() == block.title.trim().toLowerCase(),
+            (h) => h?.id == block!.habitId,
             orElse: () => null,
           );
     }
@@ -218,36 +216,63 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
   void _saveTask() {
     final title = _nameController.text.trim();
-    if (title.isEmpty) return;
-
-    if (_activeWeekdays.isEmpty) {
-      _activeWeekdays = [1, 2, 3, 4, 5, 6, 7];
+    if (title.isEmpty) {
+      HapticFeedback.vibrate();
+      setState(() {
+        _nameError = 'Introduce un nombre para la tarea';
+      });
+      return;
     }
 
     final habits = ref.read(habitsProvider);
     final blocks = ref.read(scheduleProvider);
 
-    // 1. Determinar ID de Hábito
-    String habitId = widget.habitToEdit?.id ?? widget.blockToEdit?.habitId ?? '';
-    if (habitId.isEmpty) {
-      final existingByName = habits.cast<Habit?>().firstWhere(
-            (h) => h != null && h.name.trim().toLowerCase() == title.toLowerCase(),
+    // 1. Identificadores si estamos editando
+    final editingHabitId = widget.habitToEdit?.id ?? widget.blockToEdit?.habitId;
+    final editingBlockId = widget.blockToEdit?.id;
+
+    // 2. Validación de Duplicados: proteger contra sobreescritura y colisión de nombres
+    if (_showInOrbit) {
+      final duplicateHabit = habits.cast<Habit?>().firstWhere(
+            (h) =>
+                h != null &&
+                h.id != editingHabitId &&
+                h.name.trim().toLowerCase() == title.toLowerCase(),
             orElse: () => null,
           );
-      habitId = existingByName?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+      if (duplicateHabit != null) {
+        HapticFeedback.vibrate();
+        setState(() {
+          _nameError = 'Ya existe un hábito llamado "$title"';
+        });
+        return;
+      }
     }
 
-    // 2. Determinar ID de Bloque
-    String blockId = widget.blockToEdit?.id ?? '';
-    if (blockId.isEmpty) {
-      final existingBlock = blocks.cast<ScheduleBlock?>().firstWhere(
+    if (_hasSchedule) {
+      final duplicateBlock = blocks.cast<ScheduleBlock?>().firstWhere(
             (b) =>
-                b?.habitId == habitId ||
-                b?.title.trim().toLowerCase() == title.toLowerCase(),
+                b != null &&
+                b.id != editingBlockId &&
+                b.title.trim().toLowerCase() == title.toLowerCase(),
             orElse: () => null,
           );
-      blockId = existingBlock?.id ?? 'block_$habitId';
+      if (duplicateBlock != null) {
+        HapticFeedback.vibrate();
+        setState(() {
+          _nameError = 'Ya existe un bloque llamado "$title" en el reloj';
+        });
+        return;
+      }
     }
+
+    if (_activeWeekdays.isEmpty) {
+      _activeWeekdays = [1, 2, 3, 4, 5, 6, 7];
+    }
+
+    // IDs finales: si es nuevo, se genera un ID estrictamente único con timestamp y aleatorio
+    final habitId = editingHabitId ?? 'habit_${DateTime.now().millisecondsSinceEpoch}';
+    final blockId = editingBlockId ?? 'block_${DateTime.now().millisecondsSinceEpoch}';
 
     // 3. Manejo de Modo Órbita (Rueda de Hábitos)
     if (_showInOrbit) {
@@ -274,18 +299,9 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         ref.read(habitsProvider.notifier).updateHabit(habit);
       }
     } else {
-      // Si el usuario decide NO mostrarlo en la Órbita (ej. Dormir como guía del reloj)
-      // Eliminamos cualquier hábito vinculado para que no contamine la rueda orbital
-      if (widget.habitToEdit != null) {
-        ref.read(habitsProvider.notifier).deleteHabit(widget.habitToEdit!.id);
-      } else {
-        final existingByName = habits.cast<Habit?>().firstWhere(
-              (h) => h != null && h.name.trim().toLowerCase() == title.toLowerCase(),
-              orElse: () => null,
-            );
-        if (existingByName != null) {
-          ref.read(habitsProvider.notifier).deleteHabit(existingByName.id);
-        }
+      // Si el usuario decide NO mostrarlo en la Órbita
+      if (editingHabitId != null) {
+        ref.read(habitsProvider.notifier).deleteHabit(editingHabitId);
       }
     }
 
@@ -362,14 +378,6 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       final habitId = widget.habitToEdit?.id ?? widget.blockToEdit?.habitId;
       if (habitId != null) {
         ref.read(habitsProvider.notifier).deleteHabit(habitId);
-      } else if (title.isNotEmpty) {
-        final match = habits.cast<Habit?>().firstWhere(
-              (h) => h?.name.trim().toLowerCase() == title.toLowerCase(),
-              orElse: () => null,
-            );
-        if (match != null) {
-          ref.read(habitsProvider.notifier).deleteHabit(match.id);
-        }
       }
 
       final blockId = widget.blockToEdit?.id;
@@ -417,10 +425,16 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       modeBadgeText = 'Solo Reloj (Guía)';
     }
 
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
       decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        color: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        border: Border.all(
+          color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
+          width: AppTheme.borderPrecision,
+        ),
       ),
       padding: EdgeInsets.only(
         left: 24,
@@ -497,21 +511,47 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
             // 1. Nombre de la Tarea
             TextField(
               controller: _nameController,
+              onChanged: (val) {
+                if (_nameError != null) {
+                  setState(() => _nameError = null);
+                }
+              },
               style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 16),
               decoration: InputDecoration(
                 labelText: 'Nombre de la tarea',
                 hintText: 'ej. Trabajar, Dormir, Gimnasio...',
+                errorText: _nameError,
+                errorStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.redAccent,
+                ),
                 hintStyle: TextStyle(color: textColor?.withOpacity(0.35)),
-                labelStyle: TextStyle(color: textColor?.withOpacity(0.6)),
+                labelStyle: TextStyle(
+                  color: _nameError != null ? Colors.redAccent : textColor?.withOpacity(0.6),
+                ),
                 filled: true,
                 fillColor: theme.scaffoldBackgroundColor,
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: Colors.grey.withOpacity(0.2)),
+                  borderSide: BorderSide(
+                    color: _nameError != null ? Colors.redAccent : Colors.grey.withOpacity(0.2),
+                  ),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: _selectedColor, width: 2),
+                  borderSide: BorderSide(
+                    color: _nameError != null ? Colors.redAccent : _selectedColor,
+                    width: 2,
+                  ),
+                ),
+                errorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
+                ),
+                focusedErrorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Colors.redAccent, width: 2),
                 ),
               ),
             ),

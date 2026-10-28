@@ -10,7 +10,6 @@ import '../../services/sound_service.dart';
 import '../widgets/orbit_tracker.dart';
 import '../widgets/add_habit_sheet.dart';
 import '../widgets/day_details_sheet.dart';
-import '../widgets/dotted_background.dart';
 import '../widgets/habit_progress_card.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/achievements_sheet.dart';
@@ -23,6 +22,8 @@ import '../widgets/add_schedule_block_sheet.dart';
 import '../widgets/schedule_block_card.dart';
 import '../widgets/monthly_work_target_card.dart';
 import '../widgets/unified_task_sheet.dart';
+import '../widgets/staggered_accordion_item.dart';
+import '../theme/app_theme.dart';
 import 'settings_screen.dart';
 import 'statistics_screen.dart';
 
@@ -33,14 +34,46 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProviderStateMixin {
   DateTime _currentMonth = DateTime.now();
   int _selectedView = 0; // 0 = Órbita Mensual, 1 = Reloj Horario 24h
+  late AnimationController _entranceController;
+
+  @override
+  void initState() {
+    super.initState();
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 850),
+    );
+
+    // Esperar a que el lienzo esté completamente pintado antes de iniciar la cascada
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          _entranceController.forward(from: 0.0);
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _entranceController.dispose();
+    super.dispose();
+  }
+
+  void _replayEntrance() {
+    if (mounted) {
+      _entranceController.forward(from: 0.0);
+    }
+  }
 
   void _changeMonth(int delta) {
     setState(() {
       _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + delta, 1);
     });
+    _replayEntrance();
   }
 
   void _showAddScheduleBlockSheet() {
@@ -49,7 +82,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => const UnifiedTaskSheet(defaultEnableSchedule: true),
+      builder: (context) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: const UnifiedTaskSheet(defaultEnableSchedule: true),
+        ),
+      ),
     );
   }
 
@@ -59,7 +97,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => UnifiedTaskSheet(blockToEdit: block),
+      builder: (context) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: UnifiedTaskSheet(blockToEdit: block),
+        ),
+      ),
     );
   }
 
@@ -85,7 +128,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => const UnifiedTaskSheet(defaultEnableSchedule: false),
+      builder: (context) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: const UnifiedTaskSheet(defaultEnableSchedule: false),
+        ),
+      ),
     );
   }
 
@@ -95,7 +143,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => UnifiedTaskSheet(habitToEdit: habit),
+      builder: (context) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: UnifiedTaskSheet(habitToEdit: habit),
+        ),
+      ),
     );
   }
 
@@ -242,45 +295,99 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       } catch (_) {}
     });
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Stack(
           children: [
-            const Positioned.fill(
-              child: DottedBackground(),
+            Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 520),
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0, -0.25),
+                radius: 1.1,
+                colors: [
+                  isDark ? const Color(0xFF141418) : const Color(0xFFFAF9F6),
+                  isDark ? AppTheme.obsidianCanvas : AppTheme.boneCanvas,
+                ],
+              ),
+              border: Border.symmetric(
+                vertical: BorderSide(
+                  color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                  width: AppTheme.borderPrecision,
+                ),
+              ),
             ),
-            Column(
+            child: Column(
               children: [
-                const SizedBox(height: 16),
-                // Cabecera Dinámica: Saludo según Hora del Día + Avatar
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                // TOP BAR: BRAND & CONTROLS
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 14.0),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                        width: AppTheme.borderPrecision,
+                      ),
+                    ),
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      // Marca & Usuario
+                      Row(
                         children: [
                           Text(
-                            _getGreeting(),
-                            style: TextStyle(
-                              fontSize: 28,
-                              color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.6),
+                            'OrbitHabit',
+                            style: AppTheme.displayStyle(
+                              fontSize: 19,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.4,
+                              color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
                             ),
                           ),
-                          Text(
-                            settings.userName,
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).textTheme.bodyLarge?.color,
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.05),
+                              borderRadius: AppTheme.radiusXs,
+                            ),
+                            child: Text(
+                              settings.userName.toUpperCase(),
+                              style: AppTheme.monoStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.8,
+                                color: AppTheme.dynamicAccent(isDark),
+                              ),
                             ),
                           ),
                         ],
                       ),
-                        Row(
+                      // Cluster de Controles de Precisión
+                      Row(
                         children: [
+                          // Selector de vista compacto [ ÓRBITA | 24H ]
+                          Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: AppTheme.bentoCard(
+                              isLight: !isDark,
+                              borderRadius: AppTheme.radiusXs,
+                            ),
+                            child: Row(
+                              children: [
+                                _buildCompactViewTab(0, Icons.adjust_rounded, 'ÓRBITA'),
+                                _buildCompactViewTab(1, Icons.schedule_rounded, '24H'),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Estadísticas
                           GestureDetector(
                             onTap: () {
                               HapticFeedback.selectionClick();
@@ -289,30 +396,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 MaterialPageRoute(builder: (_) => const StatisticsScreen()),
                               );
                             },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 300),
-                              width: 50,
-                              height: 50,
-                              margin: const EdgeInsets.only(right: 12),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).cardColor,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.03),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
-                                  )
-                                ],
+                            child: Container(
+                              width: 34,
+                              height: 34,
+                              decoration: AppTheme.bentoCard(
+                                isLight: !isDark,
+                                borderRadius: AppTheme.radiusXs,
                               ),
                               alignment: Alignment.center,
-                              child: const Text(
-                                '📊',
-                                style: TextStyle(fontSize: 24),
+                              child: Icon(
+                                Icons.bar_chart_rounded,
+                                size: 17,
+                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
                               ),
                             ),
                           ),
+                          const SizedBox(width: 8),
 
+                          // Ajustes
                           GestureDetector(
                             onTap: () {
                               HapticFeedback.selectionClick();
@@ -321,25 +422,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 MaterialPageRoute(builder: (_) => const SettingsScreen()),
                               );
                             },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 300),
-                              width: 50,
-                              height: 50,
-                              decoration: BoxDecoration(
-                                color: settings.avatarColor,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: settings.avatarColor.withOpacity(0.2),
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 4),
-                                  )
-                                ],
+                            child: Container(
+                              width: 34,
+                              height: 34,
+                              decoration: AppTheme.bentoCard(
+                                isLight: !isDark,
+                                borderRadius: AppTheme.radiusXs,
                               ),
                               alignment: Alignment.center,
-                              child: Text(
-                                settings.avatarEmoji,
-                                style: const TextStyle(fontSize: 26),
+                              child: Icon(
+                                Icons.tune_rounded,
+                                size: 17,
+                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
                               ),
                             ),
                           ),
@@ -348,86 +442,77 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
-
-                // Selector de Vista Zen: [ 🪐 Órbita ] | [ ⏰ Reloj 24h ]
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).cardColor,
-                      borderRadius: BorderRadius.circular(22),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.03),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                      border: Border.all(
-                        color: Colors.grey.withOpacity(0.12),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildViewTab(0, '🪐 Órbita'),
-                        _buildViewTab(1, '⏰ Reloj 24h'),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
 
                 // VISTA 0: ÓRBITA MENSUAL CLÁSICA
                 if (_selectedView == 0) ...[
-                  // Botón del Mes (Pastilla central)
-                  Center(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).cardColor,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.03),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          )
-                        ],
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.chevron_left, color: Color(0xFFE6A590)),
-                            onPressed: () => _changeMonth(-1),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                          const SizedBox(width: 16),
-                          Text(
-                            settings.vacationDates.contains(DateTime.now().toIso8601String().split('T').first) 
-                              ? 'EN PAUSA 🏖️' 
-                              : monthName.toUpperCase(),
-                            style: TextStyle(
-                              color: settings.vacationDates.contains(DateTime.now().toIso8601String().split('T').first)
-                                ? const Color(0xFF4FC3F7) // Azul piscina para vacaciones
-                                : const Color(0xFFE6A590),
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.2,
+                  // Barra de Estado del Mes (Instrumento)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Selector del mes
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GestureDetector(
+                              onTap: () => _changeMonth(-1),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: AppTheme.bentoCard(
+                                  isLight: !isDark,
+                                  borderRadius: AppTheme.radiusXs,
+                                ),
+                                child: Icon(
+                                  Icons.chevron_left,
+                                  size: 16,
+                                  color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                ),
+                              ),
                             ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                settings.vacationDates.contains(DateTime.now().toIso8601String().split('T').first)
+                                    ? 'PAUSA'
+                                    : monthName.toUpperCase(),
+                                style: AppTheme.monoStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1.5,
+                                  color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                ),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () => _changeMonth(1),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: AppTheme.bentoCard(
+                                  isLight: !isDark,
+                                  borderRadius: AppTheme.radiusXs,
+                                ),
+                                child: Icon(
+                                  Icons.chevron_right,
+                                  size: 16,
+                                  color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        // Telemetría del mes
+                        Text(
+                          '// RADIAL DIAL',
+                          style: AppTheme.monoStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1.0,
+                            color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
                           ),
-                          const SizedBox(width: 16),
-                          IconButton(
-                            icon: const Icon(Icons.chevron_right, color: Color(0xFFE6A590)),
-                            onPressed: () => _changeMonth(1),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
 
@@ -440,7 +525,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         child: Padding(
                           padding: const EdgeInsets.all(16.0),
                           child: OrbitTracker(
-                            habits: activeHabits, // Render dimmed colors at night!
+                            habits: activeHabits,
                             currentMonth: _currentMonth,
                             onDayColumnTapped: _showDayDetails,
                           ),
@@ -449,28 +534,60 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                   ),
 
+                  // Separador de Sección Técnico
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 8),
+                    child: Row(
+                      children: [
+                        Text(
+                          'REGISTRO // HÁBITOS',
+                          style: AppTheme.monoStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.4,
+                            color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          '[${regularHabits.length.toString().padLeft(2, '0')}]',
+                          style: AppTheme.monoStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.dynamicAccent(isDark),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
                   // Lista de Hábitos y Metas Mensuales de Horas
                   Expanded(
                     flex: 4,
                     child: (regularHabits.isEmpty && monthlyWorkBlocks.isEmpty)
-                        ? Center(
-                            child: Text(
-                              'Sin hábitos ni metas',
-                              style: TextStyle(
-                                color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.4),
-                              ),
-                            ),
-                          )
+                        ? _buildEmptyState(isDark)
                         : ListView.builder(
                             physics: const BouncingScrollPhysics(),
                             itemCount: monthlyWorkBlocks.length + regularHabits.length,
                             itemBuilder: (context, index) {
                               if (index < monthlyWorkBlocks.length) {
                                 final block = monthlyWorkBlocks[index];
-                                return MonthlyWorkTargetCard(
-                                  block: block,
-                                  currentMonth: _currentMonth,
-                                  onTap: () => _editScheduleBlock(block),
+                                return StaggeredAccordionItem(
+                                  key: ValueKey('work_block_${block.id}'),
+                                  index: index,
+                                  parentAnimation: _entranceController,
+                                  child: MonthlyWorkTargetCard(
+                                    block: block,
+                                    currentMonth: _currentMonth,
+                                    onTap: () => _editScheduleBlock(block),
+                                  ),
                                 );
                               }
 
@@ -484,47 +601,75 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               
                               final streak = StreakUtils.calculateCurrentStreak(habit, settings.vacationDates);
 
-                              return GestureDetector(
-                                onTap: () => _editHabit(habit),
+                              // Telemetría de los 7 días de la semana en curso (Lunes a Domingo)
+                              final now = DateTime.now();
+                              final todayIso = now.toIso8601String().split('T').first;
+                              final monday = now.subtract(Duration(days: now.weekday - 1));
+                              final weeklyCompletions = List.generate(7, (i) {
+                                final d = monday.add(Duration(days: i));
+                                final iso = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+                                return habit.completedDates.contains(iso);
+                              });
+
+                              return StaggeredAccordionItem(
+                                key: ValueKey('habit_${habit.id}'),
+                                index: index,
+                                parentAnimation: _entranceController,
                                 child: HabitProgressCard(
                                   name: habit.name,
                                   color: habit.color,
                                   percentage: percentage,
                                   streak: streak,
+                                  weeklyCompletions: weeklyCompletions,
+                                  isCompletedToday: habit.completedDates.contains(todayIso),
+                                  onToggleToday: () {
+                                    SoundService().playCheck();
+                                    ref.read(habitsProvider.notifier).toggleDay(habit.id, todayIso);
+                                  },
+                                  onTap: () => _editHabit(habit),
                                 ),
                               );
                             },
                           ),
                   ),
 
-                  // Botón Añadir Hábito (Inferior)
+                  // Botón Añadir Hábito (Bento de precisión)
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
                     child: SizedBox(
                       width: double.infinity,
-                      height: 56,
+                      height: 46,
                       child: ElevatedButton(
                         onPressed: _showAddHabitSheet,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFA2B395), // Verde salvia
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(28),
-                          ),
+                          backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                          foregroundColor: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
                           elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: AppTheme.radiusSm,
+                            side: BorderSide(
+                              color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
+                              width: AppTheme.borderPrecision,
+                            ),
+                          ),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
+                            Icon(
+                              Icons.add_rounded,
+                              size: 18,
+                              color: AppTheme.dynamicAccent(isDark),
+                            ),
+                            const SizedBox(width: 8),
                             Text(
                               'Añadir Hábito',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
+                              style: AppTheme.bodyStyle(
+                                fontSize: 14,
                                 fontWeight: FontWeight.w600,
+                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
                               ),
                             ),
-                            SizedBox(width: 8),
-                            Icon(Icons.add, color: Colors.white),
                           ],
                         ),
                       ),
@@ -615,9 +760,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             itemCount: todayBlocks.length,
                             itemBuilder: (context, index) {
                               final block = todayBlocks[index];
-                              return ScheduleBlockCard(
-                                block: block,
-                                onTap: () => _editScheduleBlock(block),
+                              return StaggeredAccordionItem(
+                                key: ValueKey('schedule_block_${block.id}'),
+                                index: index,
+                                parentAnimation: _entranceController,
+                                child: ScheduleBlockCard(
+                                  block: block,
+                                  onTap: () => _editScheduleBlock(block),
+                                ),
                               );
                             },
                           ),
@@ -659,31 +809,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ],
               ],
             ),
-            
-            // Fullscreen vector celebration overlay
-            if (showConfetti)
-              Positioned.fill(
-                child: ConfettiOverlay(
-                  onFinished: () {
-                    ref.read(confettiStateProvider.notifier).hide();
-                  },
-                ),
-              ),
-          ],
+          ),
         ),
+        if (showConfetti)
+          Positioned.fill(
+            child: ConfettiOverlay(
+              onFinished: () {
+                ref.read(confettiStateProvider.notifier).hide();
+              },
+            ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   String _getMonthName(int month) {
     const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     return months[month - 1];
   }
 
-  Widget _buildViewTab(int index, String title) {
+  Widget _buildCompactViewTab(int index, IconData icon, String label) {
     final isSelected = _selectedView == index;
-    final theme = Theme.of(context);
-    const activeColor = Color(0xFF84A59D); // Verde salvia Zen
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return GestureDetector(
       onTap: () {
@@ -692,28 +841,130 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           setState(() {
             _selectedView = index;
           });
+          _replayEntrance();
         }
       },
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
+        duration: const Duration(milliseconds: 140),
         curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         decoration: BoxDecoration(
-          color: isSelected ? activeColor.withOpacity(0.18) : Colors.transparent,
-          borderRadius: BorderRadius.circular(18),
-          border: isSelected
-              ? Border.all(color: activeColor.withOpacity(0.4), width: 1)
-              : Border.all(color: Colors.transparent, width: 1),
+          color: isSelected
+              ? (isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.08))
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(3),
         ),
-        child: Text(
-          title,
-          style: GoogleFonts.outfit(
-            fontSize: 14,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-            color: isSelected
-                ? activeColor
-                : theme.textTheme.bodyLarge?.color?.withOpacity(0.6),
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 13,
+              color: isSelected
+                  ? AppTheme.dynamicAccent(isDark)
+                  : (isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: AppTheme.monoStyle(
+                fontSize: 10,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected
+                    ? (isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary)
+                    : (isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary),
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(bool isDark) {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        decoration: AppTheme.bentoCard(
+          isLight: !isDark,
+          borderRadius: AppTheme.radiusMd,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.04),
+                borderRadius: AppTheme.radiusSm,
+                border: Border.all(
+                  color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
+                  width: AppTheme.borderPrecision,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                Icons.adjust_rounded,
+                size: 20,
+                color: AppTheme.dynamicAccent(isDark),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '// SISTEMA EN ESPERA',
+              style: AppTheme.monoStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.6,
+                color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'No hay hábitos ni bloques configurados todavía.',
+              textAlign: TextAlign.center,
+              style: AppTheme.bodyStyle(
+                fontSize: 13,
+                color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _showAddHabitSheet,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                foregroundColor: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppTheme.radiusXs,
+                  side: BorderSide(
+                    color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
+                    width: AppTheme.borderPrecision,
+                  ),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add_rounded, size: 16, color: AppTheme.dynamicAccent(isDark)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'INICIALIZAR HÁBITO',
+                    style: AppTheme.monoStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                      color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

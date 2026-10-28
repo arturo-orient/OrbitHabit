@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../domain/models/habit.dart';
@@ -17,6 +18,7 @@ class AddHabitSheet extends ConsumerStatefulWidget {
 
 class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
   final _nameController = TextEditingController();
+  String? _nameError;
   
   late int _targetDays;
   late Color _selectedColor;
@@ -122,7 +124,25 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
 
   void _saveHabit() {
     final name = _nameController.text.trim();
-    if (name.isEmpty) return;
+    if (name.isEmpty) {
+      HapticFeedback.vibrate();
+      setState(() => _nameError = 'Introduce un nombre para el hábito');
+      return;
+    }
+
+    final habits = ref.read(habitsProvider);
+    final duplicate = habits.cast<Habit?>().firstWhere(
+          (h) =>
+              h != null &&
+              h.id != widget.habitToEdit?.id &&
+              h.name.trim().toLowerCase() == name.toLowerCase(),
+          orElse: () => null,
+        );
+    if (duplicate != null) {
+      HapticFeedback.vibrate();
+      setState(() => _nameError = 'Ya existe un hábito llamado "$name"');
+      return;
+    }
     
     // Ensure at least one day is selected if not everyday
     if (_activeWeekdays.isEmpty) {
@@ -256,12 +276,27 @@ class _AddHabitSheetState extends ConsumerState<AddHabitSheet> {
             // 1. Nombre
             TextField(
               controller: _nameController,
+              onChanged: (val) {
+                if (_nameError != null) setState(() => _nameError = null);
+              },
               style: TextStyle(color: textColor),
               decoration: InputDecoration(
                 labelText: 'Nombre del hábito (ej. Beber Agua)',
-                labelStyle: TextStyle(color: textColor?.withOpacity(0.6)),
-                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey.withOpacity(0.3))),
-                focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: _selectedColor, width: 2)),
+                errorText: _nameError,
+                labelStyle: TextStyle(
+                  color: _nameError != null ? Colors.redAccent : textColor?.withOpacity(0.6),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(
+                    color: _nameError != null ? Colors.redAccent : Colors.grey.withOpacity(0.3),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(
+                    color: _nameError != null ? Colors.redAccent : _selectedColor,
+                    width: 2,
+                  ),
+                ),
               ),
             ),
             

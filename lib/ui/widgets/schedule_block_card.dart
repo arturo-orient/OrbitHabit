@@ -7,6 +7,7 @@ import '../../domain/models/habit.dart';
 import '../../providers/habit_provider.dart';
 import '../../providers/schedule_provider.dart';
 import '../../services/sound_service.dart';
+import '../theme/app_theme.dart';
 
 class ScheduleBlockCard extends ConsumerWidget {
   final ScheduleBlock block;
@@ -43,46 +44,33 @@ class ScheduleBlockCard extends ConsumerWidget {
 
     final theme = Theme.of(context);
     final textColor = theme.textTheme.bodyLarge?.color;
+    final isDark = theme.brightness == Brightness.dark;
 
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-        decoration: BoxDecoration(
-          color: theme.cardColor,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isActive
-                ? cardColor.withOpacity(0.6)
-                : Colors.grey.withOpacity(0.12),
-            width: isActive ? 1.5 : 1.0,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: isActive
-                  ? cardColor.withOpacity(0.08)
-                  : Colors.black.withOpacity(0.02),
-              blurRadius: isActive ? 12 : 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: AppTheme.bentoCard(
+          isLight: !isDark,
+          borderRadius: AppTheme.radiusMd,
+          borderColor: isActive ? cardColor.withValues(alpha: 0.6) : null,
         ),
         child: Row(
           children: [
-            // Left color accent bar / dot
+            // Indicador LED de bloque
             Container(
-              width: 12,
-              height: 12,
+              width: 9,
+              height: 9,
               decoration: BoxDecoration(
                 color: cardColor,
-                shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(2.5),
                 boxShadow: isActive
                     ? [
                         BoxShadow(
-                          color: cardColor.withOpacity(0.6),
-                          blurRadius: 8,
+                          color: cardColor.withValues(alpha: 0.5),
+                          blurRadius: 6,
                         )
                       ]
                     : null,

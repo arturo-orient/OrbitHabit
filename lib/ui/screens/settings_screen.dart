@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/user_settings.dart';
 import '../../providers/settings_provider.dart';
-import 'manage_habits_screen.dart';
 import '../widgets/achievements_sheet.dart';
+import '../theme/app_theme.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -15,31 +15,15 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _nameController = TextEditingController();
-  late String _selectedEmoji;
-  late int _selectedColorValue;
   late int _notificationHour;
   late int _notificationMinute;
   late String _themeMode;
-
-  final List<String> _emojis = ['🧘', '🌿', '🌊', '⛰️', '🌸', '☀️', '🍵', '🕯️', '🕊️'];
-
-  final List<Color> _palette = const [
-    Color(0xFF84A59D), // Verde Salvia
-    Color(0xFFB5A6C9), // Azul Lavanda
-    Color(0xFFF2C6B4), // Melocotón Suave
-    Color(0xFFE5D08F), // Mostaza / Arena
-    Color(0xFF9EA1D4), // Periwinkle
-    Color(0xFFE5989B), // Rosa Empolvado
-    Color(0xFFA8C2D3), // Gris Invierno
-  ];
 
   @override
   void initState() {
     super.initState();
     final settings = ref.read(settingsProvider);
     _nameController.text = settings.userName;
-    _selectedEmoji = settings.avatarEmoji;
-    _selectedColorValue = settings.avatarColorValue;
     _notificationHour = settings.notificationHour;
     _notificationMinute = settings.notificationMinute;
     _themeMode = settings.themeMode;
@@ -51,19 +35,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     super.dispose();
   }
 
-  Future<void> _selectTime() async {
-    final TimeOfDay? picked = await showTimePicker(
+  String _getUserInitials(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return 'OH';
+    final parts = trimmed.split(RegExp(r'\s+'));
+    if (parts.length == 1) {
+      return parts[0].substring(0, parts[0].length.clamp(1, 2)).toUpperCase();
+    }
+    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  }
+
+  Future<void> _selectNotificationTime() async {
+    HapticFeedback.selectionClick();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay(hour: _notificationHour, minute: _notificationMinute),
       builder: (context, child) {
         return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: Color(_selectedColorValue), // Header color
-              onPrimary: Colors.white,
-              onSurface: Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black87,
-            ),
-          ),
+          data: isDark ? AppTheme.buildDarkTheme() : AppTheme.buildLightTheme(),
           child: child!,
         );
       },
@@ -78,22 +68,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _pickVacationDates() async {
-    final DateTimeRange? picked = await showDateRangePicker(
+    HapticFeedback.selectionClick();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      helpText: 'Selecciona tus días de descanso',
-      cancelText: 'Cancelar',
-      confirmText: 'Guardar',
+      helpText: 'DÍAS DE DESCANSO (RACHAS PROTEGIDAS)',
+      cancelText: 'CANCELAR',
+      confirmText: 'GUARDAR',
       builder: (context, child) {
         return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: Color(_selectedColorValue),
-              onPrimary: Colors.white,
-              onSurface: Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black87,
-            ),
-          ),
+          data: isDark ? AppTheme.buildDarkTheme() : AppTheme.buildLightTheme(),
           child: child!,
         );
       },
@@ -101,30 +87,53 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     if (picked != null) {
       List<DateTime> dates = [];
-      DateTime current = picked.start;
-      // Normalizamos las horas al inicio del día por si acaso
-      current = DateTime(current.year, current.month, current.day);
+      DateTime current = DateTime(picked.start.year, picked.start.month, picked.start.day);
       final end = DateTime(picked.end.year, picked.end.month, picked.end.day);
-      
+
       while (current.isBefore(end) || current.isAtSameMomentAs(end)) {
         dates.add(current);
         current = current.add(const Duration(days: 1));
       }
       await ref.read(settingsProvider.notifier).addVacationDates(dates);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('¡Modo Vacaciones programado! 🏖️')),
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+            content: Text(
+              '${dates.length} días de descanso programados',
+              style: AppTheme.bodyStyle(
+                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         );
       }
     }
   }
 
   void _clearVacations() {
-    ref.read(settingsProvider.notifier).clearVacationDates();
     HapticFeedback.lightImpact();
+    ref.read(settingsProvider.notifier).clearVacationDates();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Vacaciones borradas 🧹')),
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+        content: Text(
+          'Días de descanso restablecidos',
+          style: AppTheme.bodyStyle(
+            color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
     );
   }
 
@@ -134,8 +143,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     final updated = UserSettings(
       userName: name,
-      avatarEmoji: _selectedEmoji,
-      avatarColorValue: _selectedColorValue,
+      avatarEmoji: '',
+      avatarColorValue: 0,
       notificationHour: _notificationHour,
       notificationMinute: _notificationMinute,
       themeMode: _themeMode,
@@ -144,487 +153,503 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
 
     ref.read(settingsProvider.notifier).updateSettings(updated);
-    HapticFeedback.lightImpact();
+    HapticFeedback.mediumImpact();
     Navigator.pop(context);
   }
 
-
-
   @override
   Widget build(BuildContext context) {
-    final textColor = Theme.of(context).textTheme.bodyLarge?.color;
-    final cardColor = Theme.of(context).cardColor;
+    final settings = ref.watch(settingsProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = AppTheme.dynamicAccent(isDark);
+    final initials = _getUserInitials(_nameController.text);
 
     return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('Ajustes Zen', style: TextStyle(fontWeight: FontWeight.bold)),
+        leading: IconButton(
+          icon: Icon(
+            Icons.arrow_back_rounded,
+            size: 22,
+            color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+          ),
+          onPressed: () {
+            HapticFeedback.selectionClick();
+            Navigator.pop(context);
+          },
+        ),
+        title: Text(
+          'Ajustes y Perfil',
+          style: AppTheme.displayStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+          ),
+        ),
         centerTitle: true,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1.0),
+          child: Container(
+            color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+            height: 1.0,
+          ),
+        ),
       ),
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 1. Vista Previa del Avatar
-            Center(
-              child: Column(
-                children: [
-                  Container(
-                    width: 90,
-                    height: 90,
-                    decoration: BoxDecoration(
-                      color: Color(_selectedColorValue),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Color(_selectedColorValue).withOpacity(0.25),
-                          blurRadius: 20,
-                          offset: const Offset(0, 8),
-                        )
-                      ],
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      _selectedEmoji,
-                      style: const TextStyle(fontSize: 44),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Previsualización del Avatar',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: textColor?.withOpacity(0.5),
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
+      body: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 520),
+          decoration: BoxDecoration(
+            border: Border.symmetric(
+              vertical: BorderSide(
+                color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                width: AppTheme.borderPrecision,
               ),
             ),
-            const SizedBox(height: 36),
-
-            // 2. Campo del Nombre
-            Text(
-              'Tu Nombre',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor?.withOpacity(0.8)),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _nameController,
-              style: TextStyle(color: textColor),
-              maxLength: 16,
-              decoration: InputDecoration(
-                hintText: 'Introduce tu nombre...',
-                hintStyle: TextStyle(color: textColor?.withOpacity(0.4)),
-                counterText: '',
-                fillColor: cardColor,
-                filled: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: Colors.grey.withOpacity(0.15)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: Color(_selectedColorValue), width: 2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 28),
-
-            // 3. Logros y Trofeos
-            Text(
-              'Tus Logros',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor?.withOpacity(0.8)),
-            ),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: () {
-                HapticFeedback.mediumImpact();
-                showModalBottomSheet(
-                  context: context,
-                  backgroundColor: Colors.transparent,
-                  isScrollControlled: true,
-                  builder: (context) => const FractionallySizedBox(
-                    heightFactor: 0.85,
-                    child: AchievementsSheet(),
-                  ),
-                );
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.grey.withOpacity(0.15)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.emoji_events_rounded, color: const Color(0xFFFFD700)), // Gold color
-                        const SizedBox(width: 12),
-                        const Text('Ver Medallas', style: TextStyle(fontSize: 16)),
-                      ],
+          ),
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 22.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 1. TARJETA DE PERFIL LIMPIA (Solo Iniciales + Nombre)
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                      width: 1.0,
                     ),
-                    Icon(Icons.chevron_right_rounded, color: textColor?.withOpacity(0.4)),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 28),
-
-            // 4. Emojis Zen
-            Text(
-              'Icono de tu Avatar',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor?.withOpacity(0.8)),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 52,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                itemCount: _emojis.length,
-                itemBuilder: (context, index) {
-                  final emoji = _emojis[index];
-                  final isSelected = _selectedEmoji == emoji;
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() => _selectedEmoji = emoji);
-                      HapticFeedback.selectionClick();
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 250),
-                      width: 50,
-                      height: 50,
-                      margin: const EdgeInsets.only(right: 12),
-                      decoration: BoxDecoration(
-                        color: isSelected ? Color(_selectedColorValue).withOpacity(0.15) : cardColor,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: isSelected ? Color(_selectedColorValue) : Colors.grey.withOpacity(0.15),
-                          width: isSelected ? 2 : 1,
+                  ),
+                  child: Row(
+                    children: [
+                      // Avatar con Iniciales
+                      Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? AppTheme.accentPhosphor.withValues(alpha: 0.12)
+                              : AppTheme.accentCobalt.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: accent.withValues(alpha: 0.4),
+                            width: 1.5,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          initials,
+                          style: AppTheme.displayStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: accent,
+                          ),
                         ),
                       ),
-                      alignment: Alignment.center,
-                      child: Text(emoji, style: const TextStyle(fontSize: 22)),
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 28),
-
-            // 4. Color de Fondo del Avatar
-            Text(
-              'Color del Avatar',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor?.withOpacity(0.8)),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: _palette.map((color) {
-                final isSelected = _selectedColorValue == color.value;
-                return GestureDetector(
-                  onTap: () {
-                    setState(() => _selectedColorValue = color.value);
-                    HapticFeedback.selectionClick();
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                      border: isSelected ? Border.all(color: Colors.white, width: 3.5) : null,
-                      boxShadow: isSelected
-                          ? [
-                              BoxShadow(
-                                color: color.withOpacity(0.4),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              )
-                            ]
-                          : null,
-                    ),
+                      const SizedBox(width: 18),
+                      // Nombre de usuario
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'TU NOMBRE / ALIAS',
+                              style: AppTheme.monoStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.8,
+                                color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            TextField(
+                              controller: _nameController,
+                              style: AppTheme.displayStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                              ),
+                              onChanged: (_) => setState(() {}),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                                border: InputBorder.none,
+                                hintText: 'Escribe tu nombre...',
+                                hintStyle: AppTheme.bodyStyle(
+                                  fontSize: 18,
+                                  color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Perfil de Usuario · OrbitHabit',
+                              style: AppTheme.bodyStyle(
+                                fontSize: 11,
+                                color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 28),
-
-            // 5. Configuración de Alarma
-            Text(
-              'Recordatorio Diario',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor?.withOpacity(0.8)),
-            ),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: _selectTime,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.grey.withOpacity(0.15)),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                const SizedBox(height: 28),
+
+                // 2. MODO VISUAL / TEMA
+                _buildSectionHeader('Tema Visual', isDark),
+                const SizedBox(height: 12),
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        Icon(Icons.access_time_rounded, color: Color(_selectedColorValue)),
-                        const SizedBox(width: 12),
-                        const Text('Notificar a las:', style: TextStyle(fontSize: 16)),
-                      ],
+                    Expanded(
+                      child: _buildThemeOption(
+                        id: 'dark',
+                        label: 'Obsidiana',
+                        subtitle: 'Fondo oscuro',
+                        bgColor: const Color(0xFF09090B),
+                        isSelected: _themeMode == 'dark',
+                        isDark: isDark,
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _themeMode = 'dark');
+                        },
+                      ),
                     ),
-                    Text(
-                      '${_notificationHour.toString().padLeft(2, '0')}:${_notificationMinute.toString().padLeft(2, '0')}',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Color(_selectedColorValue),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: _buildThemeOption(
+                        id: 'light',
+                        label: 'Hueso',
+                        subtitle: 'Fondo claro',
+                        bgColor: const Color(0xFFF7F7F8),
+                        isSelected: _themeMode == 'light',
+                        isDark: isDark,
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _themeMode = 'light');
+                        },
                       ),
                     ),
                   ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 28),
+                const SizedBox(height: 28),
 
-            // 6. Selección de Temas (Claro, Oscuro, Sage)
-            Text(
-              'Tema Visual',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor?.withOpacity(0.8)),
-            ),
-            const SizedBox(height: 12),
-            Column(
-              children: [
-                Row(
-                  children: [
-                    _ThemeCapsule(
-                      label: 'Automático',
-                      themeKey: 'system',
-                      isActive: _themeMode == 'system',
-                      activeColor: Color(_selectedColorValue),
-                      onTap: () => setState(() => _themeMode = 'system'),
+                // 3. PAUSA DE RACHAS (VACACIONES)
+                _buildSectionHeader('Días de Descanso', isDark),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                      width: 1.0,
                     ),
-                    const SizedBox(width: 8),
-                    _ThemeCapsule(
-                      label: 'Crema',
-                      themeKey: 'light',
-                      isActive: _themeMode == 'light',
-                      activeColor: Color(_selectedColorValue),
-                      onTap: () => setState(() => _themeMode = 'light'),
-                    ),
-                  ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Modo Vacaciones',
+                            style: AppTheme.bodyStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            settings.vacationDates.isEmpty
+                                ? 'Sin días pausados'
+                                : '${settings.vacationDates.length} días protegidos',
+                            style: AppTheme.bodyStyle(
+                              fontSize: 12,
+                              color: settings.vacationDates.isNotEmpty
+                                  ? accent
+                                  : (isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextSecondary),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          if (settings.vacationDates.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded, size: 20, color: Colors.redAccent),
+                              onPressed: _clearVacations,
+                            ),
+                          ElevatedButton(
+                            onPressed: _pickVacationDates,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                              foregroundColor: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                side: BorderSide(
+                                  color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
+                                  width: 1.0,
+                                ),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            ),
+                            child: Text(
+                              'Configurar',
+                              style: AppTheme.bodyStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _ThemeCapsule(
-                      label: 'Pizarra',
-                      themeKey: 'dark',
-                      isActive: _themeMode == 'dark',
-                      activeColor: Color(_selectedColorValue),
-                      onTap: () => setState(() => _themeMode = 'dark'),
+                const SizedBox(height: 20),
+
+                // 4. RECORDATORIO DIARIO
+                _buildSectionHeader('Notificaciones Diarias', isDark),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                      width: 1.0,
                     ),
-                    const SizedBox(width: 8),
-                    _ThemeCapsule(
-                      label: 'OLED',
-                      themeKey: 'oled',
-                      isActive: _themeMode == 'oled',
-                      activeColor: Color(_selectedColorValue),
-                      onTap: () => setState(() => _themeMode = 'oled'),
-                    ),
-                    const SizedBox(width: 8),
-                    _ThemeCapsule(
-                      label: 'Bosque',
-                      themeKey: 'sage',
-                      isActive: _themeMode == 'sage',
-                      activeColor: Color(_selectedColorValue),
-                      onTap: () => setState(() => _themeMode = 'sage'),
-                    ),
-                  ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Hora del Recordatorio',
+                            style: AppTheme.bodyStyle(
+                              fontSize: 12,
+                              color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextSecondary,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${_notificationHour.toString().padLeft(2, '0')}:${_notificationMinute.toString().padLeft(2, '0')}',
+                            style: AppTheme.monoStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      ElevatedButton(
+                        onPressed: _selectNotificationTime,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                          foregroundColor: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(
+                              color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
+                              width: 1.0,
+                            ),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                        child: Text(
+                          'Cambiar Hora',
+                          style: AppTheme.bodyStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(height: 20),
+
+                // 5. MEDALLAS Y LOGROS
+                _buildSectionHeader('Tus Medallas', isDark),
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.mediumImpact();
+                    showModalBottomSheet(
+                      context: context,
+                      backgroundColor: Colors.transparent,
+                      isScrollControlled: true,
+                      builder: (context) => const FractionallySizedBox(
+                        heightFactor: 0.85,
+                        child: AchievementsSheet(),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                        width: 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: accent.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(Icons.emoji_events_rounded, color: accent, size: 20),
+                            ),
+                            const SizedBox(width: 14),
+                            Text(
+                              'Ver Medallas y Logros',
+                              style: AppTheme.bodyStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          size: 14,
+                          color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 36),
+
+                // 6. BOTÓN GUARDAR CAMBIOS
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _saveSettings,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isDark ? AppTheme.accentPhosphor : AppTheme.boneTextPrimary,
+                      foregroundColor: isDark ? Colors.black : Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: Text(
+                      'Guardar Cambios',
+                      style: AppTheme.displayStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.black : Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
               ],
             ),
-            const SizedBox(height: 28),
-
-            // 7. Modo Vacaciones
-            Text(
-              'Modo Descanso 🏖️',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor?.withOpacity(0.8)),
-            ),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                _pickVacationDates();
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.grey.withOpacity(0.15)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.flight_takeoff_rounded, color: Color(_selectedColorValue)),
-                        const SizedBox(width: 12),
-                        const Text('Programar Vacaciones', style: TextStyle(fontSize: 16)),
-                      ],
-                    ),
-                    Icon(Icons.date_range_rounded, color: textColor?.withOpacity(0.4)),
-                  ],
-                ),
-              ),
-            ),
-            if (ref.watch(settingsProvider).vacationDates.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: _clearVacations,
-                  icon: const Icon(Icons.clear_rounded, size: 16, color: Colors.grey),
-                  label: const Text('Borrar días de descanso', style: TextStyle(color: Colors.grey)),
-                ),
-              ),
-            ],
-            const SizedBox(height: 28),
-
-            // 8. Gestión de Hábitos
-            Text(
-              'Hábitos',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor?.withOpacity(0.8)),
-            ),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ManageHabitsScreen()),
-                );
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.grey.withOpacity(0.15)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.edit_road_rounded, color: Color(_selectedColorValue)),
-                        const SizedBox(width: 12),
-                        const Text('Reordenar, Editar y Eliminar', style: TextStyle(fontSize: 16)),
-                      ],
-                    ),
-                    Icon(Icons.chevron_right_rounded, color: textColor?.withOpacity(0.4)),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 36),
-
-            // 9. Botón de Guardado
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton(
-                onPressed: _saveSettings,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Color(_selectedColorValue),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(28),
-                  ),
-                ),
-                child: const Text(
-                  'Guardar Ajustes',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Center(
-              child: Text(
-                'OrbitHabit v1.1.0 · Sintoniza tu Vida 🪐',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: textColor?.withOpacity(0.4),
-                  letterSpacing: 0.8,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
+          ),
         ),
       ),
     );
   }
-}
 
-class _ThemeCapsule extends StatelessWidget {
-  final String label;
-  final String themeKey;
-  final bool isActive;
-  final Color activeColor;
-  final VoidCallback onTap;
+  Widget _buildSectionHeader(String title, bool isDark) {
+    return Text(
+      title,
+      style: AppTheme.displayStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+      ),
+    );
+  }
 
-  const _ThemeCapsule({
-    required this.label,
-    required this.themeKey,
-    required this.isActive,
-    required this.activeColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          onTap();
-          HapticFeedback.selectionClick();
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            color: isActive ? activeColor.withOpacity(0.12) : Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isActive ? activeColor : Colors.grey.withOpacity(0.15),
-              width: isActive ? 2 : 1,
-            ),
+  Widget _buildThemeOption({
+    required String id,
+    required String label,
+    required String subtitle,
+    required Color bgColor,
+    required bool isSelected,
+    required bool isDark,
+    required VoidCallback onTap,
+  }) {
+    final accent = AppTheme.dynamicAccent(isDark);
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? accent : (isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder),
+            width: isSelected ? 1.8 : 1.0,
           ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-              color: isActive ? activeColor : Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.7),
-              fontSize: 14,
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.12),
+                    blurRadius: 12,
+                    offset: const Offset(0, 3),
+                  )
+                ]
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: bgColor,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: isDark ? Colors.white24 : AppTheme.boneBorder,
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+                if (isSelected)
+                  Icon(Icons.check_circle_rounded, size: 18, color: accent),
+              ],
             ),
-          ),
+            const SizedBox(height: 12),
+            Text(
+              label,
+              style: AppTheme.displayStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              subtitle,
+              style: AppTheme.bodyStyle(
+                fontSize: 11,
+                color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+              ),
+            ),
+          ],
         ),
       ),
     );

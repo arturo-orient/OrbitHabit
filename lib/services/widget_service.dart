@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
 import '../domain/models/habit.dart';
 import '../utils/streak_utils.dart';
@@ -9,6 +10,7 @@ class WidgetService {
 
   /// Updates the home screen widget with the current habits for today
   static Future<void> updateWidget(List<Habit> activeHabits) async {
+    if (kIsWeb) return;
     try {
       final now = DateTime.now();
       final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';

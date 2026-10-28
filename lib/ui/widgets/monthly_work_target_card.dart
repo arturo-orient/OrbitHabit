@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../../domain/models/schedule_block.dart';
 import '../../domain/models/habit.dart';
 import '../../providers/schedule_provider.dart';
 import '../../providers/habit_provider.dart';
 import '../../services/sound_service.dart';
+import '../theme/app_theme.dart';
 
 class MonthlyWorkTargetCard extends ConsumerWidget {
   final ScheduleBlock block;
@@ -36,8 +36,8 @@ class MonthlyWorkTargetCard extends ConsumerWidget {
           );
     }
 
-    final theme = Theme.of(context);
-    final textColor = theme.textTheme.bodyLarge?.color;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = AppTheme.dynamicAccent(isDark);
     final blockColor = block.color;
 
     final workedHours = block.getMonthlyWorkedHours(currentMonth, linkedHabit);
@@ -60,26 +60,14 @@ class MonthlyWorkTargetCard extends ConsumerWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: theme.cardColor,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isCompleted
-                ? const Color(0xFFFFB74D).withOpacity(0.5)
-                : blockColor.withOpacity(0.2),
-            width: isCompleted ? 1.4 : 1.0,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: isCompleted
-                  ? const Color(0xFFFFB74D).withOpacity(0.08)
-                  : Colors.black.withOpacity(0.03),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+        padding: const EdgeInsets.all(14),
+        decoration: AppTheme.bentoCard(
+          isLight: !isDark,
+          borderRadius: AppTheme.radiusMd,
+          borderColor: isCompleted
+              ? accent.withValues(alpha: 0.4)
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -91,13 +79,18 @@ class MonthlyWorkTargetCard extends ConsumerWidget {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: blockColor.withOpacity(0.15),
-                    shape: BoxShape.circle,
+                    color: blockColor.withValues(alpha: 0.12),
+                    borderRadius: AppTheme.radiusXs,
+                    border: Border.all(
+                      color: blockColor.withValues(alpha: 0.3),
+                      width: AppTheme.borderPrecision,
+                    ),
                   ),
                   alignment: Alignment.center,
-                  child: Text(
-                    '💼',
-                    style: const TextStyle(fontSize: 16),
+                  child: Icon(
+                    Icons.schedule_rounded,
+                    size: 16,
+                    color: blockColor,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -112,10 +105,12 @@ class MonthlyWorkTargetCard extends ConsumerWidget {
                               block.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.outfit(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: textColor?.withOpacity(0.9),
+                              style: AppTheme.displayStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: isDark
+                                    ? AppTheme.obsidianTextPrimary
+                                    : AppTheme.boneTextPrimary,
                               ),
                             ),
                           ),
@@ -125,17 +120,21 @@ class MonthlyWorkTargetCard extends ConsumerWidget {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFFB74D).withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(6),
+                                color: accent.withValues(alpha: 0.15),
+                                borderRadius: AppTheme.radiusXs,
+                                border: Border.all(
+                                  color: accent.withValues(alpha: 0.4),
+                                  width: AppTheme.borderPrecision,
+                                ),
                               ),
                               child: Text(
                                 overtime > 0
-                                    ? '+${overtime.toStringAsFixed(0)}h extra 🔥'
-                                    : '¡Meta 100%! ✨',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: const Color(0xFFFFB74D),
+                                    ? '+${overtime.toStringAsFixed(0)}H EXTRA'
+                                    : 'OBJETIVO 100%',
+                                style: AppTheme.monoStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  color: accent,
                                 ),
                               ),
                             ),
@@ -144,9 +143,11 @@ class MonthlyWorkTargetCard extends ConsumerWidget {
                       ),
                       Text(
                         '$completedShiftsInMonth turnos · ${block.formattedDuration}/turno',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: textColor?.withOpacity(0.5),
+                        style: AppTheme.monoStyle(
+                          fontSize: 10,
+                          color: isDark
+                              ? AppTheme.obsidianTextMuted
+                              : AppTheme.boneTextMuted,
                         ),
                       ),
                     ],
@@ -156,51 +157,57 @@ class MonthlyWorkTargetCard extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '${workedHours.toStringAsFixed(0)} / ${target}h',
-                      style: GoogleFonts.outfit(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
+                      '${workedHours.toStringAsFixed(0)} / ${target}H',
+                      style: AppTheme.monoStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
                         color: isCompleted
-                            ? const Color(0xFFFFB74D)
-                            : blockColor,
+                            ? accent
+                            : (isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary),
                       ),
                     ),
                     Text(
-                      '${(progress * 100).toInt()}% del mes',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: textColor?.withOpacity(0.45),
+                      '${(progress * 100).toInt()}% REGISTRADO',
+                      style: AppTheme.monoStyle(
+                        fontSize: 9,
+                        color: isDark
+                            ? AppTheme.obsidianTextMuted
+                            : AppTheme.boneTextMuted,
                       ),
                     ),
                   ],
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
 
             // Barra de Progreso
             ClipRRect(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(2),
               child: LinearProgressIndicator(
                 value: progress,
-                minHeight: 7,
-                backgroundColor: Colors.grey.withOpacity(0.12),
+                minHeight: 3.5,
+                backgroundColor: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.black.withValues(alpha: 0.06),
                 valueColor: AlwaysStoppedAnimation<Color>(
-                  isCompleted ? const Color(0xFFFFB74D) : blockColor,
+                  isCompleted ? accent : blockColor,
                 ),
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
 
             // Pie: Botón rápido de turno de hoy o detalle
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Toca para ver o editar días',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: textColor?.withOpacity(0.4),
+                  '// TOQUE PARA CONFIGURAR',
+                  style: AppTheme.monoStyle(
+                    fontSize: 9,
+                    color: isDark
+                        ? AppTheme.obsidianTextMuted
+                        : AppTheme.boneTextMuted,
                   ),
                 ),
                 if (isCurrentMonthSelected)
@@ -219,17 +226,17 @@ class MonthlyWorkTargetCard extends ConsumerWidget {
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: isTodayDone
-                            ? blockColor.withOpacity(0.18)
-                            : blockColor.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(8),
+                            ? blockColor.withValues(alpha: 0.18)
+                            : Colors.transparent,
+                        borderRadius: AppTheme.radiusXs,
                         border: Border.all(
                           color: isTodayDone
                               ? blockColor
-                              : blockColor.withOpacity(0.25),
-                          width: 0.9,
+                              : (isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder),
+                          width: AppTheme.borderPrecision,
                         ),
                       ),
                       child: Row(
@@ -237,18 +244,18 @@ class MonthlyWorkTargetCard extends ConsumerWidget {
                         children: [
                           Icon(
                             isTodayDone
-                                ? Icons.check_circle
-                                : Icons.add_circle_outline,
-                            size: 13,
-                            color: blockColor,
+                                ? Icons.check_circle_rounded
+                                : Icons.radio_button_unchecked_rounded,
+                            size: 11,
+                            color: isTodayDone ? blockColor : (isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted),
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            isTodayDone ? 'Turno Hoy Hecho' : 'Completar Hoy',
-                            style: GoogleFonts.outfit(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: blockColor,
+                            isTodayDone ? 'TURNO HECHO' : 'REGISTRAR HOY',
+                            style: AppTheme.monoStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: isTodayDone ? blockColor : (isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary),
                             ),
                           ),
                         ],
