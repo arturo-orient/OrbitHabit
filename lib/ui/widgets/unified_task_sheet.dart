@@ -262,23 +262,25 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
     if (_hasSchedule) {
       if (_startTime == null || _endTime == null) {
-        HapticFeedback.vibrate();
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFFE11D48),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            content: const Text(
-              'Selecciona la hora de inicio y de fin para el reloj 24h.',
-              style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white),
+        // Si NO está en la órbita ni vinculado a nada, sí es obligatorio indicar horas para el reloj
+        if (!_showInOrbit && _linkedHabitId == null) {
+          HapticFeedback.vibrate();
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: const Color(0xFFE11D48),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              content: const Text(
+                'Selecciona las horas en el reloj o activa el Modo Órbita.',
+                style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white),
+              ),
             ),
-          ),
-        );
-        return;
-      }
-
-      if (_startTime!.hour == _endTime!.hour && _startTime!.minute == _endTime!.minute) {
+          );
+          return;
+        }
+        // Si está en la órbita, permitimos guardar sin horas fijas para crearle turnos específicos después!
+      } else if (_startTime!.hour == _endTime!.hour && _startTime!.minute == _endTime!.minute) {
         HapticFeedback.vibrate();
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -350,7 +352,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
     // 4. Manejo de Modo Reloj 24h
     final isNewBlock = !blocks.any((b) => b.id == blockId);
-    if (_hasSchedule) {
+    if (_hasSchedule && _startTime != null && _endTime != null) {
       final finalHabitId = _linkedHabitId ?? (_showInOrbit ? habitId : null);
       final hasHourTarget = (_showInOrbit && _targetMode == TaskTargetMode.hours) ||
           (_linkedHabitId != null &&
