@@ -102,6 +102,51 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
     }
   }
 
+  /// Asigna o desasigna un turno a una fecha ISO (YYYY-MM-DD)
+  Future<void> toggleShiftOnDate(String blockId, String dateIso) async {
+    state = [
+      for (final b in state)
+        if (b.id == blockId)
+          b.copyWith(
+            assignedDates: b.assignedDates.contains(dateIso)
+                ? (List<String>.from(b.assignedDates)..remove(dateIso))
+                : (List<String>.from(b.assignedDates)..add(dateIso)),
+          )
+        else
+          b.copyWith(
+            assignedDates: List<String>.from(b.assignedDates)..remove(dateIso),
+          ),
+    ];
+    await _persist();
+  }
+
+  /// Limpia cualquier turno asignado en una fecha concreta
+  Future<void> clearShiftOnDate(String dateIso) async {
+    state = [
+      for (final b in state)
+        b.copyWith(
+          assignedDates: List<String>.from(b.assignedDates)..remove(dateIso),
+        ),
+    ];
+    await _persist();
+  }
+
+  /// Asigna un turno a múltiples fechas a la vez
+  Future<void> batchAssignShift(String blockId, List<String> datesIso) async {
+    state = [
+      for (final b in state)
+        if (b.id == blockId)
+          b.copyWith(
+            assignedDates: (Set<String>.from(b.assignedDates)..addAll(datesIso)).toList(),
+          )
+        else
+          b.copyWith(
+            assignedDates: b.assignedDates.where((d) => !datesIso.contains(d)).toList(),
+          ),
+    ];
+    await _persist();
+  }
+
   Future<void> addExtraHours(String blockId, double hours) async {
     state = [
       for (final b in state)

@@ -14,6 +14,7 @@ class ScheduleBlock {
   final bool hasMonthlyHourTarget;
   final int monthlyTargetHours; // e.g. 120
   final List<String> completedDates; // Dates in YYYY-MM-DD when this shift was completed
+  final List<String> assignedDates; // Specific YYYY-MM-DD dates assigned on the shift calendar
   final double extraHours; // Extra overtime hours logged
 
   const ScheduleBlock({
@@ -29,6 +30,7 @@ class ScheduleBlock {
     this.hasMonthlyHourTarget = false,
     this.monthlyTargetHours = 120,
     this.completedDates = const [],
+    this.assignedDates = const [],
     this.extraHours = 0.0,
   });
 
@@ -72,25 +74,44 @@ class ScheduleBlock {
     return daysOfWeek.contains(weekday);
   }
 
+  /// Checks if this block applies to a specific calendar date (DateTime).
+  /// If [assignedDates] has items, it takes priority; otherwise falls back to weekday.
+  bool appliesToDate(DateTime date) {
+    final iso = date.toIso8601String().split('T').first;
+    if (assignedDates.isNotEmpty) {
+      return assignedDates.contains(iso);
+    }
+    return appliesToWeekday(date.weekday);
+  }
+
   /// Checks whether this block is currently active at [now].
   /// Correctly handles overnight shifts crossing midnight!
   bool isActiveAt(DateTime now) {
     final currentMinutes = now.hour * 60 + now.minute;
+    final todayIso = now.toIso8601String().split('T').first;
+    final yesterdayIso = now.subtract(const Duration(days: 1)).toIso8601String().split('T').first;
     final todayWeekday = now.weekday;
+    final yesterdayWeekday = todayWeekday == 1 ? 7 : todayWeekday - 1;
+
+    final appliesToday = assignedDates.isNotEmpty
+        ? assignedDates.contains(todayIso)
+        : daysOfWeek.contains(todayWeekday);
+    final appliesYesterday = assignedDates.isNotEmpty
+        ? assignedDates.contains(yesterdayIso)
+        : daysOfWeek.contains(yesterdayWeekday);
 
     if (!isOvernight) {
       // Normal block within same day (e.g. 08:00 - 09:00)
-      if (!daysOfWeek.contains(todayWeekday)) return false;
+      if (!appliesToday) return false;
       return currentMinutes >= startInMinutes && currentMinutes < endInMinutes;
     } else {
       // Overnight block (e.g. 23:00 - 07:00)
       if (currentMinutes >= startInMinutes) {
         // Evening phase: started today
-        return daysOfWeek.contains(todayWeekday);
+        return appliesToday;
       } else if (currentMinutes < endInMinutes) {
         // Morning phase: started yesterday night!
-        final yesterdayWeekday = todayWeekday == 1 ? 7 : todayWeekday - 1;
-        return daysOfWeek.contains(yesterdayWeekday);
+        return appliesYesterday;
       }
       return false;
     }
@@ -142,6 +163,18 @@ class ScheduleBlock {
     return total > monthlyTargetHours ? total - monthlyTargetHours : 0.0;
   }
 
+  /// Total number of assigned shifts in a given month
+  int getAssignedShiftsInMonth(DateTime month) {
+    final prefix = '${month.year}-${month.month.toString().padLeft(2, '0')}';
+    return assignedDates.where((d) => d.startsWith(prefix)).length;
+  }
+
+  /// Total planned hours in a given month based on calendar assignments
+  double getPlannedHoursInMonth(DateTime month) {
+    final count = getAssignedShiftsInMonth(month);
+    return count * (durationInMinutes / 60.0);
+  }
+
   ScheduleBlock copyWith({
     String? id,
     String? title,
@@ -156,6 +189,7 @@ class ScheduleBlock {
     bool? hasMonthlyHourTarget,
     int? monthlyTargetHours,
     List<String>? completedDates,
+    List<String>? assignedDates,
     double? extraHours,
   }) {
     return ScheduleBlock(
@@ -171,6 +205,7 @@ class ScheduleBlock {
       hasMonthlyHourTarget: hasMonthlyHourTarget ?? this.hasMonthlyHourTarget,
       monthlyTargetHours: monthlyTargetHours ?? this.monthlyTargetHours,
       completedDates: completedDates ?? this.completedDates,
+      assignedDates: assignedDates ?? this.assignedDates,
       extraHours: extraHours ?? this.extraHours,
     );
   }
@@ -189,6 +224,7 @@ class ScheduleBlock {
       'hasMonthlyHourTarget': hasMonthlyHourTarget,
       'monthlyTargetHours': monthlyTargetHours,
       'completedDates': completedDates,
+      'assignedDates': assignedDates,
       'extraHours': extraHours,
     };
   }
@@ -207,6 +243,7 @@ class ScheduleBlock {
       hasMonthlyHourTarget: map['hasMonthlyHourTarget'] as bool? ?? false,
       monthlyTargetHours: map['monthlyTargetHours'] as int? ?? 120,
       completedDates: (map['completedDates'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      assignedDates: (map['assignedDates'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       extraHours: (map['extraHours'] as num?)?.toDouble() ?? 0.0,
     );
   }

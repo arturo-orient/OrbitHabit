@@ -1,12 +1,15 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/habit.dart';
-import '../widgets/confetti_overlay.dart';
+import '../../domain/models/schedule_block.dart';
 import '../../providers/habit_provider.dart';
+import '../../providers/schedule_provider.dart';
 import '../../services/sound_service.dart';
+import '../theme/app_theme.dart';
 
+/// Modal interactivo de Detalle del Día con diseño Neo-Bento editorial.
+/// Permite visualizar y conmutar el estado de hábitos y turnos para una fecha concreta.
 class DayDetailsSheet extends ConsumerStatefulWidget {
   final DateTime date;
 
@@ -17,208 +20,496 @@ class DayDetailsSheet extends ConsumerStatefulWidget {
 }
 
 class _DayDetailsSheetState extends ConsumerState<DayDetailsSheet> {
-  void _showFullScreenConfetti() {
-    final overlay = Overlay.of(context);
-    late OverlayEntry entry;
-    
-    entry = OverlayEntry(
-      builder: (context) => Positioned.fill(
-        child: IgnorePointer(
-          child: ConfettiOverlay(
-            onFinished: () {
-              entry.remove();
-            },
-          ),
-        ),
-      ),
-    );
-    
-    overlay.insert(entry);
+  static const _weekdaysEs = [
+    'Lunes',
+    'Martes',
+    'Miércoles',
+    'Jueves',
+    'Viernes',
+    'Sábado',
+    'Domingo'
+  ];
+
+  static const _monthsEs = [
+    'enero',
+    'febrero',
+    'marzo',
+    'abril',
+    'mayo',
+    'junio',
+    'julio',
+    'agosto',
+    'septiembre',
+    'octubre',
+    'noviembre',
+    'diciembre'
+  ];
+
+  String _formatDateHeader(DateTime date) {
+    final weekday = _weekdaysEs[date.weekday - 1];
+    final day = date.day;
+    final month = _monthsEs[date.month - 1];
+    final year = date.year;
+    return '$weekday, $day de $month de $year';
+  }
+
+  String _getRelativeLabel(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final target = DateTime(date.year, date.month, date.day);
+    final diff = target.difference(today).inDays;
+
+    if (diff == 0) return 'HOY';
+    if (diff == -1) return 'AYER';
+    if (diff == 1) return 'MAÑANA';
+    if (diff < -1) return 'HACE ${diff.abs()} DÍAS';
+    return 'EN $diff DÍAS';
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = AppTheme.dynamicAccent(isDark);
     final allHabits = ref.watch(habitsProvider);
+    final allBlocks = ref.watch(scheduleProvider);
     final dateIso = widget.date.toIso8601String().split('T').first;
-    
-    // Filtramos los hábitos que tocan hoy
+
+    // Hábitos activos para este día
     final activeHabits = allHabits.where((h) {
-      if (h.frequencyType == 0) return h.activeWeekdays.contains(widget.date.weekday);
-      return true; // Hábitos flexibles aplican a cualquier día
+      if (h.frequencyType == 0) {
+        return h.activeWeekdays.contains(widget.date.weekday);
+      }
+      return true;
     }).toList();
 
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.85),
+    // Bloques/turnos que aplican a este día concreto del calendario
+    final activeBlocks = allBlocks.where((b) {
+      return b.appliesToDate(widget.date);
+    }).toList();
+
+    final completedHabitsCount = activeHabits
+        .where((h) => h.completedDates.contains(dateIso))
+        .length;
+    final totalHabits = activeHabits.length;
+    final habitProgress = totalHabits > 0 ? (completedHabitsCount / totalHabits) : 0.0;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? AppTheme.obsidianCanvas : AppTheme.boneCanvas,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border.all(
+          color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+          width: 1.0,
+        ),
+      ),
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 14,
+        bottom: MediaQuery.of(context).padding.bottom + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Tirador superior ergonómico
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.18)
+                    : Colors.black.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
           ),
-          padding: EdgeInsets.only(
-            left: 24,
-            right: 24,
-            top: 16,
-            bottom: MediaQuery.of(context).padding.bottom + 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          const SizedBox(height: 18),
+
+          // Cabecera: Fecha y Badge relativo
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _formatDateHeader(widget.date),
+                      style: AppTheme.displayStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: isDark
+                            ? AppTheme.obsidianTextPrimary
+                            : AppTheme.boneTextPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      totalHabits > 0
+                          ? '$completedHabitsCount de $totalHabits hábitos completados'
+                          : 'Sin hábitos asignados',
+                      style: AppTheme.monoStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: isDark
+                            ? AppTheme.obsidianTextSecondary
+                            : AppTheme.boneTextSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               Container(
-                width: 40,
-                height: 4,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.grey[700],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Día ${widget.date.day}/${widget.date.month}/${widget.date.year}',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Theme.of(context).textTheme.displayLarge?.color),
-              ),
-              const SizedBox(height: 24),
-              if (activeHabits.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text('Día de descanso. ¡Disfruta!', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.6))),
-                ),
-              if (activeHabits.isNotEmpty)
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: activeHabits.length,
-                    separatorBuilder: (context, index) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final habit = activeHabits[index];
-                      final isCompleted = habit.completedDates.contains(dateIso);
-                      final currentProgress = habit.dailyProgress[dateIso] ?? 0;
-                      
-                      return _HabitRow(
-                        key: ValueKey(habit.id),
-                        habit: habit,
-                        isCompleted: isCompleted,
-                        currentProgress: currentProgress,
-                        dateIso: dateIso,
-                        onConfetti: _showFullScreenConfetti,
-                      );
-                    },
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: AppTheme.radiusXs,
+                  border: Border.all(
+                    color: accent.withValues(alpha: 0.35),
+                    width: AppTheme.borderPrecision,
                   ),
                 ),
+                child: Text(
+                  _getRelativeLabel(widget.date),
+                  style: AppTheme.monoStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: accent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          if (totalHabits > 0) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: habitProgress,
+                minHeight: 4,
+                backgroundColor: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.black.withValues(alpha: 0.06),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  habitProgress == 1.0 ? accent : (isDark ? Colors.white70 : AppTheme.boneTextPrimary),
+                ),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 20),
+
+          // Lista de Hábitos
+          if (activeHabits.isEmpty && activeBlocks.isEmpty) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+              decoration: AppTheme.bentoCard(
+                isLight: !isDark,
+                borderRadius: AppTheme.radiusMd,
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.wb_sunny_outlined,
+                    size: 32,
+                    color: isDark
+                        ? AppTheme.obsidianTextMuted
+                        : AppTheme.boneTextMuted,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Día libre de hábitos',
+                    style: AppTheme.displayStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? AppTheme.obsidianTextPrimary
+                          : AppTheme.boneTextPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'No hay tareas ni turnos programados para esta fecha.',
+                    textAlign: TextAlign.center,
+                    style: AppTheme.bodyStyle(
+                      fontSize: 12,
+                      color: isDark
+                          ? AppTheme.obsidianTextMuted
+                          : AppTheme.boneTextMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                physics: const BouncingScrollPhysics(),
+                children: [
+                  if (activeHabits.isNotEmpty) ...[
+                    ...activeHabits.map((habit) {
+                      final isCompleted = habit.completedDates.contains(dateIso);
+                      return _buildHabitItem(
+                        context: context,
+                        habit: habit,
+                        isCompleted: isCompleted,
+                        isDark: isDark,
+                        dateIso: dateIso,
+                      );
+                    }),
+                  ],
+
+                  if (activeBlocks.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      'Turnos de Trabajo',
+                      style: AppTheme.displayStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: isDark
+                            ? AppTheme.obsidianTextSecondary
+                            : AppTheme.boneTextSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...activeBlocks.map((block) {
+                      Habit? linkedHabit;
+                      if (block.habitId != null) {
+                        linkedHabit = allHabits.cast<Habit?>().firstWhere(
+                              (h) => h?.id == block.habitId,
+                              orElse: () => null,
+                            );
+                      }
+                      final isCompleted = block
+                          .getEffectiveCompletedDates(linkedHabit)
+                          .contains(dateIso);
+
+                      return _buildBlockItem(
+                        context: context,
+                        block: block,
+                        isCompleted: isCompleted,
+                        isDark: isDark,
+                        dateIso: dateIso,
+                      );
+                    }),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHabitItem({
+    required BuildContext context,
+    required Habit habit,
+    required bool isCompleted,
+    required bool isDark,
+    required String dateIso,
+  }) {
+    final habitColor = habit.color;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: GestureDetector(
+        onTap: () {
+          if (!isCompleted) {
+            HapticFeedback.mediumImpact();
+            SoundService().playCheck();
+          } else {
+            HapticFeedback.lightImpact();
+          }
+          ref.read(habitsProvider.notifier).toggleDay(habit.id, dateIso);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: AppTheme.bentoCard(
+            isLight: !isDark,
+            borderRadius: AppTheme.radiusMd,
+            borderColor: isCompleted ? habitColor.withValues(alpha: 0.35) : null,
+          ),
+          child: Row(
+            children: [
+              // Indicador visual con color del hábito
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: habitColor,
+                  borderRadius: BorderRadius.circular(2.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: habitColor.withValues(alpha: 0.35),
+                      blurRadius: 4,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+
+              // Nombre del hábito
+              Expanded(
+                child: Text(
+                  habit.name,
+                  style: AppTheme.displayStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: isDark
+                        ? (isCompleted
+                            ? AppTheme.obsidianTextPrimary.withValues(alpha: 0.65)
+                            : AppTheme.obsidianTextPrimary)
+                        : (isCompleted
+                            ? AppTheme.boneTextPrimary.withValues(alpha: 0.65)
+                            : AppTheme.boneTextPrimary),
+                  ),
+                ),
+              ),
+
+              // Interruptor de Checkbox Táctil
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: isCompleted
+                      ? habitColor.withValues(alpha: 0.20)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: isCompleted
+                        ? habitColor
+                        : (isDark
+                            ? Colors.white.withValues(alpha: 0.22)
+                            : Colors.black.withValues(alpha: 0.20)),
+                    width: 1.2,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: isCompleted
+                    ? Icon(
+                        Icons.check_rounded,
+                        size: 15,
+                        color: habitColor,
+                      )
+                    : null,
+              ),
             ],
           ),
         ),
       ),
     );
   }
-}
 
-class _HabitRow extends ConsumerStatefulWidget {
-  final Habit habit;
-  final bool isCompleted;
-  final int currentProgress;
-  final String dateIso;
-  final VoidCallback onConfetti;
+  Widget _buildBlockItem({
+    required BuildContext context,
+    required ScheduleBlock block,
+    required bool isCompleted,
+    required bool isDark,
+    required String dateIso,
+  }) {
+    final blockColor = block.color;
 
-  const _HabitRow({
-    Key? key,
-    required this.habit,
-    required this.isCompleted,
-    required this.currentProgress,
-    required this.dateIso,
-    required this.onConfetti,
-  }) : super(key: key);
-
-  @override
-  ConsumerState<_HabitRow> createState() => _HabitRowState();
-}
-
-class _HabitRowState extends ConsumerState<_HabitRow> with TickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 200));
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.92).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _handleTap() {
-    final wasCompleted = widget.isCompleted;
-    
-    _controller.forward().then((_) => _controller.reverse());
-    
-    if (!wasCompleted) {
-      HapticFeedback.mediumImpact();
-      SoundService().playCheck();
-      widget.onConfetti();
-    } else {
-      HapticFeedback.lightImpact();
-    }
-    
-    ref.read(habitsProvider.notifier).toggleDay(widget.habit.id, widget.dateIso);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: _handleTap,
-      child: AnimatedBuilder(
-        animation: _scaleAnimation,
-        builder: (context, child) {
-          return Transform.scale(
-            scale: _scaleAnimation.value,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              decoration: BoxDecoration(
-                color: widget.isCompleted ? widget.habit.color.withOpacity(0.15) : Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: widget.isCompleted ? widget.habit.color : Colors.grey.withOpacity(0.15),
-                  width: 2,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: GestureDetector(
+        onTap: () {
+          if (!isCompleted) {
+            HapticFeedback.mediumImpact();
+            SoundService().playCheck();
+          } else {
+            HapticFeedback.lightImpact();
+          }
+          ref.read(scheduleProvider.notifier).toggleDateForBlock(block.id, dateIso);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: AppTheme.bentoCard(
+            isLight: !isDark,
+            borderRadius: AppTheme.radiusMd,
+            borderColor: isCompleted ? blockColor.withValues(alpha: 0.35) : null,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: blockColor.withValues(alpha: 0.12),
+                  borderRadius: AppTheme.radiusXs,
+                  border: Border.all(
+                    color: blockColor.withValues(alpha: 0.3),
+                    width: AppTheme.borderPrecision,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  Icons.schedule_rounded,
+                  size: 14,
+                  color: blockColor,
                 ),
               ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: widget.habit.color,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Text(
-                      widget.habit.name,
-                      style: TextStyle(
-                        color: Theme.of(context).textTheme.bodyLarge?.color,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      block.title,
+                      style: AppTheme.displayStyle(
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        fontSize: 16,
+                        color: isDark
+                            ? AppTheme.obsidianTextPrimary
+                            : AppTheme.boneTextPrimary,
                       ),
                     ),
-                  ),
-                  Icon(
-                    widget.isCompleted ? Icons.check_circle : Icons.circle_outlined,
-                    color: widget.isCompleted ? widget.habit.color : Colors.grey.withOpacity(0.3),
-                    size: 28,
-                  ),
-                ],
+                    Text(
+                      '${block.formattedDuration} · ${block.isOvernight ? 'Turno nocturno' : 'Turno diurno'}',
+                      style: AppTheme.monoStyle(
+                        fontSize: 10,
+                        color: isDark
+                            ? AppTheme.obsidianTextMuted
+                            : AppTheme.boneTextMuted,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          );
-        },
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: isCompleted
+                      ? blockColor.withValues(alpha: 0.20)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: isCompleted
+                        ? blockColor
+                        : (isDark
+                            ? Colors.white.withValues(alpha: 0.22)
+                            : Colors.black.withValues(alpha: 0.20)),
+                    width: 1.2,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: isCompleted
+                    ? Icon(
+                        Icons.check_rounded,
+                        size: 15,
+                        color: blockColor,
+                      )
+                    : null,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

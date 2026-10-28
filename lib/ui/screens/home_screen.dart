@@ -26,6 +26,7 @@ import '../widgets/staggered_accordion_item.dart';
 import '../theme/app_theme.dart';
 import 'settings_screen.dart';
 import 'statistics_screen.dart';
+import 'shift_calendar_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -156,7 +157,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => DayDetailsSheet(date: date),
+      isScrollControlled: true,
+      builder: (context) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: DayDetailsSheet(date: date),
+        ),
+      ),
     );
   }
 
@@ -181,10 +188,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     final monthName = _getMonthName(_currentMonth.month);
 
     final now = DateTime.now();
+    final yesterday = now.subtract(const Duration(days: 1));
     // Filter and sort today's schedule blocks (including overnight shifts from yesterday)
     final todayBlocks = scheduleBlocks.where((b) {
-      return b.appliesToWeekday(now.weekday) ||
-          (b.isOvernight && b.appliesToWeekday(now.weekday == 1 ? 7 : now.weekday - 1));
+      return b.appliesToDate(now) ||
+          (b.isOvernight && b.appliesToDate(yesterday));
     }).toList()
       ..sort((a, b) => a.startInMinutes.compareTo(b.startInMinutes));
 
@@ -677,37 +685,84 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                   ),
                 ] else ...[
                   // VISTA 1: RELOJ ORBITAL 24H (HORARIO / RUTINA)
-                  // Pastilla de Fecha de Hoy
-                  Center(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).cardColor,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.03),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          )
-                        ],
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.today, size: 16, color: Color(0xFFE6A590)),
-                          const SizedBox(width: 8),
-                          Text(
-                            _getTodayDateLabel(),
-                            style: GoogleFonts.outfit(
-                              color: const Color(0xFFE6A590),
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.1,
+                  // Barra Superior del Reloj 24h: Fecha + Botón Planificador de Turnos
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+                            borderRadius: AppTheme.radiusSm,
+                            border: Border.all(
+                              color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                              width: AppTheme.borderPrecision,
                             ),
                           ),
-                        ],
-                      ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.calendar_today_rounded,
+                                size: 13,
+                                color: AppTheme.dynamicAccent(isDark),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _getTodayDateLabel(),
+                                style: AppTheme.monoStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark
+                                      ? AppTheme.obsidianTextPrimary
+                                      : AppTheme.boneTextPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const ShiftCalendarScreen()),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppTheme.dynamicAccent(isDark).withValues(alpha: 0.12),
+                              borderRadius: AppTheme.radiusSm,
+                              border: Border.all(
+                                color: AppTheme.dynamicAccent(isDark).withValues(alpha: 0.35),
+                                width: AppTheme.borderPrecision,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.edit_calendar_rounded,
+                                  size: 14,
+                                  color: AppTheme.dynamicAccent(isDark),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Cuadrante Turnos',
+                                  style: AppTheme.monoStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppTheme.dynamicAccent(isDark),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
 

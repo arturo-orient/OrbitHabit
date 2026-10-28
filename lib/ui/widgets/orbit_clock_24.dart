@@ -76,7 +76,7 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
     int minDiff = 999999;
 
     for (final block in blocks) {
-      if (!block.appliesToWeekday(now.weekday)) continue;
+      if (!block.appliesToDate(now)) continue;
       int diff = block.startInMinutes - currentMinutes;
       if (diff < 0) {
         diff += 1440; // Tomorrow's occurrence
@@ -145,61 +145,14 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
                   Text(
                     '${_now.hour.toString().padLeft(2, '0')}:${_now.minute.toString().padLeft(2, '0')}',
                     style: GoogleFonts.outfit(
-                      fontSize: 34,
+                      fontSize: 38,
                       fontWeight: FontWeight.bold,
                       color: textColor,
                       letterSpacing: 1.2,
                     ),
                   ),
 
-                  const SizedBox(height: 4),
-
-                  // Active block info or free time
                   if (activeBlock != null) ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: linkedHabit != null
-                                ? linkedHabit.color
-                                : activeBlock.color,
-                            boxShadow: [
-                              BoxShadow(
-                                color: (linkedHabit?.color ?? activeBlock.color)
-                                    .withOpacity(0.6),
-                                blurRadius: 6,
-                              )
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            activeBlock.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.outfit(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: textColor,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Quedan ${_formatRemaining(activeBlock.minutesRemainingAt(_now) ?? 0)}',
-                      style: GoogleFonts.outfit(
-                        fontSize: 12,
-                        color: textColor.withOpacity(0.55),
-                      ),
-                    ),
-
                     // Quick Habit Toggle Action Button if linked to a Habit!
                     if (linkedHabit != null) ...[
                       const SizedBox(height: 8),
@@ -323,33 +276,6 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
                         },
                       ),
                     ],
-                  ] else ...[
-                    // Free time
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text('🌱', style: TextStyle(fontSize: 12)),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Tiempo Libre',
-                          style: GoogleFonts.outfit(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: textColor.withOpacity(0.8),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (nextBlock != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        'Próximo: ${nextBlock.title} (${nextBlock.startHour.toString().padLeft(2, '0')}:${nextBlock.startMinute.toString().padLeft(2, '0')})',
-                        style: GoogleFonts.outfit(
-                          fontSize: 11,
-                          color: textColor.withOpacity(0.45),
-                        ),
-                      ),
-                    ],
                   ],
                 ],
               ),
@@ -460,14 +386,50 @@ class _OrbitClockPainter extends CustomPainter {
       }
     }
 
-    // 3. Draw Scheduled Time Blocks as Coloured Arc Segments
-    for (final block in blocks) {
-      if (!block.appliesToWeekday(now.weekday) &&
-          !(block.isOvernight &&
-              block.appliesToWeekday(now.weekday == 1 ? 7 : now.weekday - 1))) {
-        continue;
+    // 3. Draw Scheduled Time Blocks as Coloured Arc Segments (with Concentric Lanes for Overlaps)
+    final yesterday = now.subtract(const Duration(days: 1));
+    final todayBlocks = blocks.where((block) {
+      return block.appliesToDate(now) ||
+          (block.isOvernight && block.appliesToDate(yesterday));
+    }).toList();
+
+    // Calculamos carriles concéntricos para evitar que tareas solapadas se pisen
+    final Map<ScheduleBlock, int> blockLanes = {};
+    final Map<ScheduleBlock, int> blockMaxLanes = {};
+
+    for (int i = 0; i < todayBlocks.length; i++) {
+      final current = todayBlocks[i];
+      final usedLanes = <int>{};
+
+      for (int j = 0; j < todayBlocks.length; j++) {
+        if (i == j) continue;
+        final other = todayBlocks[j];
+        if (_doBlocksOverlap(current, other)) {
+          if (blockLanes.containsKey(other)) {
+            usedLanes.add(blockLanes[other]!);
+          }
+        }
       }
 
+      int lane = 0;
+      while (usedLanes.contains(lane)) {
+        lane++;
+      }
+      blockLanes[current] = lane;
+    }
+
+    for (final current in todayBlocks) {
+      int localMaxLane = blockLanes[current]!;
+      for (final other in todayBlocks) {
+        if (current == other) continue;
+        if (_doBlocksOverlap(current, other)) {
+          localMaxLane = math.max(localMaxLane, blockLanes[other]!);
+        }
+      }
+      blockMaxLanes[current] = localMaxLane + 1;
+    }
+
+    for (final block in todayBlocks) {
       // Check if linked to a habit to inherit its official color
       Color blockColor = block.color;
       if (block.habitId != null) {
@@ -484,22 +446,42 @@ class _OrbitClockPainter extends CustomPainter {
       final sweepAngle = (block.durationInMinutes / 1440.0) * 2 * math.pi;
 
       final isCurrent = block == activeBlock;
+      final numLanes = blockMaxLanes[block] ?? 1;
+      final laneIndex = blockLanes[block] ?? 0;
+
+      double currentTrackRadius;
+      double currentStrokeWidth;
+
+      if (numLanes == 1) {
+        currentTrackRadius = trackRadius;
+        currentStrokeWidth = isCurrent ? trackWidth * 0.95 : trackWidth * 0.82;
+      } else {
+        // Distribución en carriles concéntricos paralelos
+        const laneGap = 2.5;
+        final totalAvailableWidth = trackWidth * 0.92;
+        final singleLaneWidth = (totalAvailableWidth - (numLanes - 1) * laneGap) / numLanes;
+        currentStrokeWidth = singleLaneWidth;
+
+        final outerOffset = (totalAvailableWidth * 0.5) - (singleLaneWidth * 0.5);
+        final offset = outerOffset - laneIndex * (singleLaneWidth + laneGap);
+        currentTrackRadius = trackRadius + offset;
+      }
 
       final blockPaint = Paint()
-        ..color = isCurrent ? blockColor : blockColor.withOpacity(0.65)
+        ..color = isCurrent ? blockColor : blockColor.withOpacity(0.85)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = isCurrent ? trackWidth * 0.95 : trackWidth * 0.82
+        ..strokeWidth = currentStrokeWidth
         ..strokeCap = StrokeCap.round;
 
       // Glow effect if this block is active right now!
       if (isCurrent) {
         final glowPaint = Paint()
-          ..color = blockColor.withOpacity(0.35 * pulseValue)
+          ..color = blockColor.withOpacity(0.40 * pulseValue)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = trackWidth * 1.35
+          ..strokeWidth = currentStrokeWidth * 1.5
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
         canvas.drawArc(
-          Rect.fromCircle(center: center, radius: trackRadius),
+          Rect.fromCircle(center: center, radius: currentTrackRadius),
           startAngle + 0.02,
           sweepAngle - 0.04,
           false,
@@ -508,7 +490,7 @@ class _OrbitClockPainter extends CustomPainter {
       }
 
       canvas.drawArc(
-        Rect.fromCircle(center: center, radius: trackRadius),
+        Rect.fromCircle(center: center, radius: currentTrackRadius),
         startAngle + 0.02,
         sweepAngle - 0.04,
         false,
@@ -542,6 +524,35 @@ class _OrbitClockPainter extends CustomPainter {
       ..color = Colors.white
       ..style = PaintingStyle.fill;
     canvas.drawCircle(satelliteCenter, 2.0, satelliteInnerDot);
+  }
+
+  bool _doBlocksOverlap(ScheduleBlock a, ScheduleBlock b) {
+    List<List<int>> getIntervals(ScheduleBlock s) {
+      final start = s.startInMinutes;
+      final dur = s.durationInMinutes;
+      if (s.isOvernight) {
+        return [
+          [start, 1440],
+          [0, (start + dur) % 1440],
+        ];
+      } else {
+        return [
+          [start, start + dur],
+        ];
+      }
+    }
+
+    final intervalsA = getIntervals(a);
+    final intervalsB = getIntervals(b);
+
+    for (final ia in intervalsA) {
+      for (final ib in intervalsB) {
+        final startMax = math.max(ia[0], ib[0]);
+        final endMin = math.min(ia[1], ib[1]);
+        if (startMax < endMin) return true;
+      }
+    }
+    return false;
   }
 
   @override

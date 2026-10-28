@@ -8,6 +8,7 @@ import '../../providers/habit_provider.dart';
 import '../../providers/schedule_provider.dart';
 import '../../services/sound_service.dart';
 import '../theme/app_theme.dart';
+import 'custom_color_picker_dialog.dart';
 
 enum TaskTargetMode {
   none,   // Sin meta fija
@@ -42,8 +43,8 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
   late bool _showInOrbit;
 
   // 2. Horario en Reloj 24h
-  late TimeOfDay _startTime;
-  late TimeOfDay _endTime;
+  TimeOfDay? _startTime;
+  TimeOfDay? _endTime;
   late List<int> _activeWeekdays;
 
   // 3. Modos de Meta
@@ -60,13 +61,18 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
   late List<String> _completedDates;
 
   final List<Color> _palette = const [
-    Color(0xFF84A59D), // Verde Salvia
-    Color(0xFFB5A6C9), // Azul Lavanda
-    Color(0xFFF2C6B4), // Melocotón Suave
-    Color(0xFFE5D08F), // Mostaza Apagado / Arena
-    Color(0xFF9EA1D4), // Periwinkle
+    Color(0xFFEF4444), // Rojo Carmín
+    Color(0xFFF97316), // Coral Mandarina
+    Color(0xFFF59E0B), // Ámbar Cálido
+    Color(0xFFEAB308), // Oro Mostaza
+    Color(0xFF10B981), // Verde Esmeralda
+    Color(0xFF84A59D), // Verde Salvia Zen
+    Color(0xFF06B6D4), // Cian Turquesa
+    Color(0xFF2563EB), // Azul Cobalto
+    Color(0xFF6366F1), // Índigo Eléctrico
+    Color(0xFF8B5CF6), // Púrpura Zen
+    Color(0xFF9EA1D4), // Lavanda Periwinkle
     Color(0xFFE5989B), // Rosa Empolvado
-    Color(0xFFA8C2D3), // Gris Invierno
   ];
 
   @override
@@ -108,8 +114,8 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         _activeWeekdays = List.from(block.daysOfWeek);
         _extraHours = block.extraHours;
       } else {
-        _startTime = const TimeOfDay(hour: 23, minute: 0);
-        _endTime = const TimeOfDay(hour: 7, minute: 0);
+        _startTime = null;
+        _endTime = null;
         _activeWeekdays = habit != null ? List.from(habit.activeWeekdays) : [1, 2, 3, 4, 5, 6, 7];
         _extraHours = 0.0;
       }
@@ -141,8 +147,8 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       _hasSchedule = widget.defaultEnableSchedule;
       _showInOrbit = !widget.defaultEnableSchedule; // Si se crea desde el reloj, puede ser solo guía
 
-      _startTime = const TimeOfDay(hour: 23, minute: 0);
-      _endTime = const TimeOfDay(hour: 7, minute: 0);
+      _startTime = null;
+      _endTime = null;
       _activeWeekdays = [1, 2, 3, 4, 5, 6, 7];
 
       _targetMode = widget.defaultEnableSchedule ? TaskTargetMode.hours : TaskTargetMode.days;
@@ -163,11 +169,13 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
   bool get _isEditing => widget.habitToEdit != null || widget.blockToEdit != null;
 
-  int get _startMinutes => _startTime.hour * 60 + _startTime.minute;
-  int get _endMinutes => _endTime.hour * 60 + _endTime.minute;
-  bool get _isOvernight => _endMinutes <= _startMinutes;
+  bool get _hasSelectedTimes => _startTime != null && _endTime != null;
+  int get _startMinutes => _startTime != null ? (_startTime!.hour * 60 + _startTime!.minute) : 0;
+  int get _endMinutes => _endTime != null ? (_endTime!.hour * 60 + _endTime!.minute) : 0;
+  bool get _isOvernight => _hasSelectedTimes && (_endMinutes <= _startMinutes);
 
   int get _durationMinutes {
+    if (!_hasSelectedTimes) return 0;
     if (_isOvernight) {
       return (1440 - _startMinutes) + _endMinutes;
     }
@@ -175,6 +183,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
   }
 
   String get _formattedDuration {
+    if (!_hasSelectedTimes) return '--';
     final h = _durationMinutes ~/ 60;
     final m = _durationMinutes % 60;
     if (h > 0 && m > 0) return '${h}h ${m}m';
@@ -184,7 +193,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
   Future<void> _pickTime(bool isStart) async {
     HapticFeedback.selectionClick();
-    final initial = isStart ? _startTime : _endTime;
+    final initial = (isStart ? _startTime : _endTime) ?? TimeOfDay.now();
     final picked = await showTimePicker(
       context: context,
       initialTime: initial,
@@ -250,6 +259,40 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     }
 
     if (_hasSchedule) {
+      if (_startTime == null || _endTime == null) {
+        HapticFeedback.vibrate();
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFFE11D48),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            content: const Text(
+              'Selecciona la hora de inicio y de fin para el reloj 24h.',
+              style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white),
+            ),
+          ),
+        );
+        return;
+      }
+
+      if (_startTime!.hour == _endTime!.hour && _startTime!.minute == _endTime!.minute) {
+        HapticFeedback.vibrate();
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFFE11D48),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            content: const Text(
+              'La hora de inicio y fin no pueden ser idénticas.',
+              style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white),
+            ),
+          ),
+        );
+        return;
+      }
+
       final duplicateBlock = blocks.cast<ScheduleBlock?>().firstWhere(
             (b) =>
                 b != null &&
@@ -311,10 +354,10 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       final scheduleBlock = ScheduleBlock(
         id: blockId,
         title: title,
-        startHour: _startTime.hour,
-        startMinute: _startTime.minute,
-        endHour: _endTime.hour,
-        endMinute: _endTime.minute,
+        startHour: _startTime!.hour,
+        startMinute: _startTime!.minute,
+        endHour: _endTime!.hour,
+        endMinute: _endTime!.minute,
         colorValue: _selectedColor.value,
         habitId: _showInOrbit ? habitId : null,
         daysOfWeek: _activeWeekdays,
@@ -558,33 +601,86 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
             // 2. Paleta de Color Visual
             _buildSectionTitle('Color Visual'),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: _palette.map((color) {
-                final isSelected = _selectedColor == color;
-                return GestureDetector(
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    setState(() => _selectedColor = color);
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                      border: isSelected
-                          ? Border.all(color: theme.cardColor, width: 3)
-                          : null,
-                      boxShadow: isSelected
-                          ? [BoxShadow(color: color.withOpacity(0.55), blurRadius: 10, spreadRadius: 1)]
-                          : null,
+            Builder(
+              builder: (context) {
+                final isCustomSelected = !_palette.contains(_selectedColor);
+                final isDark = theme.brightness == Brightness.dark;
+
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    ..._palette.map((color) {
+                      final isSelected = _selectedColor == color;
+                      return GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _selectedColor = color);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                            border: isSelected
+                                ? Border.all(color: theme.cardColor, width: 3)
+                                : null,
+                            boxShadow: isSelected
+                                ? [BoxShadow(color: color.withOpacity(0.55), blurRadius: 10, spreadRadius: 1)]
+                                : null,
+                          ),
+                          alignment: Alignment.center,
+                          child: isSelected
+                              ? const Icon(Icons.check_rounded, color: Colors.white, size: 19)
+                              : null,
+                        ),
+                      );
+                    }),
+
+                    // Botón de Color Personalizado
+                    GestureDetector(
+                      onTap: () async {
+                        HapticFeedback.selectionClick();
+                        final picked = await CustomColorPickerDialog.show(context, _selectedColor);
+                        if (picked != null) {
+                          setState(() => _selectedColor = picked);
+                        }
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: isCustomSelected
+                              ? _selectedColor
+                              : (isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.05)),
+                          shape: BoxShape.circle,
+                          border: isCustomSelected
+                              ? Border.all(color: theme.cardColor, width: 3)
+                              : Border.all(
+                                  color: isDark ? Colors.white30 : Colors.black26,
+                                  width: 1.5,
+                                ),
+                          boxShadow: isCustomSelected
+                              ? [BoxShadow(color: _selectedColor.withOpacity(0.55), blurRadius: 10, spreadRadius: 1)]
+                              : null,
+                        ),
+                        alignment: Alignment.center,
+                        child: isCustomSelected
+                            ? const Icon(Icons.check_rounded, color: Colors.white, size: 19)
+                            : Icon(
+                                Icons.colorize_rounded,
+                                size: 18,
+                                color: isDark ? Colors.white70 : Colors.black87,
+                              ),
+                      ),
                     ),
-                  ),
+                  ],
                 );
-              }).toList(),
+              },
             ),
 
             // 3. Sección: Visibilidad y Modos (¿Dónde se muestra?)
@@ -710,11 +806,13 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              '${_startTime.hour.toString().padLeft(2, '0')}:${_startTime.minute.toString().padLeft(2, '0')}',
+                              _startTime != null
+                                  ? '${_startTime!.hour.toString().padLeft(2, '0')}:${_startTime!.minute.toString().padLeft(2, '0')}'
+                                  : '--:--',
                               style: GoogleFonts.outfit(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
-                                color: textColor,
+                                color: _startTime != null ? textColor : textColor?.withOpacity(0.35),
                               ),
                             ),
                           ],
@@ -745,11 +843,13 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              '${_endTime.hour.toString().padLeft(2, '0')}:${_endTime.minute.toString().padLeft(2, '0')}',
+                              _endTime != null
+                                  ? '${_endTime!.hour.toString().padLeft(2, '0')}:${_endTime!.minute.toString().padLeft(2, '0')}'
+                                  : '--:--',
                               style: GoogleFonts.outfit(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
-                                color: textColor,
+                                color: _endTime != null ? textColor : textColor?.withOpacity(0.35),
                               ),
                             ),
                           ],
@@ -760,37 +860,69 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                 ],
               ),
               const SizedBox(height: 8),
-              // Badge de duración & aviso nocturno
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: _isOvernight
-                      ? const Color(0xFF9EA1D4).withOpacity(0.12)
-                      : _selectedColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _isOvernight ? Icons.nights_stay : Icons.schedule,
-                      size: 15,
-                      color: _isOvernight ? const Color(0xFF9EA1D4) : _selectedColor,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _isOvernight
-                          ? '$_formattedDuration · 🌙 Cruza medianoche (Turno nocturno)'
-                          : 'Duración: $_formattedDuration',
-                      style: TextStyle(
+              if (_hasSelectedTimes) ...[
+                // Badge de duración & aviso nocturno
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _isOvernight
+                        ? const Color(0xFF9EA1D4).withOpacity(0.12)
+                        : _selectedColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isOvernight ? Icons.nights_stay : Icons.schedule,
+                        size: 15,
                         color: _isOvernight ? const Color(0xFF9EA1D4) : _selectedColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Text(
+                        _isOvernight
+                            ? '$_formattedDuration · 🌙 Cruza medianoche (Turno nocturno)'
+                            : 'Duración: $_formattedDuration',
+                        style: TextStyle(
+                          color: _isOvernight ? const Color(0xFF9EA1D4) : _selectedColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: (theme.brightness == Brightness.dark ? Colors.white : Colors.black).withOpacity(0.04),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: (theme.brightness == Brightness.dark ? Colors.white : Colors.black).withOpacity(0.08),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.touch_app_outlined,
+                        size: 15,
+                        color: textColor?.withOpacity(0.5),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Toca "Desde" y "Hasta" para asignar el tramo horario',
+                        style: TextStyle(
+                          color: textColor?.withOpacity(0.55),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
 
             // 5. Días de la Semana Activos (Repetición)
