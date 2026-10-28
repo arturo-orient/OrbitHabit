@@ -21,27 +21,37 @@
 ---
 
 <p align="center">
-  <img src="assets/img/Home.jpeg" width="180" alt="Home Screen"/>
+  <img src="assets/img/01_rueda_orbital.png" width="240" alt="Rueda Orbital Mensual"/>
   &nbsp;&nbsp;
-  <img src="assets/img/planificador_turnos_v111.png" width="180" alt="Planificador de Horarios"/>
+  <img src="assets/img/02_reloj_24h.png" width="240" alt="Reloj Orbital 24h"/>
   &nbsp;&nbsp;
-  <img src="assets/img/Agregar Tarea.jpeg" width="180" alt="Add Habit"/>
-  &nbsp;&nbsp;
-  <img src="assets/img/Estadisticas.jpeg" width="180" alt="Statistics"/>
-  &nbsp;&nbsp;
-  <img src="assets/img/Perfil.jpeg" width="180" alt="Settings"/>
+  <img src="assets/img/03_planificador_turnos.png" width="240" alt="Planificador de Horarios & Turnos"/>
+</p>
+<p align="center">
+  <em>01. Rueda Orbital Mensual &nbsp;·&nbsp; 02. Reloj Horario 24H en Vivo &nbsp;·&nbsp; 03. Planificador de Horarios & Turnos</em>
 </p>
 
 <p align="center">
-  <em>Home & Orbit Tracker · 🗓️ Planificador de Horarios (v1.1.1) · New Habit · Statistics · Zen Settings</em>
+  <img src="assets/img/04_crear_tarea.png" width="180" alt="Creador Multi-Horario"/>
+  &nbsp;&nbsp;
+  <img src="assets/img/05_selector_color.png" width="180" alt="Selector Cromático HEX"/>
+  &nbsp;&nbsp;
+  <img src="assets/img/06_estadisticas_rachas.png" width="180" alt="Telemetría y Métricas"/>
+  &nbsp;&nbsp;
+  <img src="assets/img/07_ajustes_zen.png" width="180" alt="Ajustes Zen & Perfil"/>
+</p>
+<p align="center">
+  <em>04. Creador Unificado &nbsp;·&nbsp; 05. Selector Cromático HSV/HEX &nbsp;·&nbsp; 06. Telemetría y Rachas &nbsp;·&nbsp; 07. Ajustes Zen</em>
 </p>
 
 ## 🚀 What's New in v1.1.1
 
 <p align="center">
-  <img src="assets/img/planificador_turnos_v111.png" width="300" alt="Planificador de Horarios & Turnos"/>
+  <img src="assets/img/03_planificador_turnos.png" width="250" alt="Planificador de Horarios & Turnos"/>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="assets/img/04_crear_tarea.png" width="250" alt="Creador Multi-Horarios"/>
   <br/>
-  <em>🗓️ Planificador de Horarios y Cuadrante de Turnos Rotativos en OrbitHabit v1.1.1</em>
+  <em>🗓️ Cuadrante Mensual de Turnos &nbsp;&nbsp;·&nbsp;&nbsp; 🎛️ Arquitectura Multi-Horario Unificada (v1.1.1)</em>
 </p>
 
 OrbitHabit v1.1.1 introduces comprehensive schedule planning, multi-slot routine architecture, precision color customization, and refined Swiss negative-space design:
