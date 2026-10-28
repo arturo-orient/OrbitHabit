@@ -41,6 +41,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
   // 1. Visibilidad y Modos
   late bool _hasSchedule;
   late bool _showInOrbit;
+  String? _linkedHabitId; // ID de hábito existente vinculado (para múltiples turnos)
 
   // 2. Horario en Reloj 24h
   TimeOfDay? _startTime;
@@ -106,6 +107,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       // Visibilidad y Modos
       _hasSchedule = block != null;
       _showInOrbit = habit != null;
+      _linkedHabitId = block?.habitId;
 
       // Horario
       if (block != null) {
@@ -241,7 +243,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     final editingBlockId = widget.blockToEdit?.id;
 
     // 2. Validación de Duplicados: proteger contra sobreescritura y colisión de nombres
-    if (_showInOrbit) {
+    if (_showInOrbit && _linkedHabitId == null) {
       final duplicateHabit = habits.cast<Habit?>().firstWhere(
             (h) =>
                 h != null &&
@@ -318,7 +320,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     final blockId = editingBlockId ?? 'block_${DateTime.now().millisecondsSinceEpoch}';
 
     // 3. Manejo de Modo Órbita (Rueda de Hábitos)
-    if (_showInOrbit) {
+    if (_showInOrbit && _linkedHabitId == null) {
       final isNewHabit = !habits.any((h) => h.id == habitId);
       final habit = Habit(
         id: habitId,
@@ -341,16 +343,19 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       } else {
         ref.read(habitsProvider.notifier).updateHabit(habit);
       }
-    } else {
-      // Si el usuario decide NO mostrarlo en la Órbita
-      if (editingHabitId != null) {
-        ref.read(habitsProvider.notifier).deleteHabit(editingHabitId);
-      }
+    } else if (widget.habitToEdit != null && editingHabitId != null && !_showInOrbit) {
+      // Solo si el usuario estaba editando un hábito directamente y decide quitarlo de la órbita
+      ref.read(habitsProvider.notifier).deleteHabit(editingHabitId);
     }
 
     // 4. Manejo de Modo Reloj 24h
     final isNewBlock = !blocks.any((b) => b.id == blockId);
     if (_hasSchedule) {
+      final finalHabitId = _linkedHabitId ?? (_showInOrbit ? habitId : null);
+      final hasHourTarget = (_showInOrbit && _targetMode == TaskTargetMode.hours) ||
+          (_linkedHabitId != null &&
+              (habits.cast<Habit?>().firstWhere((h) => h?.id == _linkedHabitId, orElse: () => null)?.hasMonthlyTarget ?? false));
+
       final scheduleBlock = ScheduleBlock(
         id: blockId,
         title: title,
@@ -359,12 +364,13 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         endHour: _endTime!.hour,
         endMinute: _endTime!.minute,
         colorValue: _selectedColor.value,
-        habitId: _showInOrbit ? habitId : null,
+        habitId: finalHabitId,
         daysOfWeek: _activeWeekdays,
-        hasMonthlyHourTarget: _showInOrbit && _targetMode == TaskTargetMode.hours,
+        hasMonthlyHourTarget: hasHourTarget,
         monthlyTargetHours: _monthlyTargetHours,
-        completedDates: _showInOrbit ? _completedDates : [],
-        extraHours: _showInOrbit ? _extraHours : 0.0,
+        completedDates: _completedDates,
+        assignedDates: widget.blockToEdit?.assignedDates ?? [],
+        extraHours: _extraHours,
       );
 
       if (isNewBlock) {
@@ -460,9 +466,12 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final textColor = theme.textTheme.bodyLarge?.color;
+    final habits = ref.watch(habitsProvider);
 
     String modeBadgeText = 'Modo Órbita';
-    if (_hasSchedule && _showInOrbit) {
+    if (_linkedHabitId != null) {
+      modeBadgeText = 'Turno Vinculado';
+    } else if (_hasSchedule && _showInOrbit) {
       modeBadgeText = 'Órbita + Reloj';
     } else if (_hasSchedule && !_showInOrbit) {
       modeBadgeText = 'Solo Reloj (Guía)';
@@ -777,6 +786,10 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                       });
                     },
                   ),
+                  if (_hasSchedule && habits.isNotEmpty) ...[
+                    const Divider(height: 16),
+                    _buildHabitLinkSelector(habits, textColor, isDark),
+                  ],
                 ],
               ),
             ),
@@ -1304,6 +1317,170 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHabitLinkSelector(List<Habit> habits, Color? textColor, bool isDark) {
+    Habit? linkedHabit;
+    if (_linkedHabitId != null) {
+      linkedHabit = habits.cast<Habit?>().firstWhere((h) => h?.id == _linkedHabitId, orElse: () => null);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Vincular a un Hábito Existente',
+              style: TextStyle(
+                color: textColor?.withOpacity(0.9),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (linkedHabit != null)
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() {
+                    _linkedHabitId = null;
+                    _showInOrbit = true;
+                  });
+                },
+                child: Text(
+                  'Desvincular',
+                  style: TextStyle(
+                    color: Colors.redAccent.withOpacity(0.85),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 3),
+        Text(
+          linkedHabit != null
+              ? 'Este turno sumará automáticamente al objetivo de "${linkedHabit.name}".'
+              : 'Selecciona si este turno es una variante de un hábito existente:',
+          style: TextStyle(
+            color: linkedHabit != null ? AppTheme.dynamicAccent(isDark) : textColor?.withOpacity(0.5),
+            fontSize: 11.5,
+            fontWeight: linkedHabit != null ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Row(
+            children: [
+              // Chip: Nuevo independiente
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() {
+                    _linkedHabitId = null;
+                    _showInOrbit = true;
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _linkedHabitId == null
+                        ? (isDark ? Colors.white24 : Colors.black12)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: _linkedHabitId == null
+                          ? (isDark ? Colors.white70 : Colors.black87)
+                          : (isDark ? Colors.white24 : Colors.black12),
+                      width: _linkedHabitId == null ? 1.5 : 1.0,
+                    ),
+                  ),
+                  child: Text(
+                    '➕ Hábito independiente',
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 11.5,
+                      fontWeight: _linkedHabitId == null ? FontWeight.bold : FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // Chips de hábitos existentes
+              ...habits.map((h) {
+                final isSelected = _linkedHabitId == h.id;
+                final habitColor = h.color;
+
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        if (isSelected) {
+                          _linkedHabitId = null;
+                          _showInOrbit = true;
+                        } else {
+                          _linkedHabitId = h.id;
+                          _selectedColor = habitColor;
+                          _showInOrbit = false; // Ya está en la órbita a través de su hábito
+                        }
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? habitColor.withOpacity(0.2)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isSelected
+                              ? habitColor
+                              : (isDark ? Colors.white24 : Colors.black12),
+                          width: isSelected ? 1.6 : 1.0,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: habitColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            h.name,
+                            style: TextStyle(
+                              color: isSelected ? habitColor : textColor,
+                              fontSize: 11.5,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                            ),
+                          ),
+                          if (isSelected) ...[
+                            const SizedBox(width: 4),
+                            Icon(Icons.check_rounded, size: 13, color: habitColor),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
