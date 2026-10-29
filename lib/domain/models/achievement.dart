@@ -96,29 +96,22 @@ class Achievement {
     int targetHours = 120;
     final currentMonth = DateTime.now();
 
+    final prefix = '${currentMonth.year}-${currentMonth.month.toString().padLeft(2, '0')}';
+    double totalWorkHours = 0.0;
     for (final block in scheduleBlocks) {
       if (block.hasMonthlyHourTarget) {
         targetHours = block.monthlyTargetHours;
-        Habit? linkedHabit;
-        if (block.habitId != null) {
-          linkedHabit = habits.cast<Habit?>().firstWhere(
-            (h) => h?.id == block.habitId,
-            orElse: () => null,
-          );
+        final assigned = block.assignedDates.where((d) => d.startsWith(prefix)).length;
+        if (assigned > 0) {
+          totalWorkHours += assigned * (block.durationInMinutes / 60.0);
         } else {
-          linkedHabit = habits.cast<Habit?>().firstWhere(
-            (h) => h != null && h.name.trim().toLowerCase() == block.title.trim().toLowerCase(),
-            orElse: () => null,
-          );
+          totalWorkHours += block.completedDates.where((d) => d.startsWith(prefix)).length * (block.durationInMinutes / 60.0);
         }
-        final hours = block.getMonthlyWorkedHours(currentMonth, linkedHabit);
-        if (hours > maxHoursWorked) {
-          maxHoursWorked = hours;
-        }
-        if (hours >= block.monthlyTargetHours) {
-          hasDedicatedWorker = true;
-        }
+        totalWorkHours += block.extraHours;
       }
+    }
+    if (totalWorkHours >= targetHours && targetHours > 0) {
+      hasDedicatedWorker = true;
     }
 
     // 2. Define the achievements list

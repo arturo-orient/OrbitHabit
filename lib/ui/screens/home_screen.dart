@@ -8,17 +8,14 @@ import '../../providers/settings_provider.dart';
 import '../../utils/streak_utils.dart';
 import '../../services/sound_service.dart';
 import '../widgets/orbit_tracker.dart';
-import '../widgets/add_habit_sheet.dart';
 import '../widgets/day_details_sheet.dart';
 import '../widgets/habit_progress_card.dart';
 import '../widgets/confetti_overlay.dart';
-import '../widgets/achievements_sheet.dart';
 import '../../domain/models/achievement.dart';
 import '../../domain/models/schedule_block.dart';
 import '../../providers/schedule_provider.dart';
 import '../widgets/trophy_overlay.dart';
 import '../widgets/orbit_clock_24.dart';
-import '../widgets/add_schedule_block_sheet.dart';
 import '../widgets/schedule_block_card.dart';
 import '../widgets/monthly_work_target_card.dart';
 import '../widgets/unified_task_sheet.dart';
@@ -50,6 +47,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
 
     // Esperar a que el lienzo esté completamente pintado antes de iniciar la cascada
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(habitsProvider.notifier).consolidateWorkHabits(ref.read(scheduleProvider));
       Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) {
           _entranceController.forward(from: 0.0);
@@ -87,6 +85,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
           child: const UnifiedTaskSheet(defaultEnableSchedule: true),
+        ),
+      ),
+    );
+  }
+
+  void _editScheduleGroup(WorkShiftGroup group) {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: UnifiedTaskSheet(
+            habitToEdit: group.habit,
+            blockToEdit: group.shifts.isNotEmpty ? group.shifts.first : null,
+          ),
         ),
       ),
     );
@@ -168,16 +184,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   }
 
 
-  String _getGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour >= 6 && hour < 12) {
-      return 'Buenos Días,';
-    } else if (hour >= 12 && hour < 20) {
-      return 'Buenas Tardes,';
-    } else {
-      return 'Buenas Noches,';
-    }
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -198,6 +205,79 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
 
     final monthlyWorkBlocks = scheduleBlocks.where((b) => b.hasMonthlyHourTarget).toList();
 
+    // Agrupación unificada de turnos bajo una sola actividad madre ("Trabajar" a secas)
+    final List<WorkShiftGroup> workShiftGroups = [];
+    final Set<String> processedWorkBlockIds = {};
+
+    for (final b in monthlyWorkBlocks) {
+      if (processedWorkBlockIds.contains(b.id)) continue;
+
+      Habit? linkedHabit;
+      if (b.habitId != null) {
+        linkedHabit = habits.cast<Habit?>().firstWhere(
+              (h) => h?.id == b.habitId,
+              orElse: () => null,
+            );
+      }
+      if (linkedHabit == null) {
+        linkedHabit = habits.cast<Habit?>().firstWhere(
+              (h) =>
+                  h != null &&
+                  (h.name.trim().toLowerCase() == b.title.trim().toLowerCase() ||
+                   (h.name.toLowerCase().contains('trabaj') && b.title.toLowerCase().contains('trabaj')) ||
+                   (h.name.toLowerCase().contains('turno') && b.title.toLowerCase().contains('turno'))),
+              orElse: () => null,
+            );
+      }
+
+      final List<ScheduleBlock> groupBlocks = [];
+      for (final other in monthlyWorkBlocks) {
+        if (processedWorkBlockIds.contains(other.id)) continue;
+
+        bool belongs = false;
+        if (linkedHabit != null) {
+          if (other.habitId == linkedHabit.id) belongs = true;
+          if (other.title.trim().toLowerCase() == linkedHabit.name.trim().toLowerCase()) belongs = true;
+          if (linkedHabit.name.toLowerCase().contains('trabaj') && other.title.toLowerCase().contains('trabaj')) belongs = true;
+          if (linkedHabit.name.toLowerCase().contains('turno') && other.title.toLowerCase().contains('turno')) belongs = true;
+        } else {
+          if (other.id == b.id) belongs = true;
+          if (other.title.toLowerCase().contains('trabaj') && b.title.toLowerCase().contains('trabaj')) belongs = true;
+          if (other.title.toLowerCase().contains('turno') && b.title.toLowerCase().contains('turno')) belongs = true;
+        }
+
+        if (belongs) {
+          groupBlocks.add(other);
+          processedWorkBlockIds.add(other.id);
+        }
+      }
+
+      if (groupBlocks.isEmpty) {
+        groupBlocks.add(b);
+        processedWorkBlockIds.add(b.id);
+      }
+
+      String groupTitle = linkedHabit?.name ?? b.title;
+      final lowerTitle = groupTitle.toLowerCase();
+      if (lowerTitle.contains('nocturno') || lowerTitle.contains('mañana') || lowerTitle.contains('tarde') || lowerTitle.contains('guardia')) {
+        if (lowerTitle.startsWith('trabajar') || lowerTitle.contains('trabajar')) {
+          groupTitle = 'Trabajar';
+        } else if (lowerTitle.startsWith('trabajo') || lowerTitle.contains('trabajo')) {
+          groupTitle = 'Trabajo';
+        } else if (lowerTitle.startsWith('turno')) {
+          groupTitle = 'Turno de Trabajo';
+        }
+      }
+
+      workShiftGroups.add(WorkShiftGroup(
+        title: groupTitle,
+        habitId: linkedHabit?.id,
+        habit: linkedHabit,
+        shifts: groupBlocks,
+        monthlyTargetHours: b.monthlyTargetHours,
+      ));
+    }
+
     // Nighttime color smoothing: after 22:00 (10 PM), in Dark or Sage themes,
     // we gently desaturate/dim habit colors to make it extra soothing for the eyes.
     final isLateNight = DateTime.now().hour >= 22 || DateTime.now().hour < 6;
@@ -212,12 +292,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
           }).toList()
         : habits;
 
-    // Filter out habits that already have their dedicated rich MonthlyWorkTargetCard
+    // Filter out habits that already belong to workShiftGroups
     final regularHabits = activeHabits.where((h) {
-      return !monthlyWorkBlocks.any((b) =>
-          b.habitId == h.id ||
-          b.title.trim().toLowerCase() == h.name.trim().toLowerCase());
+      final hName = h.name.trim().toLowerCase();
+      return !workShiftGroups.any((g) =>
+          g.habitId == h.id ||
+          g.title.trim().toLowerCase() == hName ||
+          (hName.contains('trabaj') && g.title.toLowerCase().contains('trabaj')) ||
+          (hName.contains('turno') && g.title.toLowerCase().contains('turno')) ||
+          g.shifts.any((s) => s.habitId == h.id || s.title.trim().toLowerCase() == hName));
     }).toList();
+
+    // Hábitos unificados para la Rueda Orbital (exactamente 1 anillo por actividad madre)
+    final List<Habit> orbitHabits = [];
+    final todayStr = now.toIso8601String().split('T').first;
+    for (final g in workShiftGroups) {
+      final Set<String> groupCompletedDates = {};
+      for (final s in g.shifts) {
+        groupCompletedDates.addAll(s.completedDates);
+      }
+      if (g.habit != null) {
+        groupCompletedDates.addAll(g.habit!.completedDates);
+      }
+      // Solo fechas completadas hasta el día de hoy (los días futuros nunca están completados)
+      final actualCompletedDates = groupCompletedDates.where((d) => d.compareTo(todayStr) <= 0).toSet();
+
+      orbitHabits.add(Habit(
+        id: g.habitId ?? 'work_${g.title}',
+        name: g.title,
+        colorValue: g.color.value,
+        targetDays: 20,
+        orderIndex: 0,
+        completedDates: actualCompletedDates,
+        hasMonthlyTarget: true,
+      ));
+    }
+    orbitHabits.addAll(regularHabits);
 
     // Dynamic reactive listener to trigger the vector Confetti Celebration on "Perfect Days"
     // and slide in the premium PlayStation-style Achievement Unlocked Popup!
@@ -533,7 +643,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                         child: Padding(
                           padding: const EdgeInsets.all(16.0),
                           child: OrbitTracker(
-                            habits: activeHabits,
+                            habits: orbitHabits,
                             scheduleBlocks: scheduleBlocks,
                             currentMonth: _currentMonth,
                             onDayColumnTapped: _showDayDetails,
@@ -566,7 +676,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                         ),
                         const SizedBox(width: 10),
                         Text(
-                          '[${regularHabits.length.toString().padLeft(2, '0')}]',
+                          '[${(workShiftGroups.length + regularHabits.length).toString().padLeft(2, '0')}]',
                           style: AppTheme.monoStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
@@ -580,27 +690,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                   // Lista de Hábitos y Metas Mensuales de Horas
                   Expanded(
                     flex: 4,
-                    child: (regularHabits.isEmpty && monthlyWorkBlocks.isEmpty)
+                    child: (regularHabits.isEmpty && workShiftGroups.isEmpty)
                         ? _buildEmptyState(isDark)
                         : ListView.builder(
                             physics: const BouncingScrollPhysics(),
-                            itemCount: monthlyWorkBlocks.length + regularHabits.length,
+                            itemCount: workShiftGroups.length + regularHabits.length,
                             itemBuilder: (context, index) {
-                              if (index < monthlyWorkBlocks.length) {
-                                final block = monthlyWorkBlocks[index];
+                              if (index < workShiftGroups.length) {
+                                final group = workShiftGroups[index];
                                 return StaggeredAccordionItem(
-                                  key: ValueKey('work_block_${block.id}'),
+                                  key: ValueKey('work_group_${group.title}_${group.shifts.map((s) => s.id).join("_")}'),
                                   index: index,
                                   parentAnimation: _entranceController,
                                   child: MonthlyWorkTargetCard(
-                                    block: block,
+                                    group: group,
                                     currentMonth: _currentMonth,
-                                    onTap: () => _editScheduleBlock(block),
+                                    onTap: () => _editScheduleGroup(group),
                                   ),
                                 );
                               }
 
-                              final habitIndex = index - monthlyWorkBlocks.length;
+                              final habitIndex = index - workShiftGroups.length;
                               final habit = regularHabits[habitIndex];
                               final monthPrefix = '${_currentMonth.year}-${_currentMonth.month.toString().padLeft(2, '0')}';
                               final completedThisMonth = habit.completedDates.where((d) => d.startsWith(monthPrefix)).length;

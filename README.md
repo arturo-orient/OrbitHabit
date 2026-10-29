@@ -44,7 +44,22 @@
   <em>04. Creador Unificado &nbsp;·&nbsp; 05. Selector Cromático HSV/HEX &nbsp;·&nbsp; 06. Telemetría y Rachas &nbsp;·&nbsp; 07. Ajustes Zen</em>
 </p>
 
-## 🚀 What's New in v1.1.1
+## 🚀 What's New in v1.1.2
+
+OrbitHabit v1.1.2 introduces unified work activity management, intelligent shift breakdowns, and fixes future schedule completions:
+
+- 🎛️ **Unified Work Shifts Architecture (`WorkShiftGroup`)**:
+  - Rotating shifts (e.g. *Mañana*, *Noche*, *Tarde*) are now consolidated under a single parent work task (*"Trabajar"* / *"Trabajo"*).
+  - Occupies **a single concentric ring** in the Monthly Orbit Wheel, eliminating duplicate rings for the same job.
+  - Interactive **collapsible breakdown tile** (`[ ⏷ DESGLOSE DE TURNOS ]`) showing exact hours and shifts worked per schedule slot.
+- 🎯 **Mathematical Precision & Phantom Hours Elimination**:
+  - Replaced duplicate hour multipliers with exact date-by-date calendar assignment calculations. Each day only accounts for the specific shift worked.
+- 🗓️ **Planned vs. Completed Distinction for Future Months**:
+  - Planning ahead in the shift calendar for upcoming months (e.g. next month) now displays days as **scheduled guide silhouettes (8% subtle ghost cell)** instead of prematurely marking them as completed.
+  - Clear telemetry differentiation between *Horas Planificadas* and *Horas Reales Trabajadas*.
+
+<details>
+<summary>📜 <strong>Previous Changelog: v1.1.1 Highlights</strong></summary>
 
 <p align="center">
   <img src="assets/img/03_planificador_turnos.png" width="250" alt="Planificador de Horarios & Turnos"/>
@@ -73,6 +88,8 @@ OrbitHabit v1.1.1 introduces comprehensive schedule planning, multi-slot routine
   - **24-Hour Orbit Clock**: On rest days or unscheduled dates, the clock remains 100% clean and diaphanous—no ghost blocks cluttering your free time.
   - **Monthly Orbit Wheel**: Non-scheduled days (weekends, off-shift days) display pure negative space with only the fine orbital guide rail, highlighting the natural rhythm of work and rest without toothless or broken grid artifacts.
   - **Scheduled vs. Completed Distinction**: Scheduled pending days show a subtle 8% ghost cell; completed days light up in full author color.
+
+</details>
 
 <details>
 <summary>📜 <strong>Previous Changelog: v1.1 Highlights</strong></summary>
@@ -165,7 +182,7 @@ lib/
 
 <p align="center">
   <a href="https://github.com/arturo-orient/OrbitHabit/releases/latest/download/OrbitHabit.apk">
-    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.1.1-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
+    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.1.2-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
   </a>
 </p>
 

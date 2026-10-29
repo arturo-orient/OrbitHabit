@@ -813,7 +813,11 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
       // Guardar todos los horarios definidos en la lista _schedules:
       for (final s in _schedules) {
-        final isNew = !blocks.any((b) => b.id == s.id);
+        final existingBlock = blocks.cast<ScheduleBlock?>().firstWhere(
+              (b) => b?.id == s.id,
+              orElse: () => null,
+            );
+        final isNew = existingBlock == null;
         final scheduleBlock = ScheduleBlock(
           id: s.id,
           title: s.title,
@@ -826,9 +830,9 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           daysOfWeek: _activeWeekdays,
           hasMonthlyHourTarget: hasHourTarget,
           monthlyTargetHours: _monthlyTargetHours,
-          completedDates: _completedDates,
-          assignedDates: widget.blockToEdit?.id == s.id ? widget.blockToEdit!.assignedDates : [],
-          extraHours: _extraHours,
+          completedDates: existingBlock?.completedDates ?? _completedDates,
+          assignedDates: existingBlock?.assignedDates ?? (widget.blockToEdit?.id == s.id ? widget.blockToEdit!.assignedDates : const []),
+          extraHours: existingBlock?.extraHours ?? _extraHours,
         );
 
         if (isNew) {

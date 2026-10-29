@@ -111,6 +111,61 @@ class HabitNotifier extends Notifier<List<Habit>> {
     ));
   }
 
+  /// Unifica hábitos duplicados de turnos de trabajo bajo un solo hábito madre
+  Future<void> consolidateWorkHabits(List<dynamic> rawBlocks) async {
+    final habits = List<Habit>.from(state);
+    final workHabits = habits.where((h) {
+      final name = h.name.toLowerCase();
+      return name.contains('trabaj') || name.contains('turno');
+    }).toList();
+
+    if (workHabits.length > 1) {
+      final primary = workHabits.firstWhere(
+        (h) => h.completedDates.isNotEmpty,
+        orElse: () => workHabits.first,
+      );
+
+      final Set<String> mergedDates = {};
+      for (final wh in workHabits) {
+        mergedDates.addAll(wh.completedDates);
+      }
+
+      final unifiedHabit = primary.copyWith(
+        name: 'Trabajar',
+        completedDates: mergedDates,
+      );
+
+      final db = ref.read(databaseProvider);
+      await db.saveHabit(unifiedHabit);
+
+      for (final wh in workHabits) {
+        if (wh.id != primary.id) {
+          await db.deleteHabit(wh.id);
+        }
+      }
+
+      final newHabits = habits
+          .where((h) => h.id == primary.id || !workHabits.any((wh) => wh.id == h.id))
+          .map((h) => h.id == primary.id ? unifiedHabit : h)
+          .toList();
+      state = newHabits;
+
+      try {
+        final scheduleNotifier = ref.read(scheduleProvider.notifier);
+        final currentBlocks = ref.read(scheduleProvider);
+        for (final b in currentBlocks) {
+          if (b.hasMonthlyHourTarget ||
+              b.title.toLowerCase().contains('trabaj') ||
+              b.title.toLowerCase().contains('turno')) {
+            if (b.habitId != primary.id) {
+              await scheduleNotifier.updateBlock(b.copyWith(habitId: primary.id));
+            }
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
   void resetState() {
     state = const [];
   }

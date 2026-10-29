@@ -347,9 +347,12 @@ class OrbitPainter extends CustomPainter {
 
       // Buscar bloques de horario vinculados a este hábito
       final relatedBlocks = scheduleBlocks.where((b) =>
-          b.habitId == habit.id ||
-          b.title.trim().toLowerCase() == habit.name.trim().toLowerCase()).toList();
-      final hasAssignedCalendarDates = relatedBlocks.any((b) => b.assignedDates.isNotEmpty);
+          (b.habitId != null && b.habitId == habit.id) ||
+          b.title.trim().toLowerCase() == habit.name.trim().toLowerCase() ||
+          (habit.name.toLowerCase().contains('trabaj') && b.title.toLowerCase().contains('trabaj')) ||
+          (habit.name.toLowerCase().contains('turno') && b.title.toLowerCase().contains('turno'))).toList();
+      final monthPrefix = '${currentMonth.year}-${currentMonth.month.toString().padLeft(2, '0')}';
+      final hasAssignedCalendarDates = relatedBlocks.any((b) => b.assignedDates.any((d) => d.startsWith(monthPrefix)));
 
       for (int d = 1; d <= daysInMonth; d++) {
         final dayFraction = (d - 1) / (daysInMonth > 0 ? daysInMonth : 1);
@@ -366,7 +369,8 @@ class OrbitPainter extends CustomPainter {
 
         final date = DateTime(currentMonth.year, currentMonth.month, d);
         final dateIso = date.toIso8601String().split('T').first;
-        final isCompleted = habit.completedDates.contains(dateIso);
+        final isFutureDay = date.isAfter(DateTime(now.year, now.month, now.day));
+        final isCompleted = !isFutureDay && habit.completedDates.contains(dateIso);
 
         // Determinamos si el hábito está programado para este día
         bool isScheduled = true;
