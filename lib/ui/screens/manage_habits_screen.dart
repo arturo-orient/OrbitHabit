@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/habit_provider.dart';
-import '../widgets/add_habit_sheet.dart';
+import '../widgets/unified_task_sheet.dart';
 
 class ManageHabitsScreen extends ConsumerWidget {
   const ManageHabitsScreen({Key? key}) : super(key: key);
@@ -11,7 +11,7 @@ class ManageHabitsScreen extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => AddHabitSheet(habitToEdit: habit),
+      builder: (context) => UnifiedTaskSheet(habitToEdit: habit),
     );
   }
 

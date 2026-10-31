@@ -43,7 +43,9 @@ class _CustomColorPickerDialogState extends State<CustomColorPickerDialog> {
   }
 
   String _colorToHex(Color color) {
-    return color.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase();
+    // ignore: deprecated_member_use
+    final int argb = color.value;
+    return (argb & 0x00FFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase();
   }
 
   void _updateFromHsv(HSVColor newHsv) {
@@ -56,7 +58,10 @@ class _CustomColorPickerDialogState extends State<CustomColorPickerDialog> {
   }
 
   void _onHexChanged(String val) {
-    final clean = val.replaceAll('#', '').trim();
+    String clean = val.replaceAll('#', '').trim();
+    if (clean.length == 3) {
+      clean = clean.split('').map((c) => '$c$c').join();
+    }
     if (clean.length == 6) {
       final intVal = int.tryParse(clean, radix: 16);
       if (intVal != null) {
@@ -373,7 +378,18 @@ class _CustomColorPickerDialogState extends State<CustomColorPickerDialog> {
                       child: ElevatedButton(
                         onPressed: () {
                           HapticFeedback.selectionClick();
-                          Navigator.of(context).pop(currentColor);
+                          String clean = _hexController.text.replaceAll('#', '').trim();
+                          if (clean.length == 3) {
+                            clean = clean.split('').map((c) => '$c$c').join();
+                          }
+                          Color finalColor = currentColor;
+                          if (clean.length == 6) {
+                            final intVal = int.tryParse(clean, radix: 16);
+                            if (intVal != null) {
+                              finalColor = Color(0xFF000000 | intVal);
+                            }
+                          }
+                          Navigator.of(context).pop(finalColor);
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: currentColor,

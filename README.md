@@ -44,7 +44,18 @@
   <em>04. Creador Unificado &nbsp;·&nbsp; 05. Selector Cromático HSV/HEX &nbsp;·&nbsp; 06. Telemetría y Rachas &nbsp;·&nbsp; 07. Ajustes Zen</em>
 </p>
 
-## 🚀 What's New in v1.1.2
+## 🚀 What's New in v1.1.3
+
+OrbitHabit v1.1.3 brings critical bug fixes for display accessibility and custom theme persistence:
+
+- 🔠 **Accessibility & Text Scaling Lock (`TextScaler.noScaling`)**:
+  - Fixed an issue where system-level large text or accessibility zoom settings would stretch and distort the interface. The entire app layout, circular dials, and typography now stay surgically crisp at a 1:1 scale regardless of device display settings.
+- 🎨 **Custom Color Persistence Fix**:
+  - Fixed a bug where selecting a custom color in the color picker dialog was not properly persisting to parent habits and their associated schedule slots upon saving.
+  - Enhanced HEX input handling to support both 3-digit and 6-digit hex formats with guaranteed full opacity.
+
+<details>
+<summary>📜 <strong>Previous Changelog: v1.1.2 Highlights</strong></summary>
 
 OrbitHabit v1.1.2 introduces unified work activity management, intelligent shift breakdowns, and fixes future schedule completions:
 
@@ -57,6 +68,8 @@ OrbitHabit v1.1.2 introduces unified work activity management, intelligent shift
 - 🗓️ **Planned vs. Completed Distinction for Future Months**:
   - Planning ahead in the shift calendar for upcoming months (e.g. next month) now displays days as **scheduled guide silhouettes (8% subtle ghost cell)** instead of prematurely marking them as completed.
   - Clear telemetry differentiation between *Horas Planificadas* and *Horas Reales Trabajadas*.
+
+</details>
 
 <details>
 <summary>📜 <strong>Previous Changelog: v1.1.1 Highlights</strong></summary>
@@ -182,7 +195,7 @@ lib/
 
 <p align="center">
   <a href="https://github.com/arturo-orient/OrbitHabit/releases/latest/download/OrbitHabit.apk">
-    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.1.2-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
+    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.1.3-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
   </a>
 </p>
 

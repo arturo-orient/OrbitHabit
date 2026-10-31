@@ -149,7 +149,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       // Visibilidad y Modos
       _hasSchedule = block != null;
       _showInOrbit = habit != null;
-      _linkedHabitId = block?.habitId;
+      _linkedHabitId = (habit != null) ? null : block?.habitId;
 
       // Horario y Franjas asociadas
       if (habit != null) {
@@ -772,32 +772,44 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     }
 
     // IDs finales: si es nuevo, se genera un ID estrictamente único con timestamp y aleatorio
-    final habitId = editingHabitId ?? 'habit_${DateTime.now().millisecondsSinceEpoch}';
+    final targetHabitId = editingHabitId ?? _linkedHabitId ?? 'habit_${DateTime.now().millisecondsSinceEpoch}';
     final blockId = editingBlockId ?? 'block_${DateTime.now().millisecondsSinceEpoch}';
 
     // 3. Manejo de Modo Órbita (Rueda de Hábitos)
-    if (_showInOrbit && _linkedHabitId == null) {
-      final isNewHabit = !habits.any((h) => h.id == habitId);
-      final habit = Habit(
-        id: habitId,
-        name: title,
-        colorValue: _selectedColor.value,
-        targetDays: _targetMode == TaskTargetMode.days ? _targetDays : 20,
-        orderIndex: isNewHabit ? habits.length : (widget.habitToEdit?.orderIndex ?? 0),
-        isNumeric: false,
-        dailyTarget: 1,
-        dailyUnit: '',
-        activeWeekdays: _activeWeekdays,
-        hasMonthlyTarget: _targetMode == TaskTargetMode.days,
-        frequencyType: _targetMode == TaskTargetMode.days ? _frequencyType : 0,
-        targetDaysPerWeek: _targetDaysPerWeek,
-        completedDates: Set<String>.from(_completedDates),
-      );
+    if (_showInOrbit || _linkedHabitId != null) {
+      final existingHabit = habits.cast<Habit?>().firstWhere(
+            (h) => h?.id == targetHabitId,
+            orElse: () => null,
+          );
 
-      if (isNewHabit) {
+      if (existingHabit != null) {
+        final updatedHabit = existingHabit.copyWith(
+          name: title,
+          colorValue: _selectedColor.value,
+          targetDays: _targetMode == TaskTargetMode.days ? _targetDays : existingHabit.targetDays,
+          activeWeekdays: _activeWeekdays,
+          hasMonthlyTarget: _targetMode == TaskTargetMode.days,
+          frequencyType: _targetMode == TaskTargetMode.days ? _frequencyType : existingHabit.frequencyType,
+          targetDaysPerWeek: _targetDaysPerWeek,
+        );
+        ref.read(habitsProvider.notifier).updateHabit(updatedHabit);
+      } else if (_showInOrbit) {
+        final habit = Habit(
+          id: targetHabitId,
+          name: title,
+          colorValue: _selectedColor.value,
+          targetDays: _targetMode == TaskTargetMode.days ? _targetDays : 20,
+          orderIndex: widget.habitToEdit?.orderIndex ?? habits.length,
+          isNumeric: false,
+          dailyTarget: 1,
+          dailyUnit: '',
+          activeWeekdays: _activeWeekdays,
+          hasMonthlyTarget: _targetMode == TaskTargetMode.days,
+          frequencyType: _targetMode == TaskTargetMode.days ? _frequencyType : 0,
+          targetDaysPerWeek: _targetDaysPerWeek,
+          completedDates: Set<String>.from(_completedDates),
+        );
         ref.read(habitsProvider.notifier).addHabit(habit);
-      } else {
-        ref.read(habitsProvider.notifier).updateHabit(habit);
       }
     } else if (widget.habitToEdit != null && editingHabitId != null && !_showInOrbit) {
       // Solo si el usuario estaba editando un hábito directamente y decide quitarlo de la órbita
@@ -806,7 +818,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
     // 4. Manejo de Modo Reloj 24h
     if (_hasSchedule) {
-      final finalHabitId = _linkedHabitId ?? (_showInOrbit ? habitId : null);
+      final finalHabitId = _linkedHabitId ?? (_showInOrbit ? targetHabitId : null);
       final hasHourTarget = (_showInOrbit && _targetMode == TaskTargetMode.hours) ||
           (_linkedHabitId != null &&
               (habits.cast<Habit?>().firstWhere((h) => h?.id == _linkedHabitId, orElse: () => null)?.hasMonthlyTarget ?? false));
@@ -1111,7 +1123,8 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
             _buildSectionTitle('Color Visual'),
             Builder(
               builder: (context) {
-                final isCustomSelected = !_palette.contains(_selectedColor);
+                // ignore: deprecated_member_use
+                final isCustomSelected = !_palette.any((c) => (c.value & 0x00FFFFFF) == (_selectedColor.value & 0x00FFFFFF));
                 final isDark = theme.brightness == Brightness.dark;
 
                 return Wrap(
@@ -1120,7 +1133,8 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     ..._palette.map((color) {
-                      final isSelected = _selectedColor == color;
+                      // ignore: deprecated_member_use
+                      final isSelected = (color.value & 0x00FFFFFF) == (_selectedColor.value & 0x00FFFFFF);
                       return GestureDetector(
                         onTap: () {
                           HapticFeedback.selectionClick();

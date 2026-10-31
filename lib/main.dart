@@ -73,6 +73,15 @@ class OrbitHabitApp extends ConsumerWidget {
       theme: lightTheme,
       darkTheme: darkTheme,
       themeMode: appThemeMode,
+      builder: (context, child) {
+        final mediaQuery = MediaQuery.of(context);
+        return MediaQuery(
+          data: mediaQuery.copyWith(
+            textScaler: TextScaler.noScaling,
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: AnimatedSwitcher(
         duration: const Duration(milliseconds: 650),
         switchInCurve: Curves.easeIn,
