@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../../domain/models/habit.dart';
 import '../../providers/habit_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../utils/streak_utils.dart';
 import '../../services/sound_service.dart';
+import '../../services/backup_service.dart';
 import '../widgets/orbit_tracker.dart';
 import '../widgets/day_details_sheet.dart';
 import '../widgets/habit_progress_card.dart';
@@ -723,9 +723,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                               // Telemetría de los 7 días de la semana en curso (Lunes a Domingo)
                               final now = DateTime.now();
                               final todayIso = now.toIso8601String().split('T').first;
-                              final monday = now.subtract(Duration(days: now.weekday - 1));
                               final weeklyCompletions = List.generate(7, (i) {
-                                final d = monday.add(Duration(days: i));
+                                final d = DateTime(now.year, now.month, now.day - (now.weekday - 1) + i);
                                 final iso = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
                                 return habit.completedDates.contains(iso);
                               });
@@ -899,26 +898,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                     flex: 4,
                     child: todayBlocks.isEmpty
                         ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  'Sin bloques para hoy',
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.6),
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                              decoration: AppTheme.bentoCard(
+                                isLight: !isDark,
+                                borderRadius: AppTheme.radiusMd,
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '// SIN BLOQUES PARA HOY',
+                                    style: AppTheme.monoStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1.6,
+                                      color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Añade tus turnos de trabajo, descanso y hábitos.',
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 12,
-                                    color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.4),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Añade tus turnos de trabajo, descanso y hábitos.',
+                                    textAlign: TextAlign.center,
+                                    style: AppTheme.bodyStyle(
+                                      fontSize: 13,
+                                      color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           )
                         : ListView.builder(
@@ -939,34 +948,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                           ),
                   ),
 
-                  // Botón Añadir Bloque Horario (Inferior)
+                  // Botón Añadir Bloque Horario (Bento de precisión)
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
                     child: SizedBox(
                       width: double.infinity,
-                      height: 56,
+                      height: 46,
                       child: ElevatedButton(
                         onPressed: _showAddScheduleBlockSheet,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF9EA1D4), // Periwinkle
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(28),
-                          ),
+                          backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                          foregroundColor: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
                           elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: AppTheme.radiusSm,
+                            side: BorderSide(
+                              color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
+                              width: AppTheme.borderPrecision,
+                            ),
+                          ),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
+                            Icon(
+                              Icons.add_rounded,
+                              size: 18,
+                              color: AppTheme.dynamicAccent(isDark),
+                            ),
+                            const SizedBox(width: 8),
                             Text(
                               'Añadir Bloque Horario',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
+                              style: AppTheme.bodyStyle(
+                                fontSize: 14,
                                 fontWeight: FontWeight.w600,
+                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
                               ),
                             ),
-                            SizedBox(width: 8),
-                            Icon(Icons.add, color: Colors.white),
                           ],
                         ),
                       ),
@@ -1120,6 +1138,62 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                   const SizedBox(width: 6),
                   Text(
                     'INICIALIZAR HÁBITO',
+                    style: AppTheme.monoStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                      color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: () async {
+                HapticFeedback.mediumImpact();
+                final demo = DemoSeederService.generateDemoData(DateTime.now());
+                await ref.read(habitsProvider.notifier).replaceAllHabits(demo.habits);
+                await ref.read(scheduleProvider.notifier).replaceAllBlocks(demo.blocks);
+                _replayEntrance();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
+                      backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                      content: Text(
+                        'Órbita de demostración cargada con éxito ⚡',
+                        style: AppTheme.monoStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.dynamicAccent(isDark),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isDark ? Colors.white.withValues(alpha: 0.04) : Colors.black.withValues(alpha: 0.03),
+                foregroundColor: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppTheme.radiusXs,
+                  side: BorderSide(
+                    color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                    width: AppTheme.borderPrecision,
+                  ),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.bolt_rounded, size: 16, color: AppTheme.dynamicAccent(isDark)),
+                  const SizedBox(width: 6),
+                  Text(
+                    '⚡ CARGAR ÓRBITA DEMO',
                     style: AppTheme.monoStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,

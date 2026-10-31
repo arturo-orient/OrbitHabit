@@ -70,30 +70,23 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
     return null;
   }
 
-  ScheduleBlock? _findNextBlock(List<ScheduleBlock> blocks, DateTime now) {
-    final currentMinutes = now.hour * 60 + now.minute;
-    ScheduleBlock? nextBlock;
-    int minDiff = 999999;
-
-    for (final block in blocks) {
-      if (!block.appliesToDate(now)) continue;
-      int diff = block.startInMinutes - currentMinutes;
-      if (diff < 0) {
-        diff += 1440; // Tomorrow's occurrence
-      }
-      if (diff > 0 && diff < minDiff) {
-        minDiff = diff;
-        nextBlock = block;
+  /// Calcula la fecha efectiva del turno considerando si es nocturno cruzando la medianoche
+  String _getEffectiveDateIso(ScheduleBlock? block, DateTime now) {
+    if (block != null && block.isOvernight) {
+      final currentMinutes = now.hour * 60 + now.minute;
+      final endMinutes = block.endHour * 60 + block.endMinute;
+      final yesterday = now.subtract(const Duration(days: 1));
+      if (currentMinutes < endMinutes && block.appliesToDate(yesterday)) {
+        return yesterday.toIso8601String().split('T').first;
       }
     }
-    return nextBlock;
+    return now.toIso8601String().split('T').first;
   }
 
   @override
   Widget build(BuildContext context) {
     final habits = ref.watch(habitsProvider);
     final activeBlock = _findActiveBlock(widget.blocks, _now);
-    final nextBlock = activeBlock == null ? _findNextBlock(widget.blocks, _now) : null;
 
     Habit? linkedHabit;
     if (activeBlock?.habitId != null) {
@@ -103,8 +96,8 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
           );
     }
 
-    final todayIso = _now.toIso8601String().split('T').first;
-    final isHabitDoneToday = linkedHabit?.completedDates.contains(todayIso) ?? false;
+    final effectiveDateIso = _getEffectiveDateIso(activeBlock, _now);
+    final isHabitDoneToday = linkedHabit?.completedDates.contains(effectiveDateIso) ?? false;
 
     final theme = Theme.of(context);
     final textColor = theme.textTheme.bodyLarge?.color ?? Colors.white;
@@ -116,22 +109,24 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
         return Stack(
           alignment: Alignment.center,
           children: [
-            // 1. Hand-crafted 24-hour Canvas Dial
-            AnimatedBuilder(
-              animation: _pulseAnimation,
-              builder: (context, child) {
-                return CustomPaint(
-                  size: size,
-                  painter: _OrbitClockPainter(
-                    blocks: widget.blocks,
-                    habits: habits,
-                    now: _now,
-                    pulseValue: _pulseAnimation.value,
-                    textColor: textColor,
-                    activeBlock: activeBlock,
-                  ),
-                );
-              },
+            // 1. Hand-crafted 24-hour Canvas Dial aislado en RepaintBoundary
+            RepaintBoundary(
+              child: AnimatedBuilder(
+                animation: _pulseAnimation,
+                builder: (context, child) {
+                  return CustomPaint(
+                    size: size,
+                    painter: _OrbitClockPainter(
+                      blocks: widget.blocks,
+                      habits: habits,
+                      now: _now,
+                      pulseValue: _pulseAnimation.value,
+                      textColor: textColor,
+                      activeBlock: activeBlock,
+                    ),
+                  );
+                },
+              ),
             ),
 
             // 2. Center Zen Core (Digital Time + Active Block Card + Quick Habit Toggle)
@@ -162,7 +157,7 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
                           SoundService().playCheck();
                           ref
                               .read(habitsProvider.notifier)
-                              .toggleDay(linkedHabit!.id, todayIso);
+                              .toggleDay(linkedHabit!.id, effectiveDateIso);
                         },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 250),
@@ -224,14 +219,14 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
                       const SizedBox(height: 8),
                       Builder(
                         builder: (context) {
-                          final isShiftDoneToday = activeBlock.completedDates.contains(todayIso);
+                          final isShiftDoneToday = activeBlock.completedDates.contains(effectiveDateIso);
                           final shiftColor = activeBlock.color;
 
                           return GestureDetector(
                             onTap: () {
                               HapticFeedback.mediumImpact();
                               SoundService().playCheck();
-                              ref.read(scheduleProvider.notifier).toggleDateForBlock(activeBlock.id, todayIso);
+                              ref.read(scheduleProvider.notifier).toggleDateForBlock(activeBlock.id, effectiveDateIso);
                             },
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 250),
@@ -284,14 +279,6 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
         );
       },
     );
-  }
-
-  String _formatRemaining(int minutes) {
-    final h = minutes ~/ 60;
-    final m = minutes % 60;
-    if (h > 0 && m > 0) return '${h}h ${m}m';
-    if (h > 0) return '${h}h';
-    return '${m}m';
   }
 }
 
@@ -560,6 +547,8 @@ class _OrbitClockPainter extends CustomPainter {
     return oldDelegate.now != now ||
         oldDelegate.pulseValue != pulseValue ||
         oldDelegate.blocks != blocks ||
+        oldDelegate.habits != habits ||
+        oldDelegate.textColor != textColor ||
         oldDelegate.activeBlock != activeBlock;
   }
 }

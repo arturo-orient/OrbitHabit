@@ -98,11 +98,20 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
         s.completedDates.contains(todayIso) ||
         (linkedHabit != null && linkedHabit.completedDates.contains(todayIso)));
 
-    // Turno programado para hoy (si lo hay)
-    final todayShift = shifts.cast<ScheduleBlock?>().firstWhere(
-          (s) => s != null && s.appliesToDate(now),
-          orElse: () => shifts.isNotEmpty ? shifts.first : null,
-        );
+    // Turno programado para hoy (prioriza assignedDates, luego completedDates, luego appliesToDate, luego first)
+    ScheduleBlock? todayShift;
+    if (shifts.isNotEmpty) {
+      todayShift = shifts.firstWhere(
+        (s) => s.assignedDates.contains(todayIso),
+        orElse: () => shifts.firstWhere(
+          (s) => s.completedDates.contains(todayIso),
+          orElse: () => shifts.firstWhere(
+            (s) => s.appliesToDate(now),
+            orElse: () => shifts.first,
+          ),
+        ),
+      );
+    }
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -413,12 +422,7 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
                       SoundService().playCheck();
                       ref
                           .read(scheduleProvider.notifier)
-                          .toggleDateForBlock(todayShift.id, todayIso);
-                      if (todayShift.habitId != null) {
-                        ref
-                            .read(habitsProvider.notifier)
-                            .toggleDay(todayShift.habitId!, todayIso);
-                      }
+                          .toggleDateForBlock(todayShift!.id, todayIso);
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(

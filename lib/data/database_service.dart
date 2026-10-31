@@ -33,6 +33,13 @@ class DatabaseService {
     }
   }
 
+  Future<void> replaceAllHabits(List<Habit> habits) async {
+    await _habitsBox.clear();
+    for (final habit in habits) {
+      await _habitsBox.put(habit.id, habit);
+    }
+  }
+
   // --- App Settings Box Helpers ---
   Future<void> saveSetting(String key, dynamic value) async {
     await _settingsBox.put(key, value);

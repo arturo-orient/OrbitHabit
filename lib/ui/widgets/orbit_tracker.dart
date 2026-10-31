@@ -165,23 +165,25 @@ class _OrbitTrackerState extends State<OrbitTracker> with SingleTickerProviderSt
           onPanStart: (details) => _handlePanUpdate(details.localPosition, size),
           onPanUpdate: (details) => _handlePanUpdate(details.localPosition, size),
           onPanEnd: (details) => _handlePanEnd(),
-          child: AnimatedBuilder(
-            animation: _scaleAnimation,
-            builder: (context, child) {
-              return CustomPaint(
-                size: size,
-                painter: OrbitPainter(
-                  habits: widget.habits,
-                  scheduleBlocks: widget.scheduleBlocks,
-                  currentMonth: widget.currentMonth,
-                  hoveredDay: _hoveredDay,
-                  animatingDate: _lastTappedDate,
-                  animationValue: _scaleAnimation.value,
-                  gridTextColor: gridTextColor,
-                  isDark: isDark,
-                ),
-              );
-            },
+          child: RepaintBoundary(
+            child: AnimatedBuilder(
+              animation: _scaleAnimation,
+              builder: (context, child) {
+                return CustomPaint(
+                  size: size,
+                  painter: OrbitPainter(
+                    habits: widget.habits,
+                    scheduleBlocks: widget.scheduleBlocks,
+                    currentMonth: widget.currentMonth,
+                    hoveredDay: _hoveredDay,
+                    animatingDate: _lastTappedDate,
+                    animationValue: _scaleAnimation.value,
+                    gridTextColor: gridTextColor,
+                    isDark: isDark,
+                  ),
+                );
+              },
+            ),
           ),
         );
       },
@@ -210,29 +212,116 @@ class OrbitPainter extends CustomPainter {
     required this.isDark,
   });
 
+  List<ScheduleBlock> _getRelatedBlocks(Habit habit) {
+    return scheduleBlocks.where((b) =>
+        (b.habitId != null && b.habitId == habit.id) ||
+        b.title.trim().toLowerCase() == habit.name.trim().toLowerCase() ||
+        (habit.name.toLowerCase().contains('trabaj') && b.title.toLowerCase().contains('trabaj')) ||
+        (habit.name.toLowerCase().contains('turno') && b.title.toLowerCase().contains('turno'))).toList();
+  }
+
+  bool _hasAssignedCalendarDates(List<ScheduleBlock> relatedBlocks, DateTime month) {
+    final monthPrefix = '${month.year}-${month.month.toString().padLeft(2, '0')}';
+    return relatedBlocks.any((b) => b.assignedDates.any((d) => d.startsWith(monthPrefix)));
+  }
+
+  bool _isHabitScheduledOnDate(
+    Habit habit,
+    DateTime date,
+    String dateIso,
+    List<ScheduleBlock> relatedBlocks,
+    bool hasAssignedCalendarDates,
+  ) {
+    if (relatedBlocks.isNotEmpty) {
+      if (hasAssignedCalendarDates) {
+        return relatedBlocks.any((b) => b.assignedDates.contains(dateIso));
+      } else {
+        return relatedBlocks.any((b) => b.daysOfWeek.contains(date.weekday));
+      }
+    } else if (habit.frequencyType == 0) {
+      return habit.activeWeekdays.contains(date.weekday);
+    }
+    return false;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
-    if (habits.isEmpty) return;
-
     final center = Offset(size.width * 0.5, size.height * 0.5);
-    final maxRadius = math.min(size.width, size.height) * 0.37; // Reduced from 0.45 to add breathing room and avoid overlap
+    final maxRadius = math.min(size.width, size.height) * 0.37;
     final minRadius = maxRadius * 0.3;
-    final availableRadius = maxRadius - minRadius;
-    final ringWidth = availableRadius / (habits.length > 0 ? habits.length : 1);
-    final ringPadding = ringWidth * 0.08; // Slightly reduced padding for a cleaner visual grid
-
-    final daysInMonth = OrbitDateUtils.getDaysInMonth(currentMonth.year, currentMonth.month);
-    final totalSweep = math.pi * 1.6; // 288 degrees horseshoe
-    final anglePerDay = totalSweep / daysInMonth;
-    final startOffsetAngle = math.pi; // Left side
-
-    final textPainter = TextPainter(textDirection: TextDirection.ltr);
 
     // Rejilla de alta precisión adaptativa al tema
     final gridPaint = Paint()
       ..color = isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.08)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.5;
+
+    final startOffsetAngle = math.pi;
+    final totalSweep = math.pi * 1.6;
+
+    if (habits.isEmpty) {
+      // Modo Blueprint en Espera: 3 anillos concéntricos sutiles
+      for (int i = 0; i < 3; i++) {
+        final r = minRadius + (i * ((maxRadius - minRadius) / 2));
+        final path = Path()
+          ..arcTo(Rect.fromCircle(center: center, radius: r), startOffsetAngle, totalSweep, true);
+        canvas.drawPath(path, gridPaint);
+      }
+
+      // Núcleo central técnico con crosshairs
+      final coreRadius = minRadius * 0.88;
+      final corePaint = Paint()
+        ..color = gridTextColor.withValues(alpha: 0.10)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0;
+      canvas.drawCircle(center, coreRadius, corePaint);
+
+      final tickLen = coreRadius * 0.14;
+      canvas.drawLine(Offset(center.dx - coreRadius, center.dy), Offset(center.dx - coreRadius + tickLen, center.dy), corePaint);
+      canvas.drawLine(Offset(center.dx + coreRadius, center.dy), Offset(center.dx + coreRadius - tickLen, center.dy), corePaint);
+      canvas.drawLine(Offset(center.dx, center.dy - coreRadius), Offset(center.dx, center.dy - coreRadius + tickLen), corePaint);
+      canvas.drawLine(Offset(center.dx, center.dy + coreRadius), Offset(center.dx, center.dy + coreRadius - tickLen), corePaint);
+
+      // Texto '0/0' y 'EN ESPERA'
+      final numPainter = TextPainter(
+        text: TextSpan(
+          text: '0/0',
+          style: AppTheme.monoStyle(
+            fontSize: (coreRadius * 0.44).clamp(14.0, 22.0),
+            fontWeight: FontWeight.w800,
+            color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+            letterSpacing: -0.5,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      numPainter.paint(canvas, Offset(center.dx - numPainter.width / 2, center.dy - numPainter.height / 2 - 5));
+
+      final subPainter = TextPainter(
+        text: TextSpan(
+          text: 'EN ESPERA',
+          style: AppTheme.monoStyle(
+            fontSize: (coreRadius * 0.18).clamp(8.0, 10.0),
+            fontWeight: FontWeight.w700,
+            color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+            letterSpacing: 1.2,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      subPainter.paint(canvas, Offset(center.dx - subPainter.width / 2, center.dy + numPainter.height / 2 - 3));
+
+      return;
+    }
+
+    final availableRadius = maxRadius - minRadius;
+    final ringWidth = availableRadius / (habits.length > 0 ? habits.length : 1);
+    final ringPadding = ringWidth * 0.08; // Slightly reduced padding for a cleaner visual grid
+
+    final daysInMonth = OrbitDateUtils.getDaysInMonth(currentMonth.year, currentMonth.month);
+    final anglePerDay = totalSweep / daysInMonth;
+
+    final textPainter = TextPainter(textDirection: TextDirection.ltr);
 
     final now = DateTime.now();
     final isCurrentMonth = currentMonth.year == now.year && currentMonth.month == now.month;
@@ -346,13 +435,8 @@ class OrbitPainter extends CustomPainter {
       final ringLag = (h / math.max(habits.length, 1)) * 0.10;
 
       // Buscar bloques de horario vinculados a este hábito
-      final relatedBlocks = scheduleBlocks.where((b) =>
-          (b.habitId != null && b.habitId == habit.id) ||
-          b.title.trim().toLowerCase() == habit.name.trim().toLowerCase() ||
-          (habit.name.toLowerCase().contains('trabaj') && b.title.toLowerCase().contains('trabaj')) ||
-          (habit.name.toLowerCase().contains('turno') && b.title.toLowerCase().contains('turno'))).toList();
-      final monthPrefix = '${currentMonth.year}-${currentMonth.month.toString().padLeft(2, '0')}';
-      final hasAssignedCalendarDates = relatedBlocks.any((b) => b.assignedDates.any((d) => d.startsWith(monthPrefix)));
+      final relatedBlocks = _getRelatedBlocks(habit);
+      final hasAssignedCalendarDates = _hasAssignedCalendarDates(relatedBlocks, currentMonth);
 
       for (int d = 1; d <= daysInMonth; d++) {
         final dayFraction = (d - 1) / (daysInMonth > 0 ? daysInMonth : 1);
@@ -373,16 +457,13 @@ class OrbitPainter extends CustomPainter {
         final isCompleted = !isFutureDay && habit.completedDates.contains(dateIso);
 
         // Determinamos si el hábito está programado para este día
-        bool isScheduled = true;
-        if (relatedBlocks.isNotEmpty) {
-          if (hasAssignedCalendarDates) {
-            isScheduled = relatedBlocks.any((b) => b.assignedDates.contains(dateIso));
-          } else {
-            isScheduled = relatedBlocks.any((b) => b.daysOfWeek.contains(date.weekday));
-          }
-        } else if (habit.frequencyType == 0) {
-          isScheduled = habit.activeWeekdays.contains(date.weekday);
-        }
+        final isScheduled = _isHabitScheduledOnDate(
+          habit,
+          date,
+          dateIso,
+          relatedBlocks,
+          hasAssignedCalendarDates,
+        );
 
         // Si NO está programado para este día y NO está completado, dejamos el hueco limpio (espacio negativo puro)
         if (!isScheduled && !isCompleted) {
@@ -443,16 +524,9 @@ class OrbitPainter extends CustomPainter {
       bool hasAnyDue = false;
       
       for (var habit in habits) {
-        bool isDueToday = false;
-        
-        if (habit.frequencyType == 0) {
-          isDueToday = habit.activeWeekdays.contains(date.weekday);
-        } else {
-          // Si es flexible, no es "obligatorio" un día en concreto, 
-          // salvo que decidamos que rompa el día perfecto. Lo más justo es que
-          // no lo rompa (no era obligatorio *hoy*). Si lo haces, genial, sale pintado.
-          isDueToday = false; 
-        }
+        final relatedBlocks = _getRelatedBlocks(habit);
+        final hasAssigned = _hasAssignedCalendarDates(relatedBlocks, currentMonth);
+        final isDueToday = _isHabitScheduledOnDate(habit, date, dateIso, relatedBlocks, hasAssigned);
 
         if (isDueToday) {
           hasAnyDue = true;
@@ -509,10 +583,24 @@ class OrbitPainter extends CustomPainter {
     // Métricas del núcleo (Hábitos de hoy completados)
     int completedToday = 0;
     int totalToday = 0;
-    final todayIsoStr = DateTime.now().toIso8601String().split('T').first;
+    final todayDate = DateTime(now.year, now.month, now.day);
+    final todayIsoStr = todayDate.toIso8601String().split('T').first;
     for (final h in habits) {
-      if (h.frequencyType == 0) {
-        if (h.activeWeekdays.contains(DateTime.now().weekday)) {
+      final relatedBlocks = _getRelatedBlocks(h);
+      final hasAssigned = _hasAssignedCalendarDates(relatedBlocks, todayDate);
+      final isScheduledToday = _isHabitScheduledOnDate(h, todayDate, todayIsoStr, relatedBlocks, hasAssigned);
+
+      if (relatedBlocks.isNotEmpty) {
+        // En días libres según el cuadrante de turnos, no computa como pendiente (0/1 HOY)
+        if (isScheduledToday) {
+          totalToday++;
+          if (h.completedDates.contains(todayIsoStr)) completedToday++;
+        } else if (h.completedDates.contains(todayIsoStr)) {
+          totalToday++;
+          completedToday++;
+        }
+      } else if (h.frequencyType == 0) {
+        if (h.activeWeekdays.contains(todayDate.weekday)) {
           totalToday++;
           if (h.completedDates.contains(todayIsoStr)) completedToday++;
         }
@@ -568,6 +656,7 @@ class OrbitPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant OrbitPainter oldDelegate) {
     return oldDelegate.habits != habits ||
+           oldDelegate.scheduleBlocks != scheduleBlocks ||
            oldDelegate.currentMonth != currentMonth ||
            oldDelegate.hoveredDay != hoveredDay ||
            oldDelegate.animationValue != animationValue ||

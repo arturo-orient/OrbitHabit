@@ -20,7 +20,6 @@ class AchievementsSheet extends ConsumerWidget {
     final int unlockedCount = achievements.where((a) => a.isUnlocked).length;
     final double overallProgress = achievements.isEmpty ? 0.0 : unlockedCount / achievements.length;
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = Theme.of(context).textTheme.bodyLarge?.color ?? const Color(0xFF707A8A);
     final cardBgColor = Theme.of(context).cardColor;
 

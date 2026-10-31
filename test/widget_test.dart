@@ -11,8 +11,11 @@ import 'package:orbithabit/main.dart';
 import 'package:orbithabit/domain/models/habit.dart';
 import 'package:orbithabit/domain/models/achievement.dart';
 import 'package:orbithabit/domain/models/schedule_block.dart';
+import 'package:orbithabit/utils/streak_utils.dart';
 import 'package:orbithabit/data/database_service.dart';
 import 'package:orbithabit/providers/habit_provider.dart';
+import 'package:orbithabit/domain/models/user_settings.dart';
+import 'package:orbithabit/services/backup_service.dart';
 
 class FakeDatabaseService extends DatabaseService {
   final Map<String, dynamic> _settings = {};
@@ -26,6 +29,14 @@ class FakeDatabaseService extends DatabaseService {
   @override
   Future<void> saveHabit(Habit habit) async {
     _habits[habit.id] = habit;
+  }
+
+  @override
+  Future<void> replaceAllHabits(List<Habit> habits) async {
+    _habits.clear();
+    for (final h in habits) {
+      _habits[h.id] = h;
+    }
   }
 
   @override
@@ -228,6 +239,102 @@ void main() {
       final workedHours = scheduleTrabajo.getMonthlyWorkedHours(workMonth, habitTrabajo);
       expect(workedHours, 32.0);
       expect(scheduleTrabajo.getEffectiveCompletedDates(habitTrabajo).length, 4);
+    });
+
+    test('WorkShiftGroup breakdown hours matches getMonthlyWorkedHours and ignores future assigned dates', () {
+      final now = DateTime.now();
+      final month = DateTime(now.year, now.month, 1);
+      final todayIso = now.toIso8601String().split('T').first;
+      final tomorrow = DateTime(now.year, now.month, now.day + 1);
+      final tomorrowIso = tomorrow.toIso8601String().split('T').first;
+
+      const shiftMorning = ScheduleBlock(
+        id: 'shift_m',
+        title: 'Mañana',
+        startHour: 7,
+        startMinute: 0,
+        endHour: 15,
+        endMinute: 0,
+        colorValue: 0xFF84A59D,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        hasMonthlyHourTarget: true,
+        monthlyTargetHours: 120,
+        completedDates: [],
+        assignedDates: [],
+        extraHours: 0.0,
+      );
+
+      final shiftWithAssignments = shiftMorning.copyWith(
+        assignedDates: [todayIso, tomorrowIso], // today (worked/due) + tomorrow (future)
+      );
+
+      final group = WorkShiftGroup(
+        title: 'Trabajo',
+        shifts: [shiftWithAssignments],
+        monthlyTargetHours: 120,
+      );
+
+      // Today is counted, but tomorrow is future and ignored in worked hours
+      final workedHours = group.getMonthlyWorkedHours(month);
+      expect(workedHours, 8.0); // 1 shift * 8h = 8h
+
+      final breakdown = group.getBreakdown(month);
+      expect(breakdown.length, 1);
+      expect(breakdown.first.shiftsCount, 1);
+      expect(breakdown.first.totalHours, 8.0);
+    });
+
+    test('StreakUtils breaks streak if an active day strictly before today was missed', () {
+      final now = DateTime.now();
+      final yesterday = DateTime(now.year, now.month, now.day - 1);
+      final yesterdayIso = yesterday.toIso8601String().split('T').first;
+
+      final habit = Habit(
+        id: 'daily_habit',
+        name: 'Daily',
+        colorValue: 0xFF84A59D,
+        targetDays: 30,
+        orderIndex: 0,
+        activeWeekdays: [1, 2, 3, 4, 5, 6, 7], // Every day active
+        completedDates: {}, // Missed yesterday and today
+      );
+
+      // Missed yesterday strictly before today -> streak is 0
+      final streak = StreakUtils.calculateCurrentStreak(habit);
+      expect(streak, 0);
+
+      // Completed yesterday but today not completed yet -> streak is 1 (today is forgiven because in-progress)
+      final habitWithYesterday = habit.copyWith(completedDates: {yesterdayIso});
+      final streakWithYesterday = StreakUtils.calculateCurrentStreak(habitWithYesterday);
+      expect(streakWithYesterday, 1);
+    });
+
+    test('BackupService exports and parses DemoSeederService data without loss', () {
+      final now = DateTime(2026, 10, 31);
+      final demo = DemoSeederService.generateDemoData(now);
+      final settings = UserSettings(
+        userName: 'Arturo',
+        avatarEmoji: '⚡',
+        avatarColorValue: 0xFF84A59D,
+        notificationHour: 21,
+        notificationMinute: 0,
+        themeMode: 'dark',
+        isFirstTime: false,
+        vacationDates: ['2026-10-12', '2026-10-13'],
+      );
+
+      final jsonStr = BackupService.exportToJson(
+        habits: demo.habits,
+        blocks: demo.blocks,
+        settings: settings,
+      );
+
+      final restored = BackupService.parseFromJson(jsonStr);
+      expect(restored.habits.length, demo.habits.length);
+      expect(restored.blocks.length, demo.blocks.length);
+      expect(restored.vacationDates, ['2026-10-12', '2026-10-13']);
+      expect(restored.habits.first.id, 'demo_work');
+      expect(restored.blocks.first.id, 'demo_shift_morning');
     });
   });
 }

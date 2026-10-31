@@ -153,7 +153,8 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
       // Horario y Franjas asociadas
       if (habit != null) {
-        final related = blocks.where((b) => b.habitId == habit!.id || b.title.trim().toLowerCase() == habit!.name.trim().toLowerCase()).toList();
+        final h = habit;
+        final related = blocks.where((b) => b.habitId == h.id || b.title.trim().toLowerCase() == h.name.trim().toLowerCase()).toList();
         for (final b in related) {
           _schedules.add(_ScheduleItem(
             id: b.id,
@@ -935,7 +936,6 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     );
 
     if (confirm == true && mounted) {
-      final habits = ref.read(habitsProvider);
       final blocks = ref.read(scheduleProvider);
 
       final habitId = widget.habitToEdit?.id ?? widget.blockToEdit?.habitId;

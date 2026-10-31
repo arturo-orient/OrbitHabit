@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/user_settings.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/habit_provider.dart';
+import '../../providers/schedule_provider.dart';
+import '../../services/backup_service.dart';
 import '../widgets/achievements_sheet.dart';
 import '../theme/app_theme.dart';
 
@@ -92,7 +95,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       while (current.isBefore(end) || current.isAtSameMomentAs(end)) {
         dates.add(current);
-        current = current.add(const Duration(days: 1));
+        current = DateTime(current.year, current.month, current.day + 1);
       }
       await ref.read(settingsProvider.notifier).addVacationDates(dates);
 
@@ -536,7 +539,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 const SizedBox(height: 36),
 
-                // 6. BOTÓN GUARDAR CAMBIOS
+                // 6. DATOS, BACKUP Y LABORATORIO
+                _buildSectionHeader('Datos, Backup y Laboratorio', isDark),
+                const SizedBox(height: 12),
+                _buildDataManagementSection(isDark),
+                const SizedBox(height: 36),
+
+                // 7. BOTÓN GUARDAR CAMBIOS
                 SizedBox(
                   width: double.infinity,
                   height: 50,
@@ -653,5 +662,421 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildDataManagementSection(bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+          width: 1.0,
+        ),
+      ),
+      child: Column(
+        children: [
+          _buildActionRow(
+            isDark: isDark,
+            icon: Icons.file_upload_outlined,
+            iconColor: AppTheme.accentPhosphor,
+            title: 'Exportar Copia de Seguridad',
+            subtitle: 'Copia tus hábitos y turnos en JSON al portapapeles',
+            onTap: () => _exportBackup(isDark),
+          ),
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+          ),
+          _buildActionRow(
+            isDark: isDark,
+            icon: Icons.file_download_outlined,
+            iconColor: Colors.blueAccent,
+            title: 'Restaurar Copia de Seguridad',
+            subtitle: 'Importa tus datos pegando un JSON exportado',
+            onTap: () => _showImportBackupDialog(isDark),
+          ),
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+          ),
+          _buildActionRow(
+            isDark: isDark,
+            icon: Icons.bolt_rounded,
+            iconColor: Colors.amberAccent,
+            title: 'Cargar Órbita Demo',
+            subtitle: 'Inyecta turnos rotativos y hábitos de muestra',
+            onTap: () => _loadDemoData(isDark),
+          ),
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+          ),
+          _buildActionRow(
+            isDark: isDark,
+            icon: Icons.delete_outline_rounded,
+            iconColor: Colors.redAccent,
+            title: 'Purgar Todos los Datos',
+            subtitle: 'Borra todos los hábitos, bloques y vacaciones',
+            isDanger: true,
+            onTap: () => _wipeAllData(isDark),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionRow({
+    required bool isDark,
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    bool isDanger = false,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: iconColor, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: AppTheme.displayStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDanger
+                          ? Colors.redAccent
+                          : (isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: AppTheme.bodyStyle(
+                      fontSize: 11,
+                      color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _exportBackup(bool isDark) {
+    HapticFeedback.mediumImpact();
+    final habits = ref.read(habitsProvider);
+    final blocks = ref.read(scheduleProvider);
+    final settings = ref.read(settingsProvider);
+    final jsonStr = BackupService.exportToJson(
+      habits: habits,
+      blocks: blocks,
+      settings: settings,
+    );
+    Clipboard.setData(ClipboardData(text: jsonStr));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
+          ),
+        ),
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_rounded, color: AppTheme.accentPhosphor, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Copia JSON copiada al portapapeles',
+                style: AppTheme.bodyStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showImportBackupDialog(bool isDark) async {
+    final controller = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+          ),
+        ),
+        title: Text(
+          'Restaurar Backup JSON',
+          style: AppTheme.displayStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Pega a continuación el código JSON que exportaste previamente:',
+              style: AppTheme.bodyStyle(
+                fontSize: 12,
+                color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              maxLines: 6,
+              style: AppTheme.monoStyle(
+                fontSize: 11,
+                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+              ),
+              decoration: InputDecoration(
+                hintText: '{\n  "version": 1,\n  "habits": [...]\n}',
+                hintStyle: AppTheme.monoStyle(
+                  fontSize: 11,
+                  color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                ),
+                filled: true,
+                fillColor: isDark ? AppTheme.obsidianCanvas : AppTheme.boneCanvas,
+                contentPadding: const EdgeInsets.all(12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(
+                    color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(
+              'Cancelar',
+              style: AppTheme.bodyStyle(
+                fontSize: 13,
+                color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final text = controller.text.trim();
+              if (text.isEmpty) return;
+              try {
+                final data = BackupService.parseFromJson(text);
+                await ref.read(habitsProvider.notifier).replaceAllHabits(data.habits);
+                await ref.read(scheduleProvider.notifier).replaceAllBlocks(data.blocks);
+                await ref.read(settingsProvider.notifier).updateSettings(
+                  ref.read(settingsProvider).copyWith(vacationDates: data.vacationDates),
+                );
+                if (!mounted) return;
+                Navigator.of(ctx).pop();
+                HapticFeedback.heavyImpact();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    content: Text(
+                      'Backup restaurado: ${data.habits.length} hábitos y ${data.blocks.length} turnos.',
+                      style: AppTheme.bodyStyle(
+                        fontSize: 13,
+                        color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                      ),
+                    ),
+                  ),
+                );
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: Colors.redAccent.shade700,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    content: Text(
+                      'Error al restaurar: Formato JSON no válido',
+                      style: AppTheme.bodyStyle(fontSize: 13, color: Colors.white),
+                    ),
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isDark ? AppTheme.accentPhosphor : AppTheme.boneTextPrimary,
+              foregroundColor: isDark ? Colors.black : Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 0,
+            ),
+            child: Text(
+              'Restaurar',
+              style: AppTheme.displayStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.black : Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _loadDemoData(bool isDark) async {
+    HapticFeedback.mediumImpact();
+    final demo = DemoSeederService.generateDemoData(DateTime.now());
+    await ref.read(habitsProvider.notifier).replaceAllHabits(demo.habits);
+    await ref.read(scheduleProvider.notifier).replaceAllBlocks(demo.blocks);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
+          ),
+        ),
+        content: Row(
+          children: [
+            const Icon(Icons.bolt_rounded, color: AppTheme.accentPhosphor, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Órbita Demo cargada (${demo.habits.length} hábitos, ${demo.blocks.length} turnos)',
+                style: AppTheme.bodyStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _wipeAllData(bool isDark) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+          ),
+        ),
+        title: Text(
+          '¿Eliminar todos los datos?',
+          style: AppTheme.displayStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: Colors.redAccent,
+          ),
+        ),
+        content: Text(
+          'Esta acción borrará irreversiblemente todos tus hábitos, bloques de turnos y vacaciones configuradas.',
+          style: AppTheme.bodyStyle(
+            fontSize: 13,
+            color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Cancelar',
+              style: AppTheme.bodyStyle(
+                fontSize: 13,
+                color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 0,
+            ),
+            child: Text(
+              'Eliminar Todo',
+              style: AppTheme.displayStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await ref.read(habitsProvider.notifier).replaceAllHabits([]);
+      await ref.read(scheduleProvider.notifier).replaceAllBlocks([]);
+      await ref.read(settingsProvider.notifier).clearVacationDates();
+      if (!mounted) return;
+      HapticFeedback.heavyImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          content: Text(
+            'Todos los datos han sido purgados.',
+            style: AppTheme.bodyStyle(
+              fontSize: 13,
+              color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+            ),
+          ),
+        ),
+      );
+    }
   }
 }

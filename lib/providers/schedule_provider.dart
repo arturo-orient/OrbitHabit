@@ -34,6 +34,11 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
     await db.saveSetting(_storageKey, serialized);
   }
 
+  Future<void> replaceAllBlocks(List<ScheduleBlock> blocks) async {
+    state = blocks;
+    await _persist();
+  }
+
   Future<void> addBlock(ScheduleBlock block) async {
     state = [...state, block];
     await _persist();
@@ -48,15 +53,62 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
   }
 
   Future<void> syncDateWithHabit(String habitId, String dateIso, bool isCompleted) async {
+    final matchingBlocks = state.where((b) => b.habitId == habitId).toList();
+    if (matchingBlocks.isEmpty) return;
+
+    if (!isCompleted) {
+      state = [
+        for (final b in state)
+          if (b.habitId == habitId)
+            b.copyWith(
+              completedDates: b.completedDates.where((d) => d != dateIso).toList(),
+            )
+          else
+            b,
+      ];
+      await _persist();
+      return;
+    }
+
+    // isCompleted == true:
+    // a) Comprueba si ya existe algún bloque con b.habitId == habitId que ya tenga dateIso en completedDates.
+    final alreadyCompleted = matchingBlocks.any((b) => b.completedDates.contains(dateIso));
+    if (alreadyCompleted) return;
+
+    // b) Si no existe, busca el bloque con b.habitId == habitId que tenga dateIso en assignedDates.
+    ScheduleBlock? targetBlock;
+    for (final b in matchingBlocks) {
+      if (b.assignedDates.contains(dateIso)) {
+        targetBlock = b;
+        break;
+      }
+    }
+
+    // c) Si ninguno lo tiene en assignedDates, busca el primero cuyo daysOfWeek contenga DateTime.tryParse(dateIso)?.weekday.
+    if (targetBlock == null) {
+      final weekday = DateTime.tryParse(dateIso)?.weekday;
+      if (weekday != null) {
+        for (final b in matchingBlocks) {
+          if (b.daysOfWeek.contains(weekday)) {
+            targetBlock = b;
+            break;
+          }
+        }
+      }
+    }
+
+    // d) Como fallback final si ninguno coincide, toma únicamente el primer bloque de la lista con b.habitId == habitId.
+    targetBlock ??= matchingBlocks.first;
+
+    // e) Añade dateIso a completedDates ÚNICAMENTE en ese bloque objetivo y persiste.
+    final targetId = targetBlock.id;
     state = [
       for (final b in state)
-        if (b.habitId == habitId)
+        if (b.id == targetId)
           b.copyWith(
-            completedDates: isCompleted
-                ? (b.completedDates.contains(dateIso)
-                    ? b.completedDates
-                    : [...b.completedDates, dateIso])
-                : (b.completedDates.where((d) => d != dateIso).toList()),
+            completedDates: b.completedDates.contains(dateIso)
+                ? b.completedDates
+                : [...b.completedDates, dateIso],
           )
         else
           b,
@@ -66,7 +118,6 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
 
   Future<void> toggleDateForBlock(String blockId, String dateIso) async {
     String? linkedHabitId;
-    bool isNowDone = false;
 
     state = [
       for (final b in state)
@@ -74,7 +125,6 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
           (() {
             linkedHabitId = b.habitId;
             final isDone = b.completedDates.contains(dateIso);
-            isNowDone = !isDone;
             return b.copyWith(
               completedDates: isDone
                   ? (List<String>.from(b.completedDates)..remove(dateIso))
@@ -92,7 +142,8 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
       if (habitIndex != -1) {
         final habit = habits[habitIndex];
         final newDates = Set<String>.from(habit.completedDates);
-        if (isNowDone) {
+        final anyBlockStillCompleted = state.any((b) => b.habitId == linkedHabitId && b.completedDates.contains(dateIso));
+        if (anyBlockStillCompleted) {
           newDates.add(dateIso);
         } else {
           newDates.remove(dateIso);
@@ -100,6 +151,26 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
         await ref.read(habitsProvider.notifier).updateHabit(habit.copyWith(completedDates: newDates));
       }
     }
+  }
+
+  /// Actualiza en una sola transición todos los bloques laborales para vincularlos al hábito objetivo
+  Future<void> relinkWorkBlocksToHabit(String targetHabitId) async {
+    state = [
+      for (final b in state)
+        if (b.hasMonthlyHourTarget ||
+            b.title.toLowerCase().contains('trabaj') ||
+            b.title.toLowerCase().contains('turno'))
+          b.copyWith(habitId: targetHabitId)
+        else
+          b,
+    ];
+    await _persist();
+  }
+
+  /// Elimina los bloques vinculados a un hábito eliminado para no dejar huérfanos
+  Future<void> unlinkHabitFromBlocks(String deletedHabitId) async {
+    state = state.where((b) => b.habitId != deletedHabitId).toList();
+    await _persist();
   }
 
   /// Asigna o desasigna un turno a una fecha ISO (YYYY-MM-DD)

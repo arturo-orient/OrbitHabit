@@ -44,7 +44,26 @@
   <em>04. Creador Unificado &nbsp;·&nbsp; 05. Selector Cromático HSV/HEX &nbsp;·&nbsp; 06. Telemetría y Rachas &nbsp;·&nbsp; 07. Ajustes Zen</em>
 </p>
 
-## 🚀 What's New in v1.1.3
+#### 🚀 What's New in v1.2.0 (Engineering, Zero-Permission Backup & Instant Demo Release)
+OrbitHabit v1.2.0 focuses on reactive state edge-case hardening, 120Hz canvas isolation, astronomical date math, and instant onboarding:
+
+* ⚡ **Blueprint Empty State & 1-Click Demo Orbit (`DemoSeederService`)**:
+  * When no habits are configured, `OrbitPainter` now renders a precision Swiss technical blueprint dial instead of a blank canvas.
+  * Added **`[ ⚡ CARGAR ÓRBITA DEMO ]`** to instantly populate a realistic month of rotating shifts (*Mañana*, *Tarde*, *Noche*), overtime hours, and habits in 1 click.
+* 📦 **Zero-Permission JSON Backup & Restore (`BackupService`)**:
+  * Full local database export and import (`habits`, `scheduleBlocks`, `vacationDates`) via versioned JSON and system clipboard—requiring zero invasive Android storage permissions.
+* 🧠 **1:N Reactive State & Overnight Midnight Boundary Fixes**:
+  * **Deterministic Shift Sync**: Fixed `syncDateWithHabit` so toggling a parent work habit from the main card resolves the specific assigned shift instead of multiplying hours across all linked shifts.
+  * **Double-Shift Invariant**: Unchecking one shift on a double-shift day preserves the parent habit completion as long as another shift remains active on that date.
+  * **Overnight Effective Date (`01:30 AM` Edge Case)**: Completing an overnight shift (`23:00 → 07:00`) after midnight in `OrbitClock24` now accurately attributes completion to the shift's start date.
+* 🛡️ **DST-Immune Streak Math & 120Hz `RepaintBoundary` Isolation**:
+  * Replaced duration-based date stepping with astronomical calendar constructors (`DateTime(y, m, d ± 1)`) and UTC ISO-week calculations in `StreakUtils` to prevent Daylight Saving Time (23h/25h days) from breaking long streaks.
+  * Wrapped `OrbitTracker` and `OrbitClock24` in strategic `RepaintBoundary` layers and refined `shouldRepaint` delegates.
+
+<details>
+<summary>📜 <strong>Previous Changelog: v1.1.3 Highlights</strong></summary>
+
+#### 🚀 What's New in v1.1.3
 
 OrbitHabit v1.1.3 brings critical bug fixes for display accessibility and custom theme persistence:
 
@@ -53,6 +72,8 @@ OrbitHabit v1.1.3 brings critical bug fixes for display accessibility and custom
 - 🎨 **Custom Color Persistence Fix**:
   - Fixed a bug where selecting a custom color in the color picker dialog was not properly persisting to parent habits and their associated schedule slots upon saving.
   - Enhanced HEX input handling to support both 3-digit and 6-digit hex formats with guaranteed full opacity.
+
+</details>
 
 <details>
 <summary>📜 <strong>Previous Changelog: v1.1.2 Highlights</strong></summary>
@@ -152,6 +173,7 @@ lib/
 │   ├── schedule_provider.dart         # Riverpod Notifier — daily schedule blocks
 │   └── settings_provider.dart         # Riverpod Notifier — settings + confetti
 ├── services/
+│   ├── backup_service.dart            # Zero-permission JSON export/import & demo data seeder
 │   ├── notification_service.dart      # Daily reminders (flutter_local_notifications)
 │   ├── sound_service.dart             # 3 precached audio effects (audioplayers)
 │   └── widget_service.dart            # Android home widget sync (home_widget)

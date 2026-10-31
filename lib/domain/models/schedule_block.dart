@@ -263,49 +263,55 @@ class WorkShiftGroup {
 
   Color get color => habit?.color ?? (shifts.isNotEmpty ? shifts.first.color : const Color(0xFFD4FF00));
 
-  /// Calcula el total de horas reales trabajadas en el mes (solo turnos efectivamente completados o días pasados)
-  double getMonthlyWorkedHours(DateTime month) {
+  /// Fechas efectivamente trabajadas para un turno específico en el mes
+  Set<String> getEffectiveWorkedDatesForShift(ScheduleBlock s, DateTime month) {
     final prefix = '${month.year}-${month.month.toString().padLeft(2, '0')}';
     final now = DateTime.now();
     final todayIso = now.toIso8601String().split('T').first;
-    double total = 0.0;
+    final isFutureMonth = month.year > now.year || (month.year == now.year && month.month > now.month);
 
-    final Set<String> completedSet = {};
-    for (final s in shifts) {
-      completedSet.addAll(s.completedDates.where((d) => d.startsWith(prefix)));
+    if (isFutureMonth) return {};
+
+    final Set<String> dates = {};
+    // 1. Fechas explícitas en completedDates de este turno
+    for (final d in s.completedDates) {
+      if (d.startsWith(prefix)) dates.add(d);
     }
+
+    // 2. Fechas en habit vinculado (si aplica a este turno)
     if (habit != null) {
-      completedSet.addAll(habit!.completedDates.where((d) => d.startsWith(prefix)));
-    }
-
-    if (completedSet.isNotEmpty) {
-      for (final dateIso in completedSet) {
-        final shift = shifts.firstWhere(
-          (s) => s.assignedDates.contains(dateIso),
-          orElse: () => shifts.firstWhere(
-            (s) => s.completedDates.contains(dateIso),
-            orElse: () => shifts.first,
-          ),
-        );
-        total += (shift.durationInMinutes / 60.0);
-      }
-      for (final s in shifts) {
-        total += s.extraHours;
-      }
-      return total;
-    }
-
-    // Si no hay completedDates explícitas pero hay assignedDates en el calendario:
-    // Solo contar como trabajadas las fechas que ya han ocurrido (d <= todayIso)
-    final anyHasAssigned = shifts.any((s) => s.assignedDates.any((d) => d.startsWith(prefix)));
-    if (anyHasAssigned) {
-      for (final s in shifts) {
-        final pastCount = s.assignedDates.where((d) => d.startsWith(prefix) && d.compareTo(todayIso) <= 0).length;
-        total += pastCount * (s.durationInMinutes / 60.0);
-        total += s.extraHours;
+      for (final d in habit!.completedDates) {
+        if (d.startsWith(prefix)) {
+          if (s.assignedDates.contains(d) ||
+              (!shifts.any((other) => other.assignedDates.contains(d)) && s.id == shifts.first.id)) {
+            dates.add(d);
+          }
+        }
       }
     }
 
+    // 3. Fechas asignadas en cuadrante que ya han transcurrido (pasadas o de hoy)
+    for (final d in s.assignedDates) {
+      if (d.startsWith(prefix) && d.compareTo(todayIso) <= 0) {
+        dates.add(d);
+      }
+    }
+
+    return dates;
+  }
+
+  /// Calcula el total de horas reales trabajadas en el mes (solo turnos efectivamente completados o días pasados)
+  double getMonthlyWorkedHours(DateTime month) {
+    final now = DateTime.now();
+    final isFutureMonth = month.year > now.year || (month.year == now.year && month.month > now.month);
+    if (isFutureMonth) return 0.0;
+
+    double total = 0.0;
+    for (final s in shifts) {
+      final workedDates = getEffectiveWorkedDatesForShift(s, month);
+      total += workedDates.length * (s.durationInMinutes / 60.0);
+      total += s.extraHours;
+    }
     return total;
   }
 
@@ -332,26 +338,15 @@ class WorkShiftGroup {
 
   /// Total de turnos trabajados en el mes
   int getMonthlyWorkedShiftsCount(DateTime month) {
-    final prefix = '${month.year}-${month.month.toString().padLeft(2, '0')}';
     final now = DateTime.now();
-    final todayIso = now.toIso8601String().split('T').first;
+    final isFutureMonth = month.year > now.year || (month.year == now.year && month.month > now.month);
+    if (isFutureMonth) return 0;
 
-    final Set<String> completedSet = {};
+    int total = 0;
     for (final s in shifts) {
-      completedSet.addAll(s.completedDates.where((d) => d.startsWith(prefix)));
+      total += getEffectiveWorkedDatesForShift(s, month).length;
     }
-    if (habit != null) {
-      completedSet.addAll(habit!.completedDates.where((d) => d.startsWith(prefix)));
-    }
-    if (completedSet.isNotEmpty) {
-      return completedSet.length;
-    }
-
-    int count = 0;
-    for (final s in shifts) {
-      count += s.assignedDates.where((d) => d.startsWith(prefix) && d.compareTo(todayIso) <= 0).length;
-    }
-    return count;
+    return total;
   }
 
   /// Total de turnos realizados / asignados en el mes
@@ -366,21 +361,14 @@ class WorkShiftGroup {
     final prefix = '${month.year}-${month.month.toString().padLeft(2, '0')}';
     final now = DateTime.now();
     final isFutureMonth = month.year > now.year || (month.year == now.year && month.month > now.month);
-    final todayIso = now.toIso8601String().split('T').first;
 
     return shifts.map((s) {
-      final assigned = s.assignedDates.where((d) => d.startsWith(prefix)).length;
-      final completed = s.completedDates.where((d) => d.startsWith(prefix)).length;
-
       int count;
       if (isFutureMonth) {
-        count = assigned;
+        count = s.assignedDates.where((d) => d.startsWith(prefix)).length;
       } else {
-        final pastAssigned = s.assignedDates.where((d) => d.startsWith(prefix) && d.compareTo(todayIso) <= 0).length;
-        count = completed > 0 ? completed : pastAssigned;
-        if (count == 0 && assigned > 0) {
-          count = assigned;
-        }
+        final workedDates = getEffectiveWorkedDatesForShift(s, month);
+        count = workedDates.length;
       }
 
       final hours = count * (s.durationInMinutes / 60.0);

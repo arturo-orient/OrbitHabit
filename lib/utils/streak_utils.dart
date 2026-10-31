@@ -3,7 +3,10 @@ import '../domain/models/habit.dart';
 class StreakUtils {
   /// Devuelve el número de ISO week para una fecha dada (Lunes = 1)
   static int _getIsoWeekNumber(DateTime date) {
-    int dayOfYear = int.parse(date.difference(DateTime(date.year, 1, 1)).inDays.toString()) + 1;
+    int dayOfYear = DateTime.utc(date.year, date.month, date.day)
+            .difference(DateTime.utc(date.year, 1, 1))
+            .inDays +
+        1;
     int w = ((dayOfYear - date.weekday + 10) / 7).floor();
     if (w < 1) {
       w = _getIsoWeekNumber(DateTime(date.year - 1, 12, 31));
@@ -62,7 +65,7 @@ class StreakUtils {
           }
         }
         isCurrentWeek = false;
-        checkDate = checkDate.subtract(const Duration(days: 7));
+        checkDate = DateTime(checkDate.year, checkDate.month, checkDate.day - 7);
       }
       
       // La racha numérica mostrada será la base de semanas logradas * target
@@ -76,9 +79,10 @@ class StreakUtils {
     }
 
     // Hábito Días Específicos
-    DateTime checkDate = DateTime.now();
+    final today = DateTime.now();
+    final todayFormatted = _formatDate(today);
+    DateTime checkDate = DateTime(today.year, today.month, today.day);
     int streak = 0;
-    bool isFirstActiveDay = true;
     int maxLookup = 0; 
 
     while (maxLookup < 3650) { 
@@ -86,26 +90,26 @@ class StreakUtils {
       final formatted = _formatDate(checkDate);
 
       if (pausedDates.contains(formatted)) {
-        checkDate = checkDate.subtract(const Duration(days: 1));
+        checkDate = DateTime(checkDate.year, checkDate.month, checkDate.day - 1);
         continue;
       }
 
       if (!habit.activeWeekdays.contains(checkDate.weekday)) {
-        checkDate = checkDate.subtract(const Duration(days: 1));
+        checkDate = DateTime(checkDate.year, checkDate.month, checkDate.day - 1);
         continue;
       }
       
       if (habit.completedDates.contains(formatted)) {
         streak++;
-        isFirstActiveDay = false;
       } else {
-        if (isFirstActiveDay) {
-          isFirstActiveDay = false;
+        if (formatted == todayFormatted) {
+          // Hoy aún está en curso: no sumamos racha pero no se rompe
         } else {
+          // Si un día activo estrictamente anterior a hoy no está completado ni pausado, se rompe inmediatamente
           break;
         }
       }
-      checkDate = checkDate.subtract(const Duration(days: 1));
+      checkDate = DateTime(checkDate.year, checkDate.month, checkDate.day - 1);
     }
     return streak;
   }
@@ -151,7 +155,7 @@ class StreakUtils {
              currentWeeks = 0;
            }
         }
-        current = current.add(const Duration(days: 7));
+        current = DateTime(current.year, current.month, current.day + 7);
       }
       
       return maxWeeks * habit.targetDaysPerWeek;
@@ -175,12 +179,12 @@ class StreakUtils {
       final formatted = _formatDate(current);
 
       if (pausedDates.contains(formatted)) {
-        current = current.add(const Duration(days: 1));
+        current = DateTime(current.year, current.month, current.day + 1);
         continue;
       }
 
       if (!habit.activeWeekdays.contains(current.weekday)) {
-        current = current.add(const Duration(days: 1));
+        current = DateTime(current.year, current.month, current.day + 1);
         continue;
       }
 
@@ -194,7 +198,7 @@ class StreakUtils {
           currentStreak = 0;
         }
       }
-      current = current.add(const Duration(days: 1));
+      current = DateTime(current.year, current.month, current.day + 1);
     }
     return maxStreak;
   }

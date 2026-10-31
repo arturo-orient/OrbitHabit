@@ -77,7 +77,7 @@ class Habit {
   }
 
   // To/From Map for manual Hive serialization (without generators)
-  Map<dynamic, dynamic> toMap() {
+  Map<String, dynamic> toMap() {
     return {
       'id': id,
       'name': name,

@@ -20,6 +20,13 @@ class HabitNotifier extends Notifier<List<Habit>> {
     return habits;
   }
 
+  Future<void> replaceAllHabits(List<Habit> habits) async {
+    final sorted = List<Habit>.from(habits)..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+    await ref.read(databaseProvider).replaceAllHabits(sorted);
+    state = sorted;
+    WidgetService.updateWidget(state);
+  }
+
   Future<void> addHabit(Habit habit) async {
     // Asigna el orderIndex al final de la lista
     final newHabit = habit.copyWith(orderIndex: state.length);
@@ -64,6 +71,9 @@ class HabitNotifier extends Notifier<List<Habit>> {
     await ref.read(databaseProvider).deleteHabit(id);
     state = state.where((h) => h.id != id).toList();
     WidgetService.updateWidget(state);
+    try {
+      await ref.read(scheduleProvider.notifier).unlinkHabitFromBlocks(id);
+    } catch (_) {}
   }
 
   Future<void> toggleDay(String habitId, String dateIso) async {
@@ -92,14 +102,17 @@ class HabitNotifier extends Notifier<List<Habit>> {
     final habit = state[habitIndex];
     if (!habit.isNumeric) return; 
     
+    final wasCompleted = habit.completedDates.contains(dateIso);
+
     final currentProgress = habit.dailyProgress[dateIso] ?? 0;
     final newProgress = (currentProgress + delta).clamp(0, 9999);
     
     final newDailyProgressMap = Map<String, int>.from(habit.dailyProgress);
     newDailyProgressMap[dateIso] = newProgress;
     
+    final isNowCompleted = newProgress >= habit.dailyTarget;
     final newDates = Set<String>.from(habit.completedDates);
-    if (newProgress >= habit.dailyTarget) {
+    if (isNowCompleted) {
       newDates.add(dateIso);
     } else {
       newDates.remove(dateIso);
@@ -109,6 +122,12 @@ class HabitNotifier extends Notifier<List<Habit>> {
       dailyProgress: newDailyProgressMap,
       completedDates: newDates,
     ));
+
+    if (wasCompleted != isNowCompleted) {
+      try {
+        await ref.read(scheduleProvider.notifier).syncDateWithHabit(habitId, dateIso, isNowCompleted);
+      } catch (_) {}
+    }
   }
 
   /// Unifica hábitos duplicados de turnos de trabajo bajo un solo hábito madre
@@ -151,17 +170,7 @@ class HabitNotifier extends Notifier<List<Habit>> {
       state = newHabits;
 
       try {
-        final scheduleNotifier = ref.read(scheduleProvider.notifier);
-        final currentBlocks = ref.read(scheduleProvider);
-        for (final b in currentBlocks) {
-          if (b.hasMonthlyHourTarget ||
-              b.title.toLowerCase().contains('trabaj') ||
-              b.title.toLowerCase().contains('turno')) {
-            if (b.habitId != primary.id) {
-              await scheduleNotifier.updateBlock(b.copyWith(habitId: primary.id));
-            }
-          }
-        }
+        await ref.read(scheduleProvider.notifier).relinkWorkBlocksToHabit(primary.id);
       } catch (_) {}
     }
   }
