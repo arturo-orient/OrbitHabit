@@ -271,7 +271,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                 Padding(
                   padding: const EdgeInsets.all(14),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       TextButton(
                         onPressed: () => Navigator.of(ctx).pop(),
@@ -283,99 +283,129 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      ElevatedButton.icon(
-                        onPressed: () async {
-                          HapticFeedback.mediumImpact();
-                          Navigator.of(ctx).pop();
-                          final savedPath = await SchedulePosterService.savePosterPng(
-                            bytes: pngBytes,
-                            month: _selectedMonth,
-                          );
-                          if (!mounted) return;
-                          if (savedPath != null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                backgroundColor: isDark
-                                    ? AppTheme.obsidianSurfaceElevated
-                                    : AppTheme.boneSurfaceElevated,
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  side: BorderSide(
-                                    color: isDark
-                                        ? AppTheme.obsidianBorderHover
-                                        : AppTheme.boneBorder,
-                                  ),
-                                ),
-                                content: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.download_done_rounded,
-                                      size: 20,
-                                      color: AppTheme.dynamicAccent(isDark),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Póster PNG descargado con éxito',
-                                            style: AppTheme.displayStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w700,
-                                              color: isDark
-                                                  ? AppTheme.obsidianTextPrimary
-                                                  : AppTheme.boneTextPrimary,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            savedPath,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: AppTheme.monoStyle(
-                                              fontSize: 10.5,
-                                              color: isDark
-                                                  ? AppTheme.obsidianTextMuted
-                                                  : AppTheme.boneTextMuted,
-                                            ),
-                                          ),
-                                        ],
+                      Row(
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              HapticFeedback.lightImpact();
+                              await SchedulePosterService.sharePosterPng(
+                                bytes: pngBytes,
+                                month: _selectedMonth,
+                              );
+                            },
+                            icon: const Icon(Icons.share_rounded, size: 15),
+                            label: Text(
+                              'Compartir',
+                              style: AppTheme.displayStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(
+                                color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
+                              ),
+                              shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              HapticFeedback.mediumImpact();
+                              Navigator.of(ctx).pop();
+                              final savedPath = await SchedulePosterService.savePosterPng(
+                                bytes: pngBytes,
+                                month: _selectedMonth,
+                              );
+                              if (!mounted) return;
+                              if (savedPath != null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    backgroundColor: isDark
+                                        ? AppTheme.obsidianSurfaceElevated
+                                        : AppTheme.boneSurfaceElevated,
+                                    behavior: SnackBarBehavior.floating,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      side: BorderSide(
+                                        color: isDark
+                                            ? AppTheme.obsidianBorderHover
+                                            : AppTheme.boneBorder,
                                       ),
                                     ),
-                                  ],
-                                ),
+                                    content: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.photo_library_rounded,
+                                          size: 20,
+                                          color: AppTheme.dynamicAccent(isDark),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Guardado con éxito en la Galería',
+                                                style: AppTheme.displayStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: isDark
+                                                      ? AppTheme.obsidianTextPrimary
+                                                      : AppTheme.boneTextPrimary,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                savedPath,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: AppTheme.monoStyle(
+                                                  fontSize: 10.5,
+                                                  color: isDark
+                                                      ? AppTheme.obsidianTextMuted
+                                                      : AppTheme.boneTextMuted,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    backgroundColor: Colors.redAccent.shade700,
+                                    behavior: SnackBarBehavior.floating,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    content: const Text('No se pudo guardar el archivo del póster.'),
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.file_download_outlined, size: 16),
+                            label: Text(
+                              'Guardar en Galería',
+                              style: AppTheme.displayStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.black : Colors.white,
                               ),
-                            );
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                backgroundColor: Colors.redAccent.shade700,
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                content: const Text('No se pudo guardar el archivo del póster.'),
-                              ),
-                            );
-                          }
-                        },
-                        icon: const Icon(Icons.file_download_outlined, size: 16),
-                        label: Text(
-                          'Descargar Póster PNG',
-                          style: AppTheme.displayStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.black : Colors.white,
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.dynamicAccent(isDark),
+                              foregroundColor: isDark ? Colors.black : Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            ),
                           ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.dynamicAccent(isDark),
-                          foregroundColor: isDark ? Colors.black : Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
-                          elevation: 0,
-                        ),
+                        ],
                       ),
                     ],
                   ),

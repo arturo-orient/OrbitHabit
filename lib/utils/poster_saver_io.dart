@@ -1,10 +1,30 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/services.dart';
+
+const _mediaChannel = MethodChannel('com.example.orbithabit/media_saver');
 
 Future<String?> savePosterFile({
   required Uint8List bytes,
   required String fileName,
 }) async {
+  if (Platform.isAndroid) {
+    try {
+      final String? result = await _mediaChannel.invokeMethod<String>(
+        'saveImageToGallery',
+        {
+          'bytes': bytes,
+          'fileName': fileName,
+        },
+      );
+      if (result != null && result.isNotEmpty) {
+        return result;
+      }
+    } catch (_) {
+      // Fallback a escritura tradicional si el canal no respondiera
+    }
+  }
+
   try {
     String? downloadsDir;
 
@@ -23,11 +43,6 @@ Future<String?> savePosterFile({
         if (Directory(unixDownloads).existsSync()) {
           downloadsDir = unixDownloads;
         }
-      }
-    } else if (Platform.isAndroid) {
-      final androidDownloads = Directory('/storage/emulated/0/Download');
-      if (androidDownloads.existsSync()) {
-        downloadsDir = androidDownloads.path;
       }
     }
 
@@ -53,4 +68,25 @@ Future<String?> savePosterFile({
       return null;
     }
   }
+}
+
+Future<bool> sharePosterFile({
+  required Uint8List bytes,
+  required String fileName,
+}) async {
+  if (Platform.isAndroid) {
+    try {
+      final bool? result = await _mediaChannel.invokeMethod<bool>(
+        'shareImage',
+        {
+          'bytes': bytes,
+          'fileName': fileName,
+        },
+      );
+      return result ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+  return false;
 }

@@ -25,6 +25,17 @@ class SchedulePosterService {
     return await PosterSaver.save(bytes: bytes, fileName: fileName);
   }
 
+  /// Comparte el PNG del póster directamente a través de apps externas (WhatsApp, Telegram, Drive)
+  static Future<bool> sharePosterPng({
+    required Uint8List bytes,
+    required DateTime month,
+  }) async {
+    final monthName = _monthNames[month.month - 1].toLowerCase();
+    final capitalizedMonth = monthName[0].toUpperCase() + monthName.substring(1);
+    final fileName = 'OrbitHabit_Cuadrante_${capitalizedMonth}_${month.year}.png';
+    return await PosterSaver.share(bytes: bytes, fileName: fileName);
+  }
+
   /// Genera un PNG de 1080x1440 px con el cuadrante mensual, turnos y telemetría de horas
   static Future<Uint8List> renderMonthlyPosterPng({
     required DateTime month,

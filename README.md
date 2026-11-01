@@ -44,6 +44,15 @@
   <em>04. Creador Unificado &nbsp;·&nbsp; 05. Selector Cromático HSV/HEX &nbsp;·&nbsp; 06. Telemetría y Rachas &nbsp;·&nbsp; 07. Ajustes Zen</em>
 </p>
 
+#### 🚀 What's New in v1.2.3 (Native Android MediaStore & System Share Sheet)
+OrbitHabit v1.2.3 resolves the Android Scoped Storage restriction, enabling instant gallery indexing and native sharing:
+
+* 🖼️ **Native MediaStore Image Pipeline (`MediaStore.Images.Media`)**:
+  * Bypasses POSIX filesystem sandbox limitations on Android 10+.
+  * Postcards are inserted directly into Android's public `Pictures/OrbitHabit/` album, immediately indexed and visible in Google Photos, Gallery apps, and File managers without requesting broad storage permissions.
+* 📤 **Native System Share Sheet (`FileProvider`)**:
+  * Added **`[ 📤 Compartir ]`** button to send posters directly to WhatsApp, Telegram, Google Drive, Gmail, or system destinations via secure temporary `content://` URIs.
+
 #### 🚀 What's New in v1.2.2 (Real Poster Download, Demo Life-Cycle Banner & 5-Step Guided Tour)
 OrbitHabit v1.2.2 refines the onboarding and export experience with real platform downloads, automated data protection, and a friendly human tour:
 
@@ -253,7 +262,7 @@ lib/
 
 <p align="center">
   <a href="https://github.com/arturo-orient/OrbitHabit/releases/latest/download/OrbitHabit.apk">
-    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.2.2-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
+    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.2.3-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
   </a>
 </p>
 

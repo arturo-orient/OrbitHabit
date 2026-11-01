@@ -20,3 +20,10 @@ Future<String?> savePosterFile({
     return null;
   }
 }
+
+Future<bool> sharePosterFile({
+  required Uint8List bytes,
+  required String fileName,
+}) async {
+  return false;
+}
