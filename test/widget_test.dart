@@ -19,6 +19,7 @@ import 'package:orbithabit/domain/models/user_settings.dart';
 import 'package:orbithabit/services/backup_service.dart';
 import 'package:orbithabit/services/schedule_poster_service.dart';
 import 'package:orbithabit/utils/poster_saver.dart';
+import 'package:orbithabit/ui/widgets/orbit_clock_24.dart';
 
 class FakeDatabaseService extends DatabaseService {
   final Map<String, dynamic> _settings = {};
@@ -427,6 +428,75 @@ void main() {
       );
 
       expect(DemoSeederService.isDemoModeActive([userHabit], [userBlock]), isFalse);
+    });
+
+    test('OrbitClock24 splits overnight shifts: evening start today, morning finish tomorrow', () {
+      final today = DateTime(2026, 11, 1, 10, 0); // Nov 1st 10:00 AM
+      final tomorrow = DateTime(2026, 11, 2, 10, 0);
+      final todayIso = '2026-11-01';
+
+      // Night shift: 23:00 to 07:00, assigned only to Nov 1st
+      final nightShift = ScheduleBlock(
+        id: 'night_shift',
+        title: 'Turno Noche',
+        startHour: 23,
+        startMinute: 0,
+        endHour: 7,
+        endMinute: 0,
+        colorValue: 0xFF9EA1D4,
+        daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
+        assignedDates: [todayIso],
+        hasMonthlyHourTarget: true,
+        monthlyTargetHours: 120,
+      );
+
+      // On Nov 1st: shift starts tonight!
+      // Must NOT show 00:00-07:00 in the morning because yesterday was day off.
+      // Must only show 23:00-24:00 in the evening!
+      final todaySegments = OrbitClock24.getSegmentsForDay([nightShift], today);
+      expect(todaySegments.length, 1);
+      expect(todaySegments.first.startMinutes, 1380); // 23:00
+      expect(todaySegments.first.sweepMinutes, 60);   // Until 24:00 (midnight)
+      expect(todaySegments.first.isForTonight, isTrue);
+
+      // On Nov 2nd: shift finishes this morning (00:00-07:00)!
+      // Must show 00:00-07:00 carried over from yesterday night.
+      final tomorrowSegments = OrbitClock24.getSegmentsForDay([nightShift], tomorrow);
+      expect(tomorrowSegments.length, 1);
+      expect(tomorrowSegments.first.startMinutes, 0);    // 00:00
+      expect(tomorrowSegments.first.sweepMinutes, 420);  // 7 hours until 07:00
+      expect(tomorrowSegments.first.isFromYesterday, isTrue);
+    });
+
+    test('Assigned shift for today without completion does NOT count into worked hours', () {
+      final now = DateTime.now();
+      final month = DateTime(now.year, now.month, 1);
+      final todayIso = now.toIso8601String().split('T').first;
+
+      final nightShift = ScheduleBlock(
+        id: 'shift_today_only',
+        title: 'Turno Noche',
+        startHour: 23,
+        startMinute: 0,
+        endHour: 7,
+        endMinute: 0,
+        colorValue: 0xFF9EA1D4,
+        daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
+        assignedDates: [todayIso], // Assigned for tonight
+        completedDates: [],        // NOT completed yet!
+        hasMonthlyHourTarget: true,
+        monthlyTargetHours: 120,
+      );
+
+      final group = WorkShiftGroup(
+        title: 'Turno Noche',
+        shifts: [nightShift],
+        monthlyTargetHours: 120,
+      );
+
+      // Worked hours must be 0.0, because today's shift has not been worked yet!
+      expect(group.getMonthlyWorkedHours(month), 0.0);
+      expect(nightShift.getMonthlyWorkedHours(month), 0.0);
     });
 
     test('PosterSaver saves bytes and returns accessible file path', () async {

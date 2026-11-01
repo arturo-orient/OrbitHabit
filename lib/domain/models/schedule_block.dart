@@ -154,13 +154,25 @@ class ScheduleBlock {
     return 0.0;
   }
 
-  /// Calculate total worked hours in a specific month
+  /// Calculate total worked hours in a specific month (strictly completed or past dates)
   double getMonthlyWorkedHours(DateTime month, [Habit? linkedHabit]) {
     final prefix = '${month.year}-${month.month.toString().padLeft(2, '0')}';
-    final allDates = getEffectiveCompletedDates(linkedHabit);
-    final completedInMonth = allDates.where((d) => d.startsWith(prefix)).length;
+    final now = DateTime.now();
+    final todayIso = now.toIso8601String().split('T').first;
+    final isFutureMonth = month.year > now.year || (month.year == now.year && month.month > now.month);
+    if (isFutureMonth) return 0.0;
+
+    final Set<String> dates = {};
+    for (final d in getEffectiveCompletedDates(linkedHabit)) {
+      if (d.startsWith(prefix)) dates.add(d);
+    }
+    for (final d in assignedDates) {
+      if (d.startsWith(prefix) && d.compareTo(todayIso) < 0) {
+        dates.add(d);
+      }
+    }
     final shiftHours = durationInMinutes / 60.0;
-    return (completedInMonth * shiftHours) + getExtraHoursForMonth(month);
+    return (dates.length * shiftHours) + getExtraHoursForMonth(month);
   }
 
   /// Whether the monthly target has been reached or exceeded

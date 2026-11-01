@@ -44,6 +44,18 @@
   <em>04. Creador Unificado &nbsp;·&nbsp; 05. Selector Cromático HSV/HEX &nbsp;·&nbsp; 06. Telemetría y Rachas &nbsp;·&nbsp; 07. Ajustes Zen</em>
 </p>
 
+#### 🚀 What's New in v1.2.5 (Smart Overnight 24H Clock Dial & Zero-False-Hours Precision)
+OrbitHabit v1.2.5 solves the overnight shift circular visualization and strictly enforces uncompleted day rules:
+
+* 🌙 **Smart Overnight 24H Clock Dial Splitting (`OrbitClock24`)**:
+  * Night shifts crossing midnight (e.g. 23:00 to 07:00) now decompose into strict daily arcs on the 24-hour circular dial:
+    * **Shift start day (Today)**: Only the evening segment (`23:00 → 24:00`) is drawn. The morning (`00:00 → 07:00`) remains completely blank unless yesterday was also a night shift!
+    * **Shift completion day (Tomorrow)**: The morning completion arc (`00:00 → 07:00`) is rendered as carrying over from last night.
+    * Eliminates confusing phantom morning shifts on the day a night shift starts.
+* ⏱️ **Zero-False-Hours Guarantee**:
+  * Unified `ScheduleBlock` and `WorkShiftGroup` calculation to ensure shifts scheduled for today are strictly ignored until actually completed by the user.
+  * Demo data and initial seeder updated so today is never pre-completed.
+
 #### 🚀 What's New in v1.2.4 (Strict In-Progress Day Math & App Label Polish)
 OrbitHabit v1.2.4 fixes month-start shift counting and polishes native Android branding:
 
@@ -272,7 +284,7 @@ lib/
 
 <p align="center">
   <a href="https://github.com/arturo-orient/OrbitHabit/releases/latest/download/OrbitHabit.apk">
-    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.2.4-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
+    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.2.5-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
   </a>
 </p>
 

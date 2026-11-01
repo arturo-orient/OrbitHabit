@@ -135,7 +135,7 @@ class DemoSeederService {
     final nightAssigned = <String>[];
 
     for (int d = 1; d <= 28; d++) {
-      final isPast = d <= today;
+      final isPast = d < today;
 
       if (d % 3 == 1) {
         morningAssigned.add(fmt(d));
@@ -149,9 +149,9 @@ class DemoSeederService {
       }
     }
 
-    final morningCompleted = morningAssigned.where((d) => d.compareTo(fmt(today)) <= 0).toList();
-    final afternoonCompleted = afternoonAssigned.where((d) => d.compareTo(fmt(today)) <= 0).toList();
-    final nightCompleted = nightAssigned.where((d) => d.compareTo(fmt(today)) <= 0).toList();
+    final morningCompleted = morningAssigned.where((d) => d.compareTo(fmt(today)) < 0).toList();
+    final afternoonCompleted = afternoonAssigned.where((d) => d.compareTo(fmt(today)) < 0).toList();
+    final nightCompleted = nightAssigned.where((d) => d.compareTo(fmt(today)) < 0).toList();
 
     final workHabit = Habit(
       id: 'demo_work',

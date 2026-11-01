@@ -20,6 +20,14 @@ class OrbitClock24 extends ConsumerStatefulWidget {
     this.onBlockTapped,
   }) : super(key: key);
 
+  /// Descompone los turnos en los arcos estrictos que deben ser visualizados en el día `now` (00:00 - 24:00).
+  /// Para turnos nocturnos (ej. 23:00 -> 07:00):
+  /// - Tramo matutino (00:00 -> 07:00): Solo se pinta si el turno se inició ayer noche (`appliesToDate(yesterday)`).
+  /// - Tramo nocturno (23:00 -> 24:00): Solo se pinta si el turno inicia hoy noche (`appliesToDate(now)`).
+  static List<ClockArcSegment> getSegmentsForDay(List<ScheduleBlock> blocks, DateTime now) {
+    return _OrbitClockPainter.getSegmentsForDay(blocks, now);
+  }
+
   @override
   ConsumerState<OrbitClock24> createState() => _OrbitClock24State();
 }
@@ -126,21 +134,10 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
     // Convierte el ángulo a minutos del día (0..1439)
     final tappedMinutes = ((angle / (2 * math.pi)) * 1440).floor() % 1440;
 
-    final yesterday = _now.subtract(const Duration(days: 1));
-    final todayBlocks = widget.blocks.where((block) {
-      return block.appliesToDate(_now) ||
-          (block.isOvernight && block.appliesToDate(yesterday));
-    }).toList();
-
-    for (final b in todayBlocks) {
-      if (!b.isOvernight) {
-        if (tappedMinutes >= b.startInMinutes && tappedMinutes <= b.endInMinutes) {
-          return b;
-        }
-      } else {
-        if (tappedMinutes >= b.startInMinutes || tappedMinutes <= b.endInMinutes) {
-          return b;
-        }
+    final segments = _OrbitClockPainter.getSegmentsForDay(widget.blocks, _now);
+    for (final seg in segments) {
+      if (tappedMinutes >= seg.startMinutes && tappedMinutes < seg.endMinutes) {
+        return seg.block;
       }
     }
     return null;
@@ -447,26 +444,24 @@ class _OrbitClockPainter extends CustomPainter {
     }
 
     // 3. Draw Scheduled Time Blocks as Coloured Arc Segments (with Concentric Lanes for Overlaps)
-    final yesterday = now.subtract(const Duration(days: 1));
-    final todayBlocks = blocks.where((block) {
-      return block.appliesToDate(now) ||
-          (block.isOvernight && block.appliesToDate(yesterday));
-    }).toList();
+    final segments = getSegmentsForDay(blocks, now);
 
-    // Calculamos carriles concéntricos para evitar que tareas solapadas se pisen
-    final Map<ScheduleBlock, int> blockLanes = {};
-    final Map<ScheduleBlock, int> blockMaxLanes = {};
+    // Calculamos carriles concéntricos para evitar que tareas o tramos solapados se pisen
+    final Map<ClockArcSegment, int> segmentLanes = {};
+    final Map<ClockArcSegment, int> segmentMaxLanes = {};
 
-    for (int i = 0; i < todayBlocks.length; i++) {
-      final current = todayBlocks[i];
+    for (int i = 0; i < segments.length; i++) {
+      final current = segments[i];
       final usedLanes = <int>{};
 
-      for (int j = 0; j < todayBlocks.length; j++) {
+      for (int j = 0; j < segments.length; j++) {
         if (i == j) continue;
-        final other = todayBlocks[j];
-        if (_doBlocksOverlap(current, other)) {
-          if (blockLanes.containsKey(other)) {
-            usedLanes.add(blockLanes[other]!);
+        final other = segments[j];
+        final startMax = math.max(current.startMinutes, other.startMinutes);
+        final endMin = math.min(current.endMinutes, other.endMinutes);
+        if (startMax < endMin) {
+          if (segmentLanes.containsKey(other)) {
+            usedLanes.add(segmentLanes[other]!);
           }
         }
       }
@@ -475,21 +470,26 @@ class _OrbitClockPainter extends CustomPainter {
       while (usedLanes.contains(lane)) {
         lane++;
       }
-      blockLanes[current] = lane;
+      segmentLanes[current] = lane;
     }
 
-    for (final current in todayBlocks) {
-      int localMaxLane = blockLanes[current]!;
-      for (final other in todayBlocks) {
+    for (final current in segments) {
+      int localMaxLane = segmentLanes[current]!;
+      for (final other in segments) {
         if (current == other) continue;
-        if (_doBlocksOverlap(current, other)) {
-          localMaxLane = math.max(localMaxLane, blockLanes[other]!);
+        final startMax = math.max(current.startMinutes, other.startMinutes);
+        final endMin = math.min(current.endMinutes, other.endMinutes);
+        if (startMax < endMin) {
+          localMaxLane = math.max(localMaxLane, segmentLanes[other]!);
         }
       }
-      blockMaxLanes[current] = localMaxLane + 1;
+      segmentMaxLanes[current] = localMaxLane + 1;
     }
 
-    for (final block in todayBlocks) {
+    final currentMinutes = now.hour * 60 + now.minute;
+
+    for (final seg in segments) {
+      final block = seg.block;
       // Check if linked to a habit to inherit its official color
       Color blockColor = block.color;
       if (block.habitId != null) {
@@ -502,19 +502,21 @@ class _OrbitClockPainter extends CustomPainter {
         }
       }
 
-      final startAngle = -math.pi / 2 + (block.startInMinutes / 1440.0) * 2 * math.pi;
-      final sweepAngle = (block.durationInMinutes / 1440.0) * 2 * math.pi;
+      final startAngle = -math.pi / 2 + (seg.startMinutes / 1440.0) * 2 * math.pi;
+      final sweepAngle = (seg.sweepMinutes / 1440.0) * 2 * math.pi;
 
-      final isCurrent = block == activeBlock;
-      final numLanes = blockMaxLanes[block] ?? 1;
-      final laneIndex = blockLanes[block] ?? 0;
+      final isSegmentActive = (block == activeBlock) &&
+          (currentMinutes >= seg.startMinutes && currentMinutes < seg.endMinutes);
+
+      final numLanes = segmentMaxLanes[seg] ?? 1;
+      final laneIndex = segmentLanes[seg] ?? 0;
 
       double currentTrackRadius;
       double currentStrokeWidth;
 
       if (numLanes == 1) {
         currentTrackRadius = trackRadius;
-        currentStrokeWidth = isCurrent ? trackWidth * 0.95 : trackWidth * 0.82;
+        currentStrokeWidth = isSegmentActive ? trackWidth * 0.95 : trackWidth * 0.82;
       } else {
         // Distribución en carriles concéntricos paralelos
         const laneGap = 2.5;
@@ -528,13 +530,15 @@ class _OrbitClockPainter extends CustomPainter {
       }
 
       final blockPaint = Paint()
-        ..color = isCurrent ? blockColor : blockColor.withOpacity(0.85)
+        ..color = isSegmentActive ? blockColor : blockColor.withOpacity(0.85)
         ..style = PaintingStyle.stroke
         ..strokeWidth = currentStrokeWidth
         ..strokeCap = StrokeCap.round;
 
-      // Glow effect if this block is active right now!
-      if (isCurrent) {
+      final safeSweep = (sweepAngle - 0.04).clamp(0.01, math.pi * 2);
+
+      // Glow effect if this segment is active right now!
+      if (isSegmentActive) {
         final glowPaint = Paint()
           ..color = blockColor.withOpacity(0.40 * pulseValue)
           ..style = PaintingStyle.stroke
@@ -543,7 +547,7 @@ class _OrbitClockPainter extends CustomPainter {
         canvas.drawArc(
           Rect.fromCircle(center: center, radius: currentTrackRadius),
           startAngle + 0.02,
-          sweepAngle - 0.04,
+          safeSweep,
           false,
           glowPaint,
         );
@@ -552,14 +556,13 @@ class _OrbitClockPainter extends CustomPainter {
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: currentTrackRadius),
         startAngle + 0.02,
-        sweepAngle - 0.04,
+        safeSweep,
         false,
         blockPaint,
       );
     }
 
     // 4. Current Time Satellite Node (Orbiting Indicator)
-    final currentMinutes = now.hour * 60 + now.minute;
     final currentAngle = -math.pi / 2 + (currentMinutes / 1440.0) * 2 * math.pi;
 
     final satelliteCenter = Offset(
@@ -586,33 +589,45 @@ class _OrbitClockPainter extends CustomPainter {
     canvas.drawCircle(satelliteCenter, 2.0, satelliteInnerDot);
   }
 
-  bool _doBlocksOverlap(ScheduleBlock a, ScheduleBlock b) {
-    List<List<int>> getIntervals(ScheduleBlock s) {
-      final start = s.startInMinutes;
-      final dur = s.durationInMinutes;
-      if (s.isOvernight) {
-        return [
-          [start, 1440],
-          [0, (start + dur) % 1440],
-        ];
+  /// Descompone los turnos en los arcos estrictos que deben ser visualizados en el día `now` (00:00 - 24:00).
+  /// Para turnos nocturnos (ej. 23:00 -> 07:00):
+  /// - Tramo matutino (00:00 -> 07:00): Solo se pinta si el turno se inició ayer noche (`appliesToDate(yesterday)`).
+  /// - Tramo nocturno (23:00 -> 24:00): Solo se pinta si el turno inicia hoy noche (`appliesToDate(now)`).
+  static List<ClockArcSegment> getSegmentsForDay(List<ScheduleBlock> blocks, DateTime now) {
+    final yesterday = now.subtract(const Duration(days: 1));
+    final segments = <ClockArcSegment>[];
+
+    for (final block in blocks) {
+      if (!block.isOvernight) {
+        if (block.appliesToDate(now)) {
+          segments.add(ClockArcSegment(
+            block: block,
+            startMinutes: block.startInMinutes,
+            sweepMinutes: block.durationInMinutes,
+          ));
+        }
       } else {
-        return [
-          [start, start + dur],
-        ];
+        // Tramo matutino (00:00 -> endInMinutes) de turno iniciado anoche
+        if (block.appliesToDate(yesterday)) {
+          segments.add(ClockArcSegment(
+            block: block,
+            startMinutes: 0,
+            sweepMinutes: block.endInMinutes,
+            isFromYesterday: true,
+          ));
+        }
+        // Tramo nocturno (startInMinutes -> 24:00) de turno que inicia esta noche
+        if (block.appliesToDate(now)) {
+          segments.add(ClockArcSegment(
+            block: block,
+            startMinutes: block.startInMinutes,
+            sweepMinutes: 1440 - block.startInMinutes,
+            isForTonight: true,
+          ));
+        }
       }
     }
-
-    final intervalsA = getIntervals(a);
-    final intervalsB = getIntervals(b);
-
-    for (final ia in intervalsA) {
-      for (final ib in intervalsB) {
-        final startMax = math.max(ia[0], ib[0]);
-        final endMin = math.min(ia[1], ib[1]);
-        if (startMax < endMin) return true;
-      }
-    }
-    return false;
+    return segments;
   }
 
   @override
@@ -624,4 +639,22 @@ class _OrbitClockPainter extends CustomPainter {
         oldDelegate.textColor != textColor ||
         oldDelegate.activeBlock != activeBlock;
   }
+}
+
+class ClockArcSegment {
+  final ScheduleBlock block;
+  final int startMinutes;
+  final int sweepMinutes;
+  final bool isFromYesterday;
+  final bool isForTonight;
+
+  const ClockArcSegment({
+    required this.block,
+    required this.startMinutes,
+    required this.sweepMinutes,
+    this.isFromYesterday = false,
+    this.isForTonight = false,
+  });
+
+  int get endMinutes => startMinutes + sweepMinutes;
 }
