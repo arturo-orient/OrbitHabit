@@ -321,9 +321,9 @@ class WorkShiftGroup {
       }
     }
 
-    // 3. Fechas asignadas en cuadrante que ya han transcurrido (pasadas o de hoy)
+    // 3. Fechas asignadas en cuadrante que ya han transcurrido estrictamente (días pasados)
     for (final d in s.assignedDates) {
-      if (d.startsWith(prefix) && d.compareTo(todayIso) <= 0) {
+      if (d.startsWith(prefix) && d.compareTo(todayIso) < 0) {
         dates.add(d);
       }
     }

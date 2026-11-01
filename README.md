@@ -44,6 +44,16 @@
   <em>04. Creador Unificado &nbsp;·&nbsp; 05. Selector Cromático HSV/HEX &nbsp;·&nbsp; 06. Telemetría y Rachas &nbsp;·&nbsp; 07. Ajustes Zen</em>
 </p>
 
+#### 🚀 What's New in v1.2.4 (Strict In-Progress Day Math & App Label Polish)
+OrbitHabit v1.2.4 fixes month-start shift counting and polishes native Android branding:
+
+* ⏱️ **Strict In-Progress Work Hours (`today` is not pre-counted)**:
+  * Shifts scheduled for today (`d == todayIso`) are no longer automatically added to monthly worked hours until actually completed by the user ("Registrar Hoy" / 1-touch dial check-in).
+  * Eliminates false hours being credited at midnight on Day 1 for evening or night shifts.
+* 🏷️ **Native App Name & APK File Branding**:
+  * Formatted native Android launcher label to **`OrbitHabit`** with clean capital casing.
+  * Direct build output and release binaries now packaged as **`OrbitHabit.apk`** and **`OrbitHabit_v1.2.4.apk`**.
+
 #### 🚀 What's New in v1.2.3 (Native Android MediaStore & System Share Sheet)
 OrbitHabit v1.2.3 resolves the Android Scoped Storage restriction, enabling instant gallery indexing and native sharing:
 
@@ -262,7 +272,7 @@ lib/
 
 <p align="center">
   <a href="https://github.com/arturo-orient/OrbitHabit/releases/latest/download/OrbitHabit.apk">
-    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.2.3-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
+    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.2.4-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
   </a>
 </p>
 

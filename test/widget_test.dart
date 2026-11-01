@@ -269,7 +269,8 @@ void main() {
       );
 
       final shiftWithAssignments = shiftMorning.copyWith(
-        assignedDates: [todayIso, tomorrowIso], // today (worked/due) + tomorrow (future)
+        assignedDates: [todayIso, tomorrowIso], // today (assigned) + tomorrow (future)
+        completedDates: [todayIso], // today marked completed
       );
 
       final group = WorkShiftGroup(
@@ -278,7 +279,7 @@ void main() {
         monthlyTargetHours: 120,
       );
 
-      // Today is counted, but tomorrow is future and ignored in worked hours
+      // Today completed is counted, but tomorrow is future and ignored in worked hours
       final workedHours = group.getMonthlyWorkedHours(month);
       expect(workedHours, 8.0); // 1 shift * 8h = 8h
 

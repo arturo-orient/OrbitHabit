@@ -120,7 +120,7 @@ class Achievement {
         }
 
         for (final d in block.assignedDates) {
-          if (d.startsWith(prefix) && d.compareTo(todayIso) <= 0) {
+          if (d.startsWith(prefix) && d.compareTo(todayIso) < 0) {
             workedDatesInMonth.add(d);
           }
         }
