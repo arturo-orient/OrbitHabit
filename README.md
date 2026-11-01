@@ -44,6 +44,24 @@
   <em>04. Creador Unificado &nbsp;·&nbsp; 05. Selector Cromático HSV/HEX &nbsp;·&nbsp; 06. Telemetría y Rachas &nbsp;·&nbsp; 07. Ajustes Zen</em>
 </p>
 
+#### 🚀 What's New in v1.2.1 (1080p Schedule Poster, Polar Clock Touch, Interactive Guide & 120Hz Canvas)
+OrbitHabit v1.2.1 introduces high-resolution schedule poster export, interactive clock editing, Swiss precision onboarding/guide, and ultra-smooth 120Hz canvas rendering:
+
+* 🖼️ **1080p High-Resolution Schedule Poster Export (`SchedulePosterService`)**:
+  * Direct rendering to a 1080×1440 high-density PNG poster of your monthly shift quadrant and habit commitments.
+  * Neo-Bento architectural layout, high-contrast monospace metadata, shift summary chips, and instant system share sheet or clipboard export.
+* ⏰ **Interactive Polar Touch in 24-Hour Orbit Clock (`OrbitClock24`)**:
+  * Tap directly on any circular time block arc in the 24-hour dial to inspect or edit the block via `UnifiedTaskSheet`.
+  * Central dial tap provides instant 1-touch shift registration with haptic feedback.
+* 📖 **Swiss Interactive Anti-Chaos Guide & Onboarding (`OrbitGuideSheet`)**:
+  * New top-bar `[ ? ]` button opens a clean Neo-Bento modal explaining the Orbital Wheel (1..31), the 24H Polar Clock, the Shift Quadrant, and Zero-Permission Backup.
+  * Overhauled onboarding flow with Swiss typography and 1-tap demo setup.
+* ⚡ **120Hz Direct GPU Canvas Optimization (`OrbitPainter.paint`)**:
+  * Replaced per-cell `Path` allocation and dual `arcTo` calls with direct hardware-accelerated `canvas.drawArc` stroked geometry.
+  * Cached geometry rects (`ringRectInner`, `ringRectOuter`) and shared `Paint` instances across frames, maintaining a locked 120 FPS during dial animations.
+* 📅 **Monthly Overtime Isolation (`monthlyExtraHours`)**:
+  * Overtime hours are now isolated per calendar month (`YYYY-MM`), preventing past overtime from spilling into subsequent months.
+
 #### 🚀 What's New in v1.2.0 (Engineering, Zero-Permission Backup & Instant Demo Release)
 OrbitHabit v1.2.0 focuses on reactive state edge-case hardening, 120Hz canvas isolation, astronomical date math, and instant onboarding:
 
@@ -174,6 +192,7 @@ lib/
 │   └── settings_provider.dart         # Riverpod Notifier — settings + confetti
 ├── services/
 │   ├── backup_service.dart            # Zero-permission JSON export/import & demo data seeder
+│   ├── schedule_poster_service.dart    # 1080p high-resolution monthly poster rendering (PNG)
 │   ├── notification_service.dart      # Daily reminders (flutter_local_notifications)
 │   ├── sound_service.dart             # 3 precached audio effects (audioplayers)
 │   └── widget_service.dart            # Android home widget sync (home_widget)
@@ -181,7 +200,8 @@ lib/
 │   ├── screens/                       # 6 screens (Home, Shift Calendar, Onboarding, Settings, Stats, Manage)
 │   └── widgets/
 │       ├── orbit_tracker.dart         # ⭐ Signature widget — horseshoe orbital chart with clean rest gaps
-│       ├── orbit_clock_24.dart        # ⏰ 24-hour circular dial with live satellite tracking
+│       ├── orbit_clock_24.dart        # ⏰ 24-hour circular dial with live satellite tracking & touch editing
+│       ├── orbit_guide_sheet.dart     # 📖 Swiss interactive anti-chaos guide & technical specs
 │       ├── unified_task_sheet.dart    # 🎛️ Unified habit & multi-schedule creator with visibility toggles
 │       ├── custom_color_picker_dialog.dart # 🎨 Full-spectrum chromatic color picker with HEX support
 │       ├── monthly_work_target_card.dart # 💼 120h work target card with interactive month logger

@@ -341,6 +341,10 @@ class OrbitPainter extends CustomPainter {
     }
 
     // 2. Números exteriores y líneas radiales iluminándose en secuencia
+    final radialLinePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.5;
+
     for (int d = 1; d <= daysInMonth; d++) {
       final dayProgress = (d - 1) / (daysInMonth > 0 ? daysInMonth : 1);
       final numThreshold = (dayProgress * 0.78);
@@ -402,15 +406,12 @@ class OrbitPainter extends CustomPainter {
       textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
       canvas.restore();
       
-      // Draw radial grid lines
+      // Draw radial grid lines reutilizando instancia de Paint
       final innerTx = center.dx + minRadius * math.cos(startAngle);
       final innerTy = center.dy + minRadius * math.sin(startAngle);
       final outerTx = center.dx + maxRadius * math.cos(startAngle);
       final outerTy = center.dy + maxRadius * math.sin(startAngle);
-      final radialLinePaint = Paint()
-        ..color = gridTextColor.withValues(alpha: 0.06 * numOpacity)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.5;
+      radialLinePaint.color = gridTextColor.withValues(alpha: 0.06 * numOpacity);
       canvas.drawLine(Offset(innerTx, innerTy), Offset(outerTx, outerTy), radialLinePaint);
     }
     
@@ -424,12 +425,26 @@ class OrbitPainter extends CustomPainter {
       canvas.drawLine(Offset(innerTx, innerTy), Offset(outerTx, outerTy), gridPaint);
     }
 
-    // 3. Casillas de hábitos: apertura de acordeón/fuelle circular casilla por casilla
+    // Rectángulos orbitales compartidos para indicadores de columna completa
+    final outerRingRadius = minRadius + (habits.length * ringWidth) - ringPadding;
+    final innerRingRadius = minRadius + ringPadding;
+    final ringRectInner = Rect.fromCircle(center: center, radius: innerRingRadius);
+    final ringRectOuter = Rect.fromCircle(center: center, radius: outerRingRadius);
+
+    // 3. Casillas de hábitos: apertura de acordeón/fuelle circular (acelerada por hardware vía drawArc)
     for (int h = 0; h < habits.length; h++) {
       final habitIndex = habits.length - 1 - h;
       final habit = habits[habitIndex];
       final innerRadius = minRadius + (h * ringWidth) + ringPadding;
       final outerRadius = minRadius + ((h + 1) * ringWidth) - ringPadding;
+
+      final midRadius = (innerRadius + outerRadius) * 0.5;
+      final ringThickness = (outerRadius - innerRadius).clamp(1.0, 200.0);
+      final cellPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = ringThickness
+        ..strokeCap = StrokeCap.butt;
+      final midRect = Rect.fromCircle(center: center, radius: midRadius);
       
       // Desfase concéntrico entre anillos (el anillo exterior sigue al interior)
       final ringLag = (h / math.max(habits.length, 1)) * 0.10;
@@ -471,51 +486,47 @@ class OrbitPainter extends CustomPainter {
         }
         
         final startAngle = startOffsetAngle + ((d - 1) * anglePerDay);
-        // Cada casilla se abre como un fuelle de acordeón a lo largo del arco
         final fullSweep = anglePerDay - 0.04;
         final animatedSweep = fullSweep * cellProgress;
 
         if (animatedSweep <= 0.0001) continue;
 
-        final path = Path();
-        path.arcTo(Rect.fromCircle(center: center, radius: innerRadius), startAngle, animatedSweep, true);
-        path.arcTo(Rect.fromCircle(center: center, radius: outerRadius), startAngle + animatedSweep, -animatedSweep, false);
-        path.close();
-
-        final paint = Paint()..style = PaintingStyle.fill;
-
         if (isCompleted) {
-          paint.color = habit.color.withValues(alpha: cellProgress);
+          cellPaint.color = habit.color.withValues(alpha: cellProgress);
         } else {
-          paint.color = habit.color.withValues(alpha: 0.08 * cellProgress);
+          cellPaint.color = habit.color.withValues(alpha: 0.08 * cellProgress);
         }
 
-        canvas.drawPath(path, paint);
+        canvas.drawArc(midRect, startAngle, animatedSweep, false, cellPaint);
       }
     }
 
-    // 3. Hover indicator (Scrubbing feedback)
+    // 3. Hover indicator (Scrubbing feedback con rectángulos cacheados)
     if (hoveredDay != null && hoveredDay! >= 1 && hoveredDay! <= daysInMonth) {
       final d = hoveredDay!;
       final startAngle = startOffsetAngle + ((d - 1) * anglePerDay);
       final sweepAngle = anglePerDay - 0.04;
-      final outerRadius = minRadius + (habits.length * ringWidth) - ringPadding;
-      final innerRadius = minRadius + ringPadding;
 
-      final path = Path();
-      path.arcTo(Rect.fromCircle(center: center, radius: innerRadius), startAngle, sweepAngle, true);
-      path.arcTo(Rect.fromCircle(center: center, radius: outerRadius), startAngle + sweepAngle, -sweepAngle, false);
-      path.close();
+      final path = Path()
+        ..arcTo(ringRectInner, startAngle, sweepAngle, true)
+        ..arcTo(ringRectOuter, startAngle + sweepAngle, -sweepAngle, false)
+        ..close();
 
       final hoverPaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3.0
-        ..color = Colors.white.withOpacity(0.9);
+        ..color = Colors.white.withValues(alpha: 0.9);
 
       canvas.drawPath(path, hoverPaint);
     }
 
     // 4. Glow effect (Apple Watch style) for perfectly completed days
+    final glowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..color = Colors.white.withValues(alpha: 0.8 * animationValue)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 4.0);
+
     for (int d = 1; d <= daysInMonth; d++) {
       final date = DateTime(currentMonth.year, currentMonth.month, d);
       final dateIso = date.toIso8601String().split('T').first;
@@ -535,8 +546,6 @@ class OrbitPainter extends CustomPainter {
             break;
           }
         } else {
-           // If it wasn't due, but we completed it anyway (e.g. flexible habit, or done on off-day),
-           // it still counts as something positive, so we can mark hasAnyDue = true to allow the glow
            if (habit.completedDates.contains(dateIso)) {
              hasAnyDue = true;
            }
@@ -546,20 +555,11 @@ class OrbitPainter extends CustomPainter {
       if (hasAnyDue && allCompleted && habits.isNotEmpty) {
         final startAngle = startOffsetAngle + ((d - 1) * anglePerDay);
         final sweepAngle = anglePerDay - 0.04;
-        final outerRadius = minRadius + (habits.length * ringWidth) - ringPadding;
-        final innerRadius = minRadius + ringPadding;
 
-        // Draw a glowing border around the whole day column
-        final path = Path();
-        path.arcTo(Rect.fromCircle(center: center, radius: innerRadius), startAngle, sweepAngle, true);
-        path.arcTo(Rect.fromCircle(center: center, radius: outerRadius), startAngle + sweepAngle, -sweepAngle, false);
-        path.close();
-
-        final glowPaint = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0
-          ..color = Colors.white.withOpacity(0.8 * animationValue)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 4.0);
+        final path = Path()
+          ..arcTo(ringRectInner, startAngle, sweepAngle, true)
+          ..arcTo(ringRectOuter, startAngle + sweepAngle, -sweepAngle, false)
+          ..close();
 
         canvas.drawPath(path, glowPaint);
       }

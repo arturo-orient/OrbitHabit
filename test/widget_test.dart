@@ -16,6 +16,7 @@ import 'package:orbithabit/data/database_service.dart';
 import 'package:orbithabit/providers/habit_provider.dart';
 import 'package:orbithabit/domain/models/user_settings.dart';
 import 'package:orbithabit/services/backup_service.dart';
+import 'package:orbithabit/services/schedule_poster_service.dart';
 
 class FakeDatabaseService extends DatabaseService {
   final Map<String, dynamic> _settings = {};
@@ -171,7 +172,8 @@ void main() {
       expect(gymBlock.isActiveAt(DateTime(2026, 10, 6, 10, 0)), isFalse);
 
       // 3. Monthly hour target: 120h work goal with overtime and Dedicado achievement
-      final workMonth = DateTime(2026, 10, 1);
+      final workMonth = DateTime.now();
+      final currentMonthPrefix = '${workMonth.year}-${workMonth.month.toString().padLeft(2, '0')}';
       final workBlock = ScheduleBlock(
         id: 'work_120',
         title: 'Trabajo Turno',
@@ -183,7 +185,7 @@ void main() {
         daysOfWeek: [1, 2, 3, 4, 5],
         hasMonthlyHourTarget: true,
         monthlyTargetHours: 120,
-        completedDates: List.generate(14, (i) => '2026-10-${(i + 1).toString().padLeft(2, '0')}'), // 14 shifts * 8h = 112h
+        completedDates: List.generate(14, (i) => '$currentMonthPrefix-${(i + 1).toString().padLeft(2, '0')}'), // 14 shifts * 8h = 112h
         extraHours: 0.0,
       );
 
@@ -192,7 +194,7 @@ void main() {
 
       // Add 2 more shifts (16 shifts * 8h = 128h) -> reaches and exceeds 120h!
       final completedWorkBlock = workBlock.copyWith(
-        completedDates: List.generate(16, (i) => '2026-10-${(i + 1).toString().padLeft(2, '0')}'),
+        completedDates: List.generate(16, (i) => '$currentMonthPrefix-${(i + 1).toString().padLeft(2, '0')}'),
       );
 
       expect(completedWorkBlock.getMonthlyWorkedHours(workMonth), 128.0);
@@ -335,6 +337,64 @@ void main() {
       expect(restored.vacationDates, ['2026-10-12', '2026-10-13']);
       expect(restored.habits.first.id, 'demo_work');
       expect(restored.blocks.first.id, 'demo_shift_morning');
+    });
+
+    test('ScheduleBlock monthlyExtraHours isolates overtime per month without carrying over', () {
+      final october = DateTime(2026, 10, 1);
+      final november = DateTime(2026, 11, 1);
+
+      const block = ScheduleBlock(
+        id: 'shift_overtime',
+        title: 'Turno Rotativo',
+        startHour: 8,
+        startMinute: 0,
+        endHour: 16,
+        endMinute: 0,
+        colorValue: 0xFF84A59D,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        hasMonthlyHourTarget: true,
+        monthlyTargetHours: 120,
+        monthlyExtraHours: {
+          '2026-10': 15.0,
+        },
+        extraHours: 0.0,
+      );
+
+      // Octubre cuenta con 15 horas extra
+      expect(block.getExtraHoursForMonth(october), 15.0);
+      // Noviembre no arrastra las horas de Octubre (devuelve 0.0)
+      expect(block.getExtraHoursForMonth(november), 0.0);
+
+      // Verificamos que getMonthlyWorkedHours solo incluye las horas extra en Octubre
+      expect(block.getMonthlyWorkedHours(october), 15.0);
+      expect(block.getMonthlyWorkedHours(november), 0.0);
+
+      // Probamos añadir horas extra a Noviembre usando copyWith
+      final updatedMap = Map<String, double>.from(block.monthlyExtraHours);
+      updatedMap['2026-11'] = 8.5;
+      final updatedBlock = block.copyWith(monthlyExtraHours: updatedMap);
+
+      expect(updatedBlock.getExtraHoursForMonth(october), 15.0);
+      expect(updatedBlock.getExtraHoursForMonth(november), 8.5);
+    });
+
+    test('SchedulePosterService renders high-resolution 1080x1440 PNG byte stream', () async {
+      final now = DateTime(2026, 10, 1);
+      final demo = DemoSeederService.generateDemoData(now);
+
+      final pngBytes = await SchedulePosterService.renderMonthlyPosterPng(
+        month: now,
+        blocks: demo.blocks,
+        userName: 'Arturo',
+        isDark: true,
+      );
+
+      expect(pngBytes, isNotEmpty);
+      // Validar cabecera mágica de archivo PNG (89 50 4E 47 0D 0A 1A 0A)
+      expect(pngBytes[0], 0x89);
+      expect(pngBytes[1], 0x50);
+      expect(pngBytes[2], 0x4E);
+      expect(pngBytes[3], 0x47);
     });
   });
 }

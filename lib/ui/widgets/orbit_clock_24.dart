@@ -25,7 +25,7 @@ class OrbitClock24 extends ConsumerStatefulWidget {
 }
 
 class _OrbitClock24State extends ConsumerState<OrbitClock24>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late Timer _tickerTimer;
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -34,6 +34,8 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
     // Pulse animation for the live satellite indicator
     _pulseController = AnimationController(
       vsync: this,
@@ -56,9 +58,28 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tickerTimer.cancel();
     _pulseController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (mounted) {
+        setState(() {
+          _now = DateTime.now();
+        });
+      }
+      if (!_pulseController.isAnimating) {
+        _pulseController.repeat(reverse: true);
+      }
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      _pulseController.stop();
+    }
   }
 
   ScheduleBlock? _findActiveBlock(List<ScheduleBlock> blocks, DateTime now) {
@@ -81,6 +102,48 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
       }
     }
     return now.toIso8601String().split('T').first;
+  }
+
+  /// Hit-testing polar en los arcos del reloj horario
+  ScheduleBlock? _getBlockAtPosition(Offset localPosition, Size size) {
+    final center = Offset(size.width * 0.5, size.height * 0.5);
+    final dx = localPosition.dx - center.dx;
+    final dy = localPosition.dy - center.dy;
+    final distance = math.sqrt(dx * dx + dy * dy);
+
+    final maxRadius = math.min(size.width, size.height) * 0.44;
+    final trackWidth = maxRadius * 0.18;
+
+    // Comprueba si distance está dentro de la corona circular del anillo
+    if (distance < (maxRadius - trackWidth - 8) || distance > (maxRadius + 8)) {
+      return null;
+    }
+
+    // Ángulo polar desde las 00:00 (arriba, -math.pi / 2)
+    var angle = math.atan2(dy, dx) + math.pi / 2;
+    if (angle < 0) angle += 2 * math.pi;
+
+    // Convierte el ángulo a minutos del día (0..1439)
+    final tappedMinutes = ((angle / (2 * math.pi)) * 1440).floor() % 1440;
+
+    final yesterday = _now.subtract(const Duration(days: 1));
+    final todayBlocks = widget.blocks.where((block) {
+      return block.appliesToDate(_now) ||
+          (block.isOvernight && block.appliesToDate(yesterday));
+    }).toList();
+
+    for (final b in todayBlocks) {
+      if (!b.isOvernight) {
+        if (tappedMinutes >= b.startInMinutes && tappedMinutes <= b.endInMinutes) {
+          return b;
+        }
+      } else {
+        if (tappedMinutes >= b.startInMinutes || tappedMinutes <= b.endInMinutes) {
+          return b;
+        }
+      }
+    }
+    return null;
   }
 
   @override
@@ -109,23 +172,33 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
         return Stack(
           alignment: Alignment.center,
           children: [
-            // 1. Hand-crafted 24-hour Canvas Dial aislado en RepaintBoundary
-            RepaintBoundary(
-              child: AnimatedBuilder(
-                animation: _pulseAnimation,
-                builder: (context, child) {
-                  return CustomPaint(
-                    size: size,
-                    painter: _OrbitClockPainter(
-                      blocks: widget.blocks,
-                      habits: habits,
-                      now: _now,
-                      pulseValue: _pulseAnimation.value,
-                      textColor: textColor,
-                      activeBlock: activeBlock,
-                    ),
-                  );
-                },
+            // 1. Hand-crafted 24-hour Canvas Dial aislado en RepaintBoundary con Hit-Testing Polar
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapUp: (details) {
+                final tappedBlock = _getBlockAtPosition(details.localPosition, size);
+                if (tappedBlock != null && widget.onBlockTapped != null) {
+                  HapticFeedback.selectionClick();
+                  widget.onBlockTapped!(tappedBlock);
+                }
+              },
+              child: RepaintBoundary(
+                child: AnimatedBuilder(
+                  animation: _pulseAnimation,
+                  builder: (context, child) {
+                    return CustomPaint(
+                      size: size,
+                      painter: _OrbitClockPainter(
+                        blocks: widget.blocks,
+                        habits: habits,
+                        now: _now,
+                        pulseValue: _pulseAnimation.value,
+                        textColor: textColor,
+                        activeBlock: activeBlock,
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
 

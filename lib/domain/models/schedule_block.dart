@@ -15,7 +15,8 @@ class ScheduleBlock {
   final int monthlyTargetHours; // e.g. 120
   final List<String> completedDates; // Dates in YYYY-MM-DD when this shift was completed
   final List<String> assignedDates; // Specific YYYY-MM-DD dates assigned on the shift calendar
-  final double extraHours; // Extra overtime hours logged
+  final Map<String, double> monthlyExtraHours; // 'YYYY-MM' -> extra hours
+  final double extraHours; // Legacy extra overtime hours logged
 
   const ScheduleBlock({
     required this.id,
@@ -31,6 +32,7 @@ class ScheduleBlock {
     this.monthlyTargetHours = 120,
     this.completedDates = const [],
     this.assignedDates = const [],
+    this.monthlyExtraHours = const {},
     this.extraHours = 0.0,
   });
 
@@ -137,13 +139,28 @@ class ScheduleBlock {
     return set.toList();
   }
 
+  /// Extra hours logged for a specific month ('YYYY-MM')
+  double getExtraHoursForMonth(DateTime month) {
+    final key = '${month.year}-${month.month.toString().padLeft(2, '0')}';
+    if (monthlyExtraHours.containsKey(key)) {
+      return monthlyExtraHours[key]!;
+    }
+    if (monthlyExtraHours.isEmpty && extraHours > 0) {
+      final now = DateTime.now();
+      if (month.year == now.year && month.month == now.month) {
+        return extraHours;
+      }
+    }
+    return 0.0;
+  }
+
   /// Calculate total worked hours in a specific month
   double getMonthlyWorkedHours(DateTime month, [Habit? linkedHabit]) {
     final prefix = '${month.year}-${month.month.toString().padLeft(2, '0')}';
     final allDates = getEffectiveCompletedDates(linkedHabit);
     final completedInMonth = allDates.where((d) => d.startsWith(prefix)).length;
     final shiftHours = durationInMinutes / 60.0;
-    return (completedInMonth * shiftHours) + extraHours;
+    return (completedInMonth * shiftHours) + getExtraHoursForMonth(month);
   }
 
   /// Whether the monthly target has been reached or exceeded
@@ -186,6 +203,7 @@ class ScheduleBlock {
     int? monthlyTargetHours,
     List<String>? completedDates,
     List<String>? assignedDates,
+    Map<String, double>? monthlyExtraHours,
     double? extraHours,
   }) {
     return ScheduleBlock(
@@ -202,6 +220,7 @@ class ScheduleBlock {
       monthlyTargetHours: monthlyTargetHours ?? this.monthlyTargetHours,
       completedDates: completedDates ?? this.completedDates,
       assignedDates: assignedDates ?? this.assignedDates,
+      monthlyExtraHours: monthlyExtraHours ?? this.monthlyExtraHours,
       extraHours: extraHours ?? this.extraHours,
     );
   }
@@ -221,11 +240,22 @@ class ScheduleBlock {
       'monthlyTargetHours': monthlyTargetHours,
       'completedDates': completedDates,
       'assignedDates': assignedDates,
+      'monthlyExtraHours': monthlyExtraHours,
       'extraHours': extraHours,
     };
   }
 
   factory ScheduleBlock.fromMap(Map<dynamic, dynamic> map) {
+    final Map<String, double> parsedMonthlyExtraHours = {};
+    if (map['monthlyExtraHours'] is Map) {
+      final rawMap = map['monthlyExtraHours'] as Map;
+      rawMap.forEach((k, v) {
+        if (k != null && v != null) {
+          parsedMonthlyExtraHours[k.toString()] = (v as num).toDouble();
+        }
+      });
+    }
+
     return ScheduleBlock(
       id: map['id'] as String? ?? DateTime.now().millisecondsSinceEpoch.toString(),
       title: map['title'] as String? ?? 'Actividad',
@@ -240,6 +270,7 @@ class ScheduleBlock {
       monthlyTargetHours: map['monthlyTargetHours'] as int? ?? 120,
       completedDates: (map['completedDates'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       assignedDates: (map['assignedDates'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      monthlyExtraHours: parsedMonthlyExtraHours,
       extraHours: (map['extraHours'] as num?)?.toDouble() ?? 0.0,
     );
   }
@@ -310,7 +341,7 @@ class WorkShiftGroup {
     for (final s in shifts) {
       final workedDates = getEffectiveWorkedDatesForShift(s, month);
       total += workedDates.length * (s.durationInMinutes / 60.0);
-      total += s.extraHours;
+      total += s.getExtraHoursForMonth(month);
     }
     return total;
   }

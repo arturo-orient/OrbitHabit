@@ -218,11 +218,23 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
     await _persist();
   }
 
-  Future<void> addExtraHours(String blockId, double hours) async {
+  Future<void> addExtraHours(String blockId, double hours, [DateTime? targetMonth]) async {
+    final month = targetMonth ?? DateTime.now();
+    final key = '${month.year}-${month.month.toString().padLeft(2, '0')}';
+
     state = [
       for (final b in state)
         if (b.id == blockId)
-          b.copyWith(extraHours: (b.extraHours + hours).clamp(0.0, 500.0))
+          (() {
+            final currentMap = Map<String, double>.from(b.monthlyExtraHours);
+            final currentHours = currentMap[key] ?? (currentMap.isEmpty ? b.extraHours : 0.0);
+            final updatedHours = (currentHours + hours).clamp(0.0, 500.0);
+            currentMap[key] = updatedHours;
+            return b.copyWith(
+              monthlyExtraHours: currentMap,
+              extraHours: updatedHours,
+            );
+          })()
         else
           b,
     ];

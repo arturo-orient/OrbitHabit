@@ -81,12 +81,14 @@ class AppTheme {
     FontWeight fontWeight = FontWeight.w600,
     Color? color,
     double letterSpacing = -0.5,
+    double? height,
   }) {
     return GoogleFonts.plusJakartaSans(
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color,
       letterSpacing: letterSpacing,
+      height: height,
     );
   }
 
@@ -95,12 +97,14 @@ class AppTheme {
     FontWeight fontWeight = FontWeight.w400,
     Color? color,
     double letterSpacing = 0.0,
+    double? height,
   }) {
     return GoogleFonts.inter(
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color,
       letterSpacing: letterSpacing,
+      height: height,
     );
   }
 
@@ -109,12 +113,14 @@ class AppTheme {
     FontWeight fontWeight = FontWeight.w500,
     Color? color,
     double letterSpacing = 0.0,
+    double? height,
   }) {
     return GoogleFonts.jetBrainsMono(
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color,
       letterSpacing: letterSpacing,
+      height: height,
     );
   }
 

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/habit.dart';
 import '../../providers/habit_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../domain/models/user_settings.dart';
 import '../../utils/streak_utils.dart';
 import '../../services/sound_service.dart';
 import '../../services/backup_service.dart';
@@ -23,6 +24,7 @@ import '../widgets/staggered_accordion_item.dart';
 import '../theme/app_theme.dart';
 import 'settings_screen.dart';
 import 'statistics_screen.dart';
+import '../widgets/orbit_guide_sheet.dart';
 import 'shift_calendar_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -203,131 +205,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     }).toList()
       ..sort((a, b) => a.startInMinutes.compareTo(b.startInMinutes));
 
-    final monthlyWorkBlocks = scheduleBlocks.where((b) => b.hasMonthlyHourTarget).toList();
-
-    // Agrupación unificada de turnos bajo una sola actividad madre ("Trabajar" a secas)
-    final List<WorkShiftGroup> workShiftGroups = [];
-    final Set<String> processedWorkBlockIds = {};
-
-    for (final b in monthlyWorkBlocks) {
-      if (processedWorkBlockIds.contains(b.id)) continue;
-
-      Habit? linkedHabit;
-      if (b.habitId != null) {
-        linkedHabit = habits.cast<Habit?>().firstWhere(
-              (h) => h?.id == b.habitId,
-              orElse: () => null,
-            );
-      }
-      if (linkedHabit == null) {
-        linkedHabit = habits.cast<Habit?>().firstWhere(
-              (h) =>
-                  h != null &&
-                  (h.name.trim().toLowerCase() == b.title.trim().toLowerCase() ||
-                   (h.name.toLowerCase().contains('trabaj') && b.title.toLowerCase().contains('trabaj')) ||
-                   (h.name.toLowerCase().contains('turno') && b.title.toLowerCase().contains('turno'))),
-              orElse: () => null,
-            );
-      }
-
-      final List<ScheduleBlock> groupBlocks = [];
-      for (final other in monthlyWorkBlocks) {
-        if (processedWorkBlockIds.contains(other.id)) continue;
-
-        bool belongs = false;
-        if (linkedHabit != null) {
-          if (other.habitId == linkedHabit.id) belongs = true;
-          if (other.title.trim().toLowerCase() == linkedHabit.name.trim().toLowerCase()) belongs = true;
-          if (linkedHabit.name.toLowerCase().contains('trabaj') && other.title.toLowerCase().contains('trabaj')) belongs = true;
-          if (linkedHabit.name.toLowerCase().contains('turno') && other.title.toLowerCase().contains('turno')) belongs = true;
-        } else {
-          if (other.id == b.id) belongs = true;
-          if (other.title.toLowerCase().contains('trabaj') && b.title.toLowerCase().contains('trabaj')) belongs = true;
-          if (other.title.toLowerCase().contains('turno') && b.title.toLowerCase().contains('turno')) belongs = true;
-        }
-
-        if (belongs) {
-          groupBlocks.add(other);
-          processedWorkBlockIds.add(other.id);
-        }
-      }
-
-      if (groupBlocks.isEmpty) {
-        groupBlocks.add(b);
-        processedWorkBlockIds.add(b.id);
-      }
-
-      String groupTitle = linkedHabit?.name ?? b.title;
-      final lowerTitle = groupTitle.toLowerCase();
-      if (lowerTitle.contains('nocturno') || lowerTitle.contains('mañana') || lowerTitle.contains('tarde') || lowerTitle.contains('guardia')) {
-        if (lowerTitle.startsWith('trabajar') || lowerTitle.contains('trabajar')) {
-          groupTitle = 'Trabajar';
-        } else if (lowerTitle.startsWith('trabajo') || lowerTitle.contains('trabajo')) {
-          groupTitle = 'Trabajo';
-        } else if (lowerTitle.startsWith('turno')) {
-          groupTitle = 'Turno de Trabajo';
-        }
-      }
-
-      workShiftGroups.add(WorkShiftGroup(
-        title: groupTitle,
-        habitId: linkedHabit?.id,
-        habit: linkedHabit,
-        shifts: groupBlocks,
-        monthlyTargetHours: b.monthlyTargetHours,
-      ));
-    }
-
-    // Nighttime color smoothing: after 22:00 (10 PM), in Dark or Sage themes,
-    // we gently desaturate/dim habit colors to make it extra soothing for the eyes.
-    final isLateNight = DateTime.now().hour >= 22 || DateTime.now().hour < 6;
-    final isRelaxedTheme = settings.themeMode == 'dark' || settings.themeMode == 'sage';
-    final shouldDim = isLateNight && isRelaxedTheme;
-
-    final activeHabits = shouldDim
-        ? habits.map((h) {
-            // Smooth the colors for a peaceful sleep-friendly palette
-            final dimmedColor = h.color.withOpacity(0.65);
-            return h.copyWith(colorValue: dimmedColor.value);
-          }).toList()
-        : habits;
-
-    // Filter out habits that already belong to workShiftGroups
-    final regularHabits = activeHabits.where((h) {
-      final hName = h.name.trim().toLowerCase();
-      return !workShiftGroups.any((g) =>
-          g.habitId == h.id ||
-          g.title.trim().toLowerCase() == hName ||
-          (hName.contains('trabaj') && g.title.toLowerCase().contains('trabaj')) ||
-          (hName.contains('turno') && g.title.toLowerCase().contains('turno')) ||
-          g.shifts.any((s) => s.habitId == h.id || s.title.trim().toLowerCase() == hName));
-    }).toList();
-
-    // Hábitos unificados para la Rueda Orbital (exactamente 1 anillo por actividad madre)
-    final List<Habit> orbitHabits = [];
-    final todayStr = now.toIso8601String().split('T').first;
-    for (final g in workShiftGroups) {
-      final Set<String> groupCompletedDates = {};
-      for (final s in g.shifts) {
-        groupCompletedDates.addAll(s.completedDates);
-      }
-      if (g.habit != null) {
-        groupCompletedDates.addAll(g.habit!.completedDates);
-      }
-      // Solo fechas completadas hasta el día de hoy (los días futuros nunca están completados)
-      final actualCompletedDates = groupCompletedDates.where((d) => d.compareTo(todayStr) <= 0).toSet();
-
-      orbitHabits.add(Habit(
-        id: g.habitId ?? 'work_${g.title}',
-        name: g.title,
-        colorValue: g.color.value,
-        targetDays: 20,
-        orderIndex: 0,
-        completedDates: actualCompletedDates,
-        hasMonthlyTarget: true,
-      ));
-    }
-    orbitHabits.addAll(regularHabits);
+    // Modelo de Vista Orbital ensamblado de forma limpia y desacoplada
+    final orbitVm = _computeOrbitViewModel(
+      habits: habits,
+      scheduleBlocks: scheduleBlocks,
+      settings: settings,
+      now: now,
+    );
+    final workShiftGroups = orbitVm.workShiftGroups;
+    final regularHabits = orbitVm.regularHabits;
+    final orbitHabits = orbitVm.orbitHabits;
 
     // Dynamic reactive listener to trigger the vector Confetti Celebration on "Perfect Days"
     // and slide in the premium PlayStation-style Achievement Unlocked Popup!
@@ -524,6 +411,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                               alignment: Alignment.center,
                               child: Icon(
                                 Icons.bar_chart_rounded,
+                                size: 17,
+                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Guía Rápida / Manual Técnico
+                          GestureDetector(
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              showModalBottomSheet(
+                                context: context,
+                                backgroundColor: Colors.transparent,
+                                isScrollControlled: true,
+                                builder: (_) => const FractionallySizedBox(
+                                  heightFactor: 0.88,
+                                  child: OrbitGuideSheet(),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              width: 34,
+                              height: 34,
+                              decoration: AppTheme.bentoCard(
+                                isLight: !isDark,
+                                borderRadius: AppTheme.radiusXs,
+                              ),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                Icons.help_outline_rounded,
                                 size: 17,
                                 color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
                               ),
@@ -1207,6 +1125,147 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
           ],
         ),
       ),
+    );
+  }
+
+  /// Ensambla el modelo de vista orbital desacoplando turnos rotativos y hábitos
+  ({
+    List<WorkShiftGroup> workShiftGroups,
+    List<Habit> regularHabits,
+    List<Habit> orbitHabits,
+  }) _computeOrbitViewModel({
+    required List<Habit> habits,
+    required List<ScheduleBlock> scheduleBlocks,
+    required UserSettings settings,
+    required DateTime now,
+  }) {
+    final monthlyWorkBlocks = scheduleBlocks.where((b) => b.hasMonthlyHourTarget).toList();
+
+    // Agrupación unificada de turnos bajo una sola actividad madre ("Trabajar" / "Trabajo")
+    final List<WorkShiftGroup> workShiftGroups = [];
+    final Set<String> processedWorkBlockIds = {};
+
+    for (final b in monthlyWorkBlocks) {
+      if (processedWorkBlockIds.contains(b.id)) continue;
+
+      Habit? linkedHabit;
+      // 1. Prioridad: vinculación explícita por ID
+      if (b.habitId != null) {
+        linkedHabit = habits.cast<Habit?>().firstWhere(
+              (h) => h?.id == b.habitId,
+              orElse: () => null,
+            );
+      }
+      // 2. Fallback secundario: coincidencia por título o palabras clave
+      linkedHabit ??= habits.cast<Habit?>().firstWhere(
+            (h) =>
+                h != null &&
+                (h.name.trim().toLowerCase() == b.title.trim().toLowerCase() ||
+                 (h.name.toLowerCase().contains('trabaj') && b.title.toLowerCase().contains('trabaj')) ||
+                 (h.name.toLowerCase().contains('turno') && b.title.toLowerCase().contains('turno'))),
+            orElse: () => null,
+          );
+
+      final List<ScheduleBlock> groupBlocks = [];
+      for (final other in monthlyWorkBlocks) {
+        if (processedWorkBlockIds.contains(other.id)) continue;
+
+        bool belongs = false;
+        if (linkedHabit != null) {
+          if (other.habitId == linkedHabit.id) belongs = true;
+          if (other.title.trim().toLowerCase() == linkedHabit.name.trim().toLowerCase()) belongs = true;
+          if (linkedHabit.name.toLowerCase().contains('trabaj') && other.title.toLowerCase().contains('trabaj')) belongs = true;
+          if (linkedHabit.name.toLowerCase().contains('turno') && other.title.toLowerCase().contains('turno')) belongs = true;
+        } else {
+          if (other.id == b.id) belongs = true;
+          if (other.title.toLowerCase().contains('trabaj') && b.title.toLowerCase().contains('trabaj')) belongs = true;
+          if (other.title.toLowerCase().contains('turno') && b.title.toLowerCase().contains('turno')) belongs = true;
+        }
+
+        if (belongs) {
+          groupBlocks.add(other);
+          processedWorkBlockIds.add(other.id);
+        }
+      }
+
+      if (groupBlocks.isEmpty) {
+        groupBlocks.add(b);
+        processedWorkBlockIds.add(b.id);
+      }
+
+      String groupTitle = linkedHabit?.name ?? b.title;
+      final lowerTitle = groupTitle.toLowerCase();
+      if (lowerTitle.contains('nocturno') || lowerTitle.contains('mañana') || lowerTitle.contains('tarde') || lowerTitle.contains('guardia')) {
+        if (lowerTitle.startsWith('trabajar') || lowerTitle.contains('trabajar')) {
+          groupTitle = 'Trabajar';
+        } else if (lowerTitle.startsWith('trabajo') || lowerTitle.contains('trabajo')) {
+          groupTitle = 'Trabajo';
+        } else if (lowerTitle.startsWith('turno')) {
+          groupTitle = 'Turno de Trabajo';
+        }
+      }
+
+      workShiftGroups.add(WorkShiftGroup(
+        title: groupTitle,
+        habitId: linkedHabit?.id,
+        habit: linkedHabit,
+        shifts: groupBlocks,
+        monthlyTargetHours: b.monthlyTargetHours,
+      ));
+    }
+
+    // Suavizado nocturno en temas relajados (Dark / Sage)
+    final isLateNight = now.hour >= 22 || now.hour < 6;
+    final isRelaxedTheme = settings.themeMode == 'dark' || settings.themeMode == 'sage';
+    final shouldDim = isLateNight && isRelaxedTheme;
+
+    final activeHabits = shouldDim
+        ? habits.map((h) {
+            final dimmedColor = h.color.withOpacity(0.65);
+            return h.copyWith(colorValue: dimmedColor.value);
+          }).toList()
+        : habits;
+
+    // Hábitos regulares que no pertenecen a ningún grupo laboral
+    final regularHabits = activeHabits.where((h) {
+      final hName = h.name.trim().toLowerCase();
+      return !workShiftGroups.any((g) =>
+          g.habitId == h.id ||
+          g.title.trim().toLowerCase() == hName ||
+          (hName.contains('trabaj') && g.title.toLowerCase().contains('trabaj')) ||
+          (hName.contains('turno') && g.title.toLowerCase().contains('turno')) ||
+          g.shifts.any((s) => s.habitId == h.id || s.title.trim().toLowerCase() == hName));
+    }).toList();
+
+    // Hábitos para la Rueda Orbital (exactamente 1 anillo por actividad madre)
+    final List<Habit> orbitHabits = [];
+    final todayStr = now.toIso8601String().split('T').first;
+    for (final g in workShiftGroups) {
+      final Set<String> groupCompletedDates = {};
+      for (final s in g.shifts) {
+        groupCompletedDates.addAll(s.completedDates);
+      }
+      if (g.habit != null) {
+        groupCompletedDates.addAll(g.habit!.completedDates);
+      }
+      final actualCompletedDates = groupCompletedDates.where((d) => d.compareTo(todayStr) <= 0).toSet();
+
+      orbitHabits.add(Habit(
+        id: g.habitId ?? 'work_${g.title}',
+        name: g.title,
+        colorValue: g.color.value,
+        targetDays: 20,
+        orderIndex: 0,
+        completedDates: actualCompletedDates,
+        hasMonthlyTarget: true,
+      ));
+    }
+    orbitHabits.addAll(regularHabits);
+
+    return (
+      workShiftGroups: workShiftGroups,
+      regularHabits: regularHabits,
+      orbitHabits: orbitHabits,
     );
   }
 }

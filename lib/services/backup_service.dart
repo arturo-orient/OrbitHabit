@@ -153,6 +153,7 @@ class DemoSeederService {
       monthlyTargetHours: 120,
       assignedDates: nightAssigned,
       completedDates: nightCompleted,
+      monthlyExtraHours: {'$year-${month.toString().padLeft(2, '0')}': 4.0},
       extraHours: 4.0,
     );
 

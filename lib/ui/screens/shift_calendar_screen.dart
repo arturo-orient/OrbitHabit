@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/schedule_block.dart';
 import '../../providers/schedule_provider.dart';
+import '../../providers/settings_provider.dart';
+import '../../services/schedule_poster_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/unified_task_sheet.dart';
 
@@ -135,10 +137,220 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
     return null;
   }
 
+  Future<void> _openPosterPreview(bool isDark, List<ScheduleBlock> blocks, String userName) async {
+    HapticFeedback.selectionClick();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Center(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: AppTheme.bentoCard(
+            isLight: !isDark,
+            borderRadius: AppTheme.radiusMd,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: AppTheme.dynamicAccent(isDark),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Generando Póster 1080x1440...',
+                style: AppTheme.bodyStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final pngBytes = await SchedulePosterService.renderMonthlyPosterPng(
+        month: _selectedMonth,
+        blocks: blocks,
+        userName: userName,
+        isDark: isDark,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+
+      showDialog(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(
+              color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
+              width: 1.0,
+            ),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'PÓSTER // ALTA RESOLUCIÓN',
+                            style: AppTheme.monoStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.dynamicAccent(isDark),
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Previsualización 1080x1440',
+                            style: AppTheme.displayStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          Icons.close_rounded,
+                          size: 20,
+                          color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                        ),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                ),
+                Flexible(
+                  child: Container(
+                    color: isDark ? AppTheme.obsidianCanvas : AppTheme.boneCanvas,
+                    child: InteractiveViewer(
+                      minScale: 0.8,
+                      maxScale: 3.5,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.memory(
+                            pngBytes,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: Text(
+                          'Cerrar',
+                          style: AppTheme.bodyStyle(
+                            fontSize: 13,
+                            color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          HapticFeedback.mediumImpact();
+                          Navigator.of(ctx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(
+                                  color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
+                                ),
+                              ),
+                              content: Text(
+                                'Póster renderizado en 1080x1440 px listo para captura de pantalla limpia.',
+                                style: AppTheme.bodyStyle(
+                                  fontSize: 12.5,
+                                  color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.check_circle_outline_rounded, size: 16),
+                        label: Text(
+                          'Listo',
+                          style: AppTheme.displayStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.black : Colors.white,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.dynamicAccent(isDark),
+                          foregroundColor: isDark ? Colors.black : Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
+                          elevation: 0,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.redAccent.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          content: Text('Error al generar el póster: $e'),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final blocks = ref.watch(scheduleProvider);
+    final settings = ref.watch(settingsProvider);
     final now = DateTime.now();
     final todayIso = now.toIso8601String().split('T').first;
 
@@ -181,6 +393,18 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
           ),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: [
+          IconButton(
+            icon: Icon(
+              Icons.photo_camera_back_rounded,
+              size: 20,
+              color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+            ),
+            tooltip: 'Exportar Póster PNG',
+            onPressed: () => _openPosterPreview(isDark, blocks, settings.userName),
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: SafeArea(
         child: Center(

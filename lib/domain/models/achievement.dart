@@ -126,7 +126,7 @@ class Achievement {
         }
 
         totalWorkHours += workedDatesInMonth.length * (block.durationInMinutes / 60.0);
-        totalWorkHours += block.extraHours;
+        totalWorkHours += block.getExtraHoursForMonth(now);
       }
     }
 
