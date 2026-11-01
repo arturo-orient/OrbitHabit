@@ -44,6 +44,21 @@
   <em>04. Creador Unificado &nbsp;·&nbsp; 05. Selector Cromático HSV/HEX &nbsp;·&nbsp; 06. Telemetría y Rachas &nbsp;·&nbsp; 07. Ajustes Zen</em>
 </p>
 
+#### 🚀 What's New in v1.2.2 (Real Poster Download, Demo Life-Cycle Banner & 5-Step Guided Tour)
+OrbitHabit v1.2.2 refines the onboarding and export experience with real platform downloads, automated data protection, and a friendly human tour:
+
+* 💾 **Real Multiplatform Poster PNG Download (`PosterSaver`)**:
+  * Real file saving across platforms using clean zero-dependency conditional imports (`stub` / `io` / `web`).
+  * Web initiates standard native browser download; Desktop (Windows, macOS, Linux) saves to user's `Downloads` folder; Android/iOS writes to public download directories.
+  * Preview modal in `ShiftCalendarScreen` now features **`[ Descargar Póster PNG ]`** with live file path feedback.
+* 🛡️ **Active Demo Mode Banner & 1-Click Exit with Auto-Backup (`DemoSeederService`)**:
+  * High-visibility Neo-Bento banner under the Top Bar when demo data is detected.
+  * **Automatic Pre-Demo Backup**: Silently backs up any existing user data (`pre_demo_backup_json`) before injecting demo data.
+  * **1-Click Exit (`[ ✕ Salir de la Demo ]`)**: Restores original user data or clears demo slots cleanly.
+* 🧭 **Interactive 5-Step Guided Tour (`HomeScreen._buildTourOverlay`)**:
+  * Tapping `[ ? ]` in the top bar launches an interactive, human-friendly 5-step walkthrough directly over the live interface.
+  * Automatically switches views between Monthly Orbit (Steps 1, 2 & 5) and 24H Polar Clock / Shift Quadrant (Steps 3 & 4) with floating Neo-Bento cards, section focus badges, and 1-tap demo testing.
+
 #### 🚀 What's New in v1.2.1 (1080p Schedule Poster, Polar Clock Touch, Interactive Guide & 120Hz Canvas)
 OrbitHabit v1.2.1 introduces high-resolution schedule poster export, interactive clock editing, Swiss precision onboarding/guide, and ultra-smooth 120Hz canvas rendering:
 
@@ -212,6 +227,7 @@ lib/
 │       └── ...                        # Zen UI components
 └── utils/
     ├── date_utils.dart                # Date helpers
+    ├── poster_saver.dart              # Multiplatform file saver (Web, Desktop, Mobile)
     └── streak_utils.dart              # Streak calculation (supports 2 frequency types)
 ```
 
@@ -237,7 +253,7 @@ lib/
 
 <p align="center">
   <a href="https://github.com/arturo-orient/OrbitHabit/releases/latest/download/OrbitHabit.apk">
-    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.1.3-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
+    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.2.2-84A59D?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="50"/>
   </a>
 </p>
 

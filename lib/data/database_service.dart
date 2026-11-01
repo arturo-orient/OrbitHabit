@@ -45,6 +45,10 @@ class DatabaseService {
     await _settingsBox.put(key, value);
   }
 
+  Future<void> deleteSetting(String key) async {
+    await _settingsBox.delete(key);
+  }
+
   dynamic getSetting(String key, {dynamic defaultValue}) {
     return _settingsBox.get(key, defaultValue: defaultValue);
   }

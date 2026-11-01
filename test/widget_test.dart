@@ -5,6 +5,7 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:orbithabit/main.dart';
@@ -17,6 +18,7 @@ import 'package:orbithabit/providers/habit_provider.dart';
 import 'package:orbithabit/domain/models/user_settings.dart';
 import 'package:orbithabit/services/backup_service.dart';
 import 'package:orbithabit/services/schedule_poster_service.dart';
+import 'package:orbithabit/utils/poster_saver.dart';
 
 class FakeDatabaseService extends DatabaseService {
   final Map<String, dynamic> _settings = {};
@@ -395,6 +397,46 @@ void main() {
       expect(pngBytes[1], 0x50);
       expect(pngBytes[2], 0x4E);
       expect(pngBytes[3], 0x47);
+    });
+
+    test('DemoSeederService.isDemoModeActive accurately detects demo prefixes and user data', () {
+      final now = DateTime.now();
+      final demo = DemoSeederService.generateDemoData(now);
+
+      // Demo data should be detected as active
+      expect(DemoSeederService.isDemoModeActive(demo.habits, demo.blocks), isTrue);
+
+      // Regular user habits without 'demo_' prefix should return false
+      final userHabit = Habit(
+        id: 'user_habit_meditation',
+        name: 'Meditación',
+        colorValue: 0xFF84A59D,
+        targetDays: 20,
+        orderIndex: 0,
+      );
+      final userBlock = ScheduleBlock(
+        id: 'user_block_study',
+        title: 'Estudio',
+        startHour: 9,
+        startMinute: 0,
+        endHour: 11,
+        endMinute: 0,
+        colorValue: 0xFF84A59D,
+        daysOfWeek: [1, 2, 3, 4, 5],
+      );
+
+      expect(DemoSeederService.isDemoModeActive([userHabit], [userBlock]), isFalse);
+    });
+
+    test('PosterSaver saves bytes and returns accessible file path', () async {
+      final testBytes = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+      final savedPath = await PosterSaver.save(
+        bytes: testBytes,
+        fileName: 'orbit_test_poster.png',
+      );
+
+      expect(savedPath, isNotNull);
+      expect(savedPath, contains('orbit_test_poster.png'));
     });
   });
 }

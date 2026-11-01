@@ -285,32 +285,85 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton.icon(
-                        onPressed: () {
+                        onPressed: () async {
                           HapticFeedback.mediumImpact();
                           Navigator.of(ctx).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(
-                                  color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
-                                ),
-                              ),
-                              content: Text(
-                                'Póster renderizado en 1080x1440 px listo para captura de pantalla limpia.',
-                                style: AppTheme.bodyStyle(
-                                  fontSize: 12.5,
-                                  color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
-                                ),
-                              ),
-                            ),
+                          final savedPath = await SchedulePosterService.savePosterPng(
+                            bytes: pngBytes,
+                            month: _selectedMonth,
                           );
+                          if (!mounted) return;
+                          if (savedPath != null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                backgroundColor: isDark
+                                    ? AppTheme.obsidianSurfaceElevated
+                                    : AppTheme.boneSurfaceElevated,
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: BorderSide(
+                                    color: isDark
+                                        ? AppTheme.obsidianBorderHover
+                                        : AppTheme.boneBorder,
+                                  ),
+                                ),
+                                content: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.download_done_rounded,
+                                      size: 20,
+                                      color: AppTheme.dynamicAccent(isDark),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Póster PNG descargado con éxito',
+                                            style: AppTheme.displayStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                              color: isDark
+                                                  ? AppTheme.obsidianTextPrimary
+                                                  : AppTheme.boneTextPrimary,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            savedPath,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: AppTheme.monoStyle(
+                                              fontSize: 10.5,
+                                              color: isDark
+                                                  ? AppTheme.obsidianTextMuted
+                                                  : AppTheme.boneTextMuted,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                backgroundColor: Colors.redAccent.shade700,
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                content: const Text('No se pudo guardar el archivo del póster.'),
+                              ),
+                            );
+                          }
                         },
-                        icon: const Icon(Icons.check_circle_outline_rounded, size: 16),
+                        icon: const Icon(Icons.file_download_outlined, size: 16),
                         label: Text(
-                          'Listo',
+                          'Descargar Póster PNG',
                           style: AppTheme.displayStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,

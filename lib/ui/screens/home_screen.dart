@@ -37,7 +37,22 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProviderStateMixin {
   DateTime _currentMonth = DateTime.now();
   int _selectedView = 0; // 0 = Órbita Mensual, 1 = Reloj Horario 24h
+  int? _tourStep; // null = inactivo, 0..4 = tour guiado interactivo
   late AnimationController _entranceController;
+
+  void _goToTourStep(int? step) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _tourStep = step;
+      if (step != null) {
+        if (step == 2 || step == 3) {
+          _selectedView = 1;
+        } else {
+          _selectedView = 0;
+        }
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -418,17 +433,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                           ),
                           const SizedBox(width: 8),
 
-                          // Guía Rápida / Manual Técnico
+                          // Tour Guiado Interactivo / Manual Técnico
                           GestureDetector(
-                            onTap: () {
+                            onTap: () => _goToTourStep(0),
+                            onLongPress: () {
                               HapticFeedback.selectionClick();
                               showModalBottomSheet(
                                 context: context,
                                 backgroundColor: Colors.transparent,
                                 isScrollControlled: true,
-                                builder: (_) => const FractionallySizedBox(
+                                builder: (_) => FractionallySizedBox(
                                   heightFactor: 0.88,
-                                  child: OrbitGuideSheet(),
+                                  child: OrbitGuideSheet(
+                                    onStartTour: () => _goToTourStep(0),
+                                  ),
                                 ),
                               );
                             },
@@ -443,7 +461,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                               child: Icon(
                                 Icons.help_outline_rounded,
                                 size: 17,
-                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                color: _tourStep != null
+                                    ? AppTheme.dynamicAccent(isDark)
+                                    : (isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary),
                               ),
                             ),
                           ),
@@ -478,6 +498,82 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                     ],
                   ),
                 ),
+
+                // BANNER: MODO DEMO ACTIVO
+                if (DemoSeederService.isDemoModeActive(habits, scheduleBlocks))
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E1A10) : const Color(0xFFFFFBEB),
+                      border: Border(
+                        bottom: BorderSide(
+                          color: isDark ? const Color(0xFFE5D08F).withValues(alpha: 0.3) : const Color(0xFFFDE68A),
+                          width: AppTheme.borderPrecision,
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.science_rounded,
+                          size: 16,
+                          color: isDark ? const Color(0xFFE5D08F) : const Color(0xFFD97706),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'MODO DEMO ACTIVO · Datos de prueba',
+                            style: AppTheme.monoStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? const Color(0xFFE5D08F) : const Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () async {
+                            HapticFeedback.mediumImpact();
+                            await DemoSeederService.exitDemoMode(ref);
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                content: Text(
+                                  'Modo Demo desactivado',
+                                  style: AppTheme.bodyStyle(
+                                    fontSize: 12.5,
+                                    color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFFE5D08F).withValues(alpha: 0.15) : const Color(0xFFFEF3C7),
+                              borderRadius: AppTheme.radiusXs,
+                              border: Border.all(
+                                color: isDark ? const Color(0xFFE5D08F).withValues(alpha: 0.4) : const Color(0xFFF59E0B),
+                                width: 1.0,
+                              ),
+                            ),
+                            child: Text(
+                              '✕ Salir de la Demo',
+                              style: AppTheme.displayStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? const Color(0xFFE5D08F) : const Color(0xFFB45309),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
                 // VISTA 0: ÓRBITA MENSUAL CLÁSICA
                 if (_selectedView == 0) ...[
@@ -921,11 +1017,358 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
               },
             ),
           ),
+        if (_tourStep != null)
+          _buildTourOverlay(isDark),
         ],
       ),
     ),
   );
 }
+
+  Widget _buildTourOverlay(bool isDark) {
+    if (_tourStep == null) return const SizedBox.shrink();
+
+    final step = _tourStep!;
+    final accent = AppTheme.dynamicAccent(isDark);
+
+    final List<({
+      String tag,
+      String title,
+      String body,
+      IconData icon,
+      String focusText,
+    })> tourSteps = [
+      (
+        tag: 'PASO 1 DE 5 // VISTA MENSUAL',
+        title: '¡Bienvenido a tu Rueda del Mes! 🪐',
+        body: 'Olvídate de las listas aburridas. Aquí cada anillo es uno de tus hábitos y los números del 1 al 31 son los días del mes. Cuando cumples un día, su casilla se ilumina a todo color. Si un día te toca descansar, dejamos el hueco limpio para que no te agobies.',
+        icon: Icons.adjust_rounded,
+        focusText: 'Enfocando la Rueda Orbital concéntrica',
+      ),
+      (
+        tag: 'PASO 2 DE 5 // HÁBITOS & TRABAJO',
+        title: 'Tus Hábitos y tu Bolsa de Horas 💼',
+        body: 'Aquí abajo verás tus hábitos diarios y tu tarjeta de trabajo. Si trabajas por turnos (mañanas, tardes o noches), todos se agrupan en una sola tarjeta para sumar tus horas del mes (por ejemplo, 120h) sin llenar la pantalla de ruido. Puedes pulsar \'Registrar Hoy\' para fichar en un segundo.',
+        icon: Icons.work_outline_rounded,
+        focusText: 'Enfocando las Tarjetas inferiores y Turnos agrupados',
+      ),
+      (
+        tag: 'PASO 3 DE 5 // CICLO DIARIO',
+        title: 'Tu Día en 24 Horas ⏰',
+        body: 'Hemos cambiado a la vista de Reloj 24H. Es como ver todo tu día de un vistazo desde las 00:00 hasta la medianoche. El puntito brillante se mueve en tiempo real contigo, y si tienes un turno de noche que cruza las 12 de la noche, el reloj lo une sin romperse. Además, si tocas cualquier franja de color, puedes editarla.',
+        icon: Icons.schedule_rounded,
+        focusText: 'Enfocando el Reloj Polar 24h y los arcos táctiles',
+      ),
+      (
+        tag: 'PASO 4 DE 5 // PLANIFICADOR RÁPIDO',
+        title: 'Pinta tu Mes en Segundos 🗓️',
+        body: '¿Tienes horarios rotativos que cambian cada semana? Pulsa en \'Cuadrante Turnos\'. Ahí podrás elegir tu turno como si fuera un pincel, tocar los días del calendario para armar tu mes entero y descargar un póster en imagen de alta calidad para compartirlo.',
+        icon: Icons.calendar_month_rounded,
+        focusText: 'Enfocando el botón Cuadrante Turnos (arriba a la derecha)',
+      ),
+      (
+        tag: 'PASO 5 DE 5 // LISTOS PARA COMENZAR',
+        title: '¡Todo listo para despegar! 🚀',
+        body: 'Si quieres trastear con la app llena de datos antes de crear tus propios hábitos, pulsa el botón de abajo para activar el Modo Demo. Podrás quitarlo cuando quieras con un solo clic desde la barra superior.',
+        icon: Icons.rocket_launch_rounded,
+        focusText: 'Todo configurado para empezar',
+      ),
+    ];
+
+    final current = tourSteps[step.clamp(0, 4)];
+
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.40),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Indicador visual superior de sección enfocada
+              Padding(
+                padding: const EdgeInsets.only(top: 14, left: 16, right: 16),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF141418) : Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: accent,
+                      width: 1.2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: 0.18),
+                        blurRadius: 14,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(current.icon, size: 15, color: accent),
+                      const SizedBox(width: 8),
+                      Text(
+                        current.focusText,
+                        style: AppTheme.monoStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const Spacer(),
+
+              // Tarjeta Neo-Bento Flotante del Tour
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 500),
+                  child: Container(
+                    margin: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
+                        width: 1.2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: isDark ? 0.6 : 0.12),
+                          blurRadius: 28,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Cabecera del Tour
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              current.tag,
+                              style: AppTheme.monoStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: accent,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                setState(() => _tourStep = null);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.close_rounded,
+                                  size: 15,
+                                  color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Barra de progreso de 5 pasos
+                        Row(
+                          children: List.generate(5, (index) {
+                            final isPassed = index <= step;
+                            return Expanded(
+                              child: Container(
+                                height: 3.5,
+                                margin: EdgeInsets.only(right: index < 4 ? 6.0 : 0.0),
+                                decoration: BoxDecoration(
+                                  color: isPassed
+                                      ? accent
+                                      : (isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.1)),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                        const SizedBox(height: 14),
+
+                        // Título Humano
+                        Text(
+                          current.title,
+                          style: AppTheme.displayStyle(
+                            fontSize: 16.5,
+                            fontWeight: FontWeight.w800,
+                            color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+
+                        // Descripción Humana
+                        Text(
+                          current.body,
+                          style: AppTheme.bodyStyle(
+                            fontSize: 13,
+                            height: 1.45,
+                            color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Botones de Navegación del Tour
+                        if (step == 4) ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () {
+                                    HapticFeedback.selectionClick();
+                                    setState(() => _tourStep = null);
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    side: BorderSide(
+                                      color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
+                                    ),
+                                    shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
+                                  ),
+                                  child: Text(
+                                    '¡Entendido, empezar!',
+                                    style: AppTheme.displayStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () async {
+                                    HapticFeedback.mediumImpact();
+                                    await DemoSeederService.seedDemoData(ref);
+                                    _replayEntrance();
+                                    setState(() => _tourStep = null);
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        behavior: SnackBarBehavior.floating,
+                                        shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
+                                        backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                                        content: Text(
+                                          'Órbita de demostración cargada con éxito ⚡',
+                                          style: AppTheme.monoStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: accent,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: accent,
+                                    foregroundColor: isDark ? Colors.black : Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
+                                  ),
+                                  child: Text(
+                                    '⚡ Probar Modo Demo',
+                                    style: AppTheme.displayStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: isDark ? Colors.black : Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else ...[
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              if (step > 0)
+                                TextButton(
+                                  onPressed: () => _goToTourStep(step - 1),
+                                  child: Text(
+                                    '← Anterior',
+                                    style: AppTheme.bodyStyle(
+                                      fontSize: 13,
+                                      color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                    ),
+                                  ),
+                                )
+                              else
+                                TextButton(
+                                  onPressed: () {
+                                    HapticFeedback.selectionClick();
+                                    setState(() => _tourStep = null);
+                                  },
+                                  child: Text(
+                                    'Cerrar tutorial',
+                                    style: AppTheme.bodyStyle(
+                                      fontSize: 13,
+                                      color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                    ),
+                                  ),
+                                ),
+                              ElevatedButton(
+                                onPressed: () => _goToTourStep(step + 1),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: accent,
+                                  foregroundColor: isDark ? Colors.black : Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Siguiente',
+                                      style: AppTheme.displayStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: isDark ? Colors.black : Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.arrow_forward_rounded,
+                                      size: 15,
+                                      color: isDark ? Colors.black : Colors.white,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   String _getMonthName(int month) {
     const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -1070,9 +1513,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             ElevatedButton(
               onPressed: () async {
                 HapticFeedback.mediumImpact();
-                final demo = DemoSeederService.generateDemoData(DateTime.now());
-                await ref.read(habitsProvider.notifier).replaceAllHabits(demo.habits);
-                await ref.read(scheduleProvider.notifier).replaceAllBlocks(demo.blocks);
+                await DemoSeederService.seedDemoData(ref);
                 _replayEntrance();
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(

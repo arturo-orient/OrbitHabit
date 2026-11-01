@@ -1,7 +1,11 @@
 import 'dart:convert';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../domain/models/habit.dart';
 import '../domain/models/schedule_block.dart';
 import '../domain/models/user_settings.dart';
+import '../providers/habit_provider.dart';
+import '../providers/schedule_provider.dart';
+import '../providers/settings_provider.dart';
 
 class BackupService {
   /// Exporta el estado completo de la app (hábitos, horarios y vacaciones) en formato JSON
@@ -64,6 +68,57 @@ class BackupService {
 }
 
 class DemoSeederService {
+  /// Determina si el Modo Demo está activo comprobando si algún hábito o bloque inicia con 'demo_'
+  static bool isDemoModeActive(List<Habit> habits, List<ScheduleBlock> blocks) {
+    return habits.any((h) => h.id.startsWith('demo_')) ||
+        blocks.any((b) => b.id.startsWith('demo_'));
+  }
+
+  /// Carga los datos de demostración en 1 clic.
+  /// Si el usuario tenía datos reales no demo, los resguarda automáticamente bajo 'pre_demo_backup_json'.
+  static Future<({List<Habit> habits, List<ScheduleBlock> blocks})> seedDemoData(WidgetRef ref) async {
+    final habits = ref.read(habitsProvider);
+    final blocks = ref.read(scheduleProvider);
+    final settings = ref.read(settingsProvider);
+    final db = ref.read(databaseProvider);
+
+    if (!isDemoModeActive(habits, blocks) && (habits.isNotEmpty || blocks.isNotEmpty)) {
+      final backupJson = BackupService.exportToJson(
+        habits: habits,
+        blocks: blocks,
+        settings: settings,
+      );
+      await db.saveSetting('pre_demo_backup_json', backupJson);
+    }
+
+    final demo = generateDemoData(DateTime.now());
+    await ref.read(habitsProvider.notifier).replaceAllHabits(demo.habits);
+    await ref.read(scheduleProvider.notifier).replaceAllBlocks(demo.blocks);
+    return demo;
+  }
+
+  /// Sale del Modo Demo restaurando los datos originales del usuario o limpiando la demo.
+  static Future<void> exitDemoMode(WidgetRef ref) async {
+    final db = ref.read(databaseProvider);
+    final preDemoJson = db.getSetting('pre_demo_backup_json');
+
+    if (preDemoJson is String && preDemoJson.trim().isNotEmpty) {
+      try {
+        final parsed = BackupService.parseFromJson(preDemoJson);
+        await ref.read(habitsProvider.notifier).replaceAllHabits(parsed.habits);
+        await ref.read(scheduleProvider.notifier).replaceAllBlocks(parsed.blocks);
+        await db.deleteSetting('pre_demo_backup_json');
+        return;
+      } catch (_) {
+        // En caso de fallo al deserializar, se limpian los datos demo por seguridad
+      }
+    }
+
+    await ref.read(habitsProvider.notifier).replaceAllHabits([]);
+    await ref.read(scheduleProvider.notifier).replaceAllBlocks([]);
+    await db.deleteSetting('pre_demo_backup_json');
+  }
+
   /// Genera un conjunto de demostración visualmente rico y realista para el mes actual
   static ({List<Habit> habits, List<ScheduleBlock> blocks}) generateDemoData(DateTime now) {
     final year = now.year;

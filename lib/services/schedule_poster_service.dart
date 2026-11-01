@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../../domain/models/schedule_block.dart';
+import '../utils/poster_saver.dart';
 
 /// Servicio de Renderizado de Póster PNG de Alta Resolución para el Cuadrante Mensual.
 /// Dibuja directamente en un `ui.Canvas` de 1080x1440 con rigor técnico suizo (Neo-Bento).
@@ -12,6 +13,17 @@ class SchedulePosterService {
   ];
 
   static const _weekdaysShort = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
+
+  /// Guarda el PNG del póster en el dispositivo y devuelve la ruta guardada o nombre de archivo
+  static Future<String?> savePosterPng({
+    required Uint8List bytes,
+    required DateTime month,
+  }) async {
+    final monthName = _monthNames[month.month - 1].toLowerCase();
+    final capitalizedMonth = monthName[0].toUpperCase() + monthName.substring(1);
+    final fileName = 'OrbitHabit_Cuadrante_${capitalizedMonth}_${month.year}.png';
+    return await PosterSaver.save(bytes: bytes, fileName: fileName);
+  }
 
   /// Genera un PNG de 1080x1440 px con el cuadrante mensual, turnos y telemetría de horas
   static Future<Uint8List> renderMonthlyPosterPng({

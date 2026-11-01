@@ -965,9 +965,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _loadDemoData(bool isDark) async {
     HapticFeedback.mediumImpact();
-    final demo = DemoSeederService.generateDemoData(DateTime.now());
-    await ref.read(habitsProvider.notifier).replaceAllHabits(demo.habits);
-    await ref.read(scheduleProvider.notifier).replaceAllBlocks(demo.blocks);
+    final demo = await DemoSeederService.seedDemoData(ref);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers/habit_provider.dart';
-import '../../providers/schedule_provider.dart';
 import '../../services/backup_service.dart';
 import '../theme/app_theme.dart';
 
@@ -10,7 +8,9 @@ import '../theme/app_theme.dart';
 /// Explica la arquitectura visual (Rueda Orbital, Reloj 24H, Cuadrante y Modo Demo)
 /// siguiendo el Manifiesto de Diseño Suizo (Neo-Bento, Obsidian/Bone, Phosphor Accent).
 class OrbitGuideSheet extends ConsumerWidget {
-  const OrbitGuideSheet({Key? key}) : super(key: key);
+  final VoidCallback? onStartTour;
+
+  const OrbitGuideSheet({Key? key, this.onStartTour}) : super(key: key);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -98,6 +98,33 @@ class OrbitGuideSheet extends ConsumerWidget {
               shrinkWrap: true,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               children: [
+                if (onStartTour != null) ...[
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      onStartTour!();
+                    },
+                    icon: const Icon(Icons.explore_rounded, size: 18),
+                    label: Text(
+                      'INICIAR TOUR GUIADO INTERACTIVO',
+                      style: AppTheme.monoStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                        color: isDark ? Colors.black : Colors.white,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: isDark ? Colors.black : Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+
                 // TARJETA 01: RUEDA ORBITAL
                 _buildGuideCard(
                   isDark: isDark,
@@ -202,9 +229,7 @@ class OrbitGuideSheet extends ConsumerWidget {
                         child: ElevatedButton.icon(
                           onPressed: () async {
                             HapticFeedback.heavyImpact();
-                            final demo = DemoSeederService.generateDemoData(DateTime.now());
-                            await ref.read(habitsProvider.notifier).replaceAllHabits(demo.habits);
-                            await ref.read(scheduleProvider.notifier).replaceAllBlocks(demo.blocks);
+                            final demo = await DemoSeederService.seedDemoData(ref);
 
                             if (context.mounted) {
                               Navigator.of(context).pop();
