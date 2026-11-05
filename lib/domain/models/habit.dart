@@ -1,6 +1,54 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 
+class SubTask {
+  final String id;
+  final String title;
+  final Set<String> completedDates; // Format: YYYY-MM-DD
+  final int orderIndex;
+
+  const SubTask({
+    required this.id,
+    required this.title,
+    this.completedDates = const {},
+    this.orderIndex = 0,
+  });
+
+  bool isCompletedOn(String dateIso) => completedDates.contains(dateIso);
+
+  SubTask copyWith({
+    String? id,
+    String? title,
+    Set<String>? completedDates,
+    int? orderIndex,
+  }) {
+    return SubTask(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      completedDates: completedDates ?? this.completedDates,
+      orderIndex: orderIndex ?? this.orderIndex,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'completedDates': completedDates.toList(),
+      'orderIndex': orderIndex,
+    };
+  }
+
+  factory SubTask.fromMap(Map<dynamic, dynamic> map) {
+    return SubTask(
+      id: map['id']?.toString() ?? '',
+      title: map['title']?.toString() ?? '',
+      completedDates: (map['completedDates'] as List<dynamic>?)?.map((e) => e.toString()).toSet() ?? {},
+      orderIndex: (map['orderIndex'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 class Habit {
   final String id;
   final String name;
@@ -21,6 +69,9 @@ class Habit {
   final int frequencyType; // 0 = Días Específicos, 1 = Flexible
   final int targetDaysPerWeek; // ej. 3 días a la semana
 
+  // Subtareas (Checklist) para cualquier hábito
+  final List<SubTask> subTasks;
+
   Habit({
     required this.id,
     required this.name,
@@ -36,6 +87,7 @@ class Habit {
     this.hasMonthlyTarget = true,
     this.frequencyType = 0,
     this.targetDaysPerWeek = 3,
+    this.subTasks = const [],
   })  : completedDates = completedDates ?? {},
         dailyProgress = dailyProgress ?? {},
         activeWeekdays = activeWeekdays ?? [1, 2, 3, 4, 5, 6, 7];
@@ -57,6 +109,7 @@ class Habit {
     bool? hasMonthlyTarget,
     int? frequencyType,
     int? targetDaysPerWeek,
+    List<SubTask>? subTasks,
   }) {
     return Habit(
       id: id ?? this.id,
@@ -73,6 +126,7 @@ class Habit {
       hasMonthlyTarget: hasMonthlyTarget ?? this.hasMonthlyTarget,
       frequencyType: frequencyType ?? this.frequencyType,
       targetDaysPerWeek: targetDaysPerWeek ?? this.targetDaysPerWeek,
+      subTasks: subTasks ?? this.subTasks,
     );
   }
 
@@ -93,6 +147,7 @@ class Habit {
       'hasMonthlyTarget': hasMonthlyTarget,
       'frequencyType': frequencyType,
       'targetDaysPerWeek': targetDaysPerWeek,
+      'subTasks': subTasks.map((s) => s.toMap()).toList(),
     };
   }
 
@@ -113,6 +168,10 @@ class Habit {
       hasMonthlyTarget: map['hasMonthlyTarget'] as bool? ?? true,
       frequencyType: map['frequencyType'] as int? ?? 0,
       targetDaysPerWeek: map['targetDaysPerWeek'] as int? ?? 3,
+      subTasks: (map['subTasks'] as List<dynamic>?)
+              ?.map((e) => SubTask.fromMap(e as Map))
+              .toList() ??
+          [],
     );
   }
 }

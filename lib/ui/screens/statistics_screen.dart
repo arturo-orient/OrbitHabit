@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/habit_provider.dart';
+import '../../providers/schedule_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../utils/streak_utils.dart';
 import '../../domain/models/habit.dart';
@@ -41,17 +42,21 @@ class StatisticsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final habits = ref.watch(habitsProvider);
     final settings = ref.watch(settingsProvider);
+    final scheduleBlocks = ref.watch(scheduleProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final heavyDutyShield = StreakUtils.computeHeavyDutyShieldDates(scheduleBlocks);
+    final effectiveVacationDates = {...settings.vacationDates, ...heavyDutyShield}.toList();
 
     // Calcular Racha Global Máxima
     int globalMaxStreak = 0;
     for (var habit in habits) {
-      final maxStreak = StreakUtils.calculateMaxStreak(habit, settings.vacationDates);
+      final maxStreak = StreakUtils.calculateMaxStreak(habit, effectiveVacationDates);
       if (maxStreak > globalMaxStreak) globalMaxStreak = maxStreak;
     }
 
     // Calcular Días Perfectos
-    final perfectDays = _calculatePerfectDays(habits, settings.vacationDates);
+    final perfectDays = _calculatePerfectDays(habits, effectiveVacationDates);
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -201,8 +206,8 @@ class StatisticsScreen extends ConsumerWidget {
                   )
                 else
                   ...habits.map((habit) {
-                    final maxStreak = StreakUtils.calculateMaxStreak(habit, settings.vacationDates);
-                    final currentStreak = StreakUtils.calculateCurrentStreak(habit, settings.vacationDates);
+                    final maxStreak = StreakUtils.calculateMaxStreak(habit, effectiveVacationDates);
+                    final currentStreak = StreakUtils.calculateCurrentStreak(habit, effectiveVacationDates);
                     
                     int successCount = 0;
                     int expectedCount = 0;
@@ -212,7 +217,7 @@ class StatisticsScreen extends ConsumerWidget {
                     for (int i = 0; i < 30; i++) {
                       final dateStr = '${checkDate.year}-${checkDate.month.toString().padLeft(2, '0')}-${checkDate.day.toString().padLeft(2, '0')}';
                       
-                      if (!settings.vacationDates.contains(dateStr) && habit.activeWeekdays.contains(checkDate.weekday)) {
+                      if (!effectiveVacationDates.contains(dateStr) && habit.activeWeekdays.contains(checkDate.weekday)) {
                         expectedCount++;
                         if (habit.completedDates.contains(dateStr)) {
                           successCount++;

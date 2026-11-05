@@ -84,8 +84,12 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
   late bool _showInOrbit;
   String? _linkedHabitId; // ID de hábito existente vinculado (para múltiples turnos)
 
+  // Subtareas / Pasos (Checklist)
+  final List<SubTask> _subTasks = [];
+
   // 2. Horario en Reloj 24h
   final List<_ScheduleItem> _schedules = [];
+  final Set<String> _deletedScheduleIds = {};
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
   late List<int> _activeWeekdays;
@@ -149,10 +153,19 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       // Visibilidad y Modos
       _hasSchedule = block != null;
       _showInOrbit = habit != null;
-      _linkedHabitId = (habit != null) ? null : block?.habitId;
+      if (widget.blockToEdit != null && widget.blockToEdit!.habitId != null) {
+        _linkedHabitId = widget.blockToEdit!.habitId;
+      } else if (widget.habitToEdit != null) {
+        _linkedHabitId = widget.habitToEdit!.id;
+      } else if (block?.habitId != null) {
+        _linkedHabitId = block!.habitId;
+      } else {
+        _linkedHabitId = null;
+      }
 
       // Horario y Franjas asociadas
       if (habit != null) {
+        _subTasks.addAll(habit.subTasks);
         final h = habit;
         final related = blocks.where((b) => b.habitId == h.id || b.title.trim().toLowerCase() == h.name.trim().toLowerCase()).toList();
         for (final b in related) {
@@ -165,14 +178,23 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         }
         if (_schedules.isNotEmpty) {
           _hasSchedule = true;
+          _linkedHabitId = habit.id;
         }
       } else if (block != null) {
-        _schedules.add(_ScheduleItem(
-          id: block.id,
-          title: block.title,
-          startTime: TimeOfDay(hour: block.startHour, minute: block.startMinute),
-          endTime: TimeOfDay(hour: block.endHour, minute: block.endMinute),
-        ));
+        final related = blocks.where((b) =>
+            b.id == block!.id ||
+            (block!.habitId != null && b.habitId == block!.habitId) ||
+            (b.title.trim().toLowerCase() == block!.title.trim().toLowerCase())).toList();
+        for (final b in related) {
+          if (!_schedules.any((s) => s.id == b.id)) {
+            _schedules.add(_ScheduleItem(
+              id: b.id,
+              title: b.title,
+              startTime: TimeOfDay(hour: b.startHour, minute: b.startMinute),
+              endTime: TimeOfDay(hour: b.endHour, minute: b.endMinute),
+            ));
+          }
+        }
       }
 
       if (block != null) {
@@ -290,21 +312,223 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     }
   }
 
-  Future<void> _showAddScheduleDialog() async {
+  Future<void> _showSubTaskDialog({SubTask? subTaskToEdit, int? index}) async {
+    HapticFeedback.selectionClick();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isEditing = subTaskToEdit != null;
+    final titleController = TextEditingController(text: subTaskToEdit?.title ?? '');
+
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380),
+              child: Container(
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(
+                  color: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+                  borderRadius: AppTheme.radiusSm,
+                  border: Border.all(
+                    color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                    width: AppTheme.borderPrecision,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.08),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: _selectedColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          isEditing ? 'Modificar Subtarea' : 'Nueva Subtarea',
+                          style: AppTheme.displayStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                          ),
+                        ),
+                        const Spacer(),
+                        GestureDetector(
+                          onTap: () => Navigator.pop(ctx),
+                          child: Icon(
+                            Icons.close_rounded,
+                            size: 20,
+                            color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Añade una subtarea accionable para completar esta actividad.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: titleController,
+                      autofocus: true,
+                      style: TextStyle(
+                        color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                        fontSize: 14,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'ej. Tomar creatina, 10 min estiramiento...',
+                        hintStyle: TextStyle(
+                          color: isDark ? Colors.white30 : Colors.black26,
+                          fontSize: 13,
+                        ),
+                        filled: true,
+                        fillColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: AppTheme.radiusSm,
+                          borderSide: BorderSide(
+                            color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                            width: AppTheme.borderPrecision,
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: AppTheme.radiusSm,
+                          borderSide: BorderSide(
+                            color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                            width: AppTheme.borderPrecision,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: AppTheme.radiusSm,
+                          borderSide: BorderSide(
+                            color: _selectedColor,
+                            width: 1.4,
+                          ),
+                        ),
+                      ),
+                      onSubmitted: (val) {
+                        final trimmed = val.trim();
+                        if (trimmed.isNotEmpty) {
+                          Navigator.pop(ctx, trimmed);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                              side: BorderSide(
+                                color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                                width: AppTheme.borderPrecision,
+                              ),
+                              shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            child: const Text('Cancelar', style: TextStyle(fontSize: 13)),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              final text = titleController.text.trim();
+                              if (text.isNotEmpty) {
+                                Navigator.pop(ctx, text);
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _selectedColor,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            child: Text(
+                              isEditing ? 'Guardar' : 'Añadir',
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    titleController.dispose();
+
+    if (result != null && mounted) {
+      HapticFeedback.mediumImpact();
+      setState(() {
+        if (isEditing && index != null && index < _subTasks.length) {
+          _subTasks[index] = _subTasks[index].copyWith(title: result);
+        } else {
+          _subTasks.add(SubTask(
+            id: 'subtask_${DateTime.now().millisecondsSinceEpoch}_${_subTasks.length}',
+            title: result,
+            orderIndex: _subTasks.length,
+          ));
+        }
+      });
+    }
+  }
+
+  Future<void> _showScheduleDialog({_ScheduleItem? itemToEdit, int? editIndex}) async {
     HapticFeedback.selectionClick();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final parentTaskName = _nameController.text.trim();
+    final isEditing = itemToEdit != null;
 
-    TimeOfDay startTime = const TimeOfDay(hour: 8, minute: 0);
-    TimeOfDay endTime = const TimeOfDay(hour: 16, minute: 0);
+    TimeOfDay startTime;
+    TimeOfDay endTime;
 
-    if (_startTime != null && _endTime != null && _schedules.isEmpty) {
+    if (isEditing) {
+      startTime = itemToEdit.startTime;
+      endTime = itemToEdit.endTime;
+    } else if (_schedules.isNotEmpty) {
+      startTime = _schedules.last.endTime;
+      endTime = TimeOfDay(hour: (startTime.hour + 8) % 24, minute: startTime.minute);
+    } else if (_startTime != null && _endTime != null) {
       startTime = _startTime!;
       endTime = _endTime!;
+    } else {
+      startTime = const TimeOfDay(hour: 8, minute: 0);
+      endTime = const TimeOfDay(hour: 16, minute: 0);
     }
 
     final scheduleTitleController = TextEditingController(
-      text: _schedules.isEmpty && parentTaskName.isNotEmpty ? parentTaskName : '',
+      text: isEditing
+          ? itemToEdit.title
+          : (_schedules.isEmpty && parentTaskName.isNotEmpty ? parentTaskName : ''),
     );
 
     final result = await showDialog<_ScheduleItem>(
@@ -365,7 +589,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              'Añadir Horario',
+                              isEditing ? 'Modificar Subtarea' : 'Añadir Horario',
                               style: AppTheme.displayStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -385,7 +609,9 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Configura una franja horaria para esta actividad.',
+                          isEditing
+                              ? 'Modifica el nombre o las horas de esta subtarea.'
+                              : 'Configura una franja horaria para esta actividad.',
                           style: TextStyle(
                             fontSize: 12,
                             color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
@@ -393,9 +619,9 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                         ),
                         const SizedBox(height: 18),
 
-                        // Nombre de la franja / horario
+                        // Nombre de la franja / subtarea
                         Text(
-                          'NOMBRE DEL HORARIO (OPCIONAL)',
+                          'NOMBRE DEL HORARIO / SUBTAREA',
                           style: AppTheme.monoStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.bold,
@@ -636,7 +862,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                                   Navigator.pop(
                                     dialogContext,
                                     _ScheduleItem(
-                                      id: 'block_${DateTime.now().millisecondsSinceEpoch}_${_schedules.length}',
+                                      id: itemToEdit?.id ?? 'block_${DateTime.now().millisecondsSinceEpoch}_${_schedules.length}',
                                       title: finalTitle,
                                       startTime: startTime,
                                       endTime: endTime,
@@ -650,9 +876,9 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                                   shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
                                   padding: const EdgeInsets.symmetric(vertical: 13),
                                 ),
-                                child: const Text(
-                                  'Añadir Horario',
-                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                child: Text(
+                                  isEditing ? 'Guardar Cambios' : 'Añadir Horario',
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                                 ),
                               ),
                             ),
@@ -674,11 +900,17 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     if (result != null && mounted) {
       HapticFeedback.mediumImpact();
       setState(() {
-        _schedules.add(result);
+        if (isEditing && editIndex != null && editIndex < _schedules.length) {
+          _schedules[editIndex] = result;
+        } else {
+          _schedules.add(result);
+        }
         _hasSchedule = true;
       });
     }
   }
+
+  Future<void> _showAddScheduleDialog() => _showScheduleDialog();
 
   void _saveTask() {
     final title = _nameController.text.trim();
@@ -776,8 +1008,8 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     final targetHabitId = editingHabitId ?? _linkedHabitId ?? 'habit_${DateTime.now().millisecondsSinceEpoch}';
     final blockId = editingBlockId ?? 'block_${DateTime.now().millisecondsSinceEpoch}';
 
-    // 3. Manejo de Modo Órbita (Rueda de Hábitos)
-    if (_showInOrbit || _linkedHabitId != null) {
+    // 3. Manejo de Modo Órbita (Rueda de Hábitos) y Subtareas
+    if (_showInOrbit || _linkedHabitId != null || _subTasks.isNotEmpty) {
       final existingHabit = habits.cast<Habit?>().firstWhere(
             (h) => h?.id == targetHabitId,
             orElse: () => null,
@@ -792,9 +1024,10 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           hasMonthlyTarget: _targetMode == TaskTargetMode.days,
           frequencyType: _targetMode == TaskTargetMode.days ? _frequencyType : existingHabit.frequencyType,
           targetDaysPerWeek: _targetDaysPerWeek,
+          subTasks: _subTasks,
         );
         ref.read(habitsProvider.notifier).updateHabit(updatedHabit);
-      } else if (_showInOrbit) {
+      } else if (_showInOrbit || _subTasks.isNotEmpty) {
         final habit = Habit(
           id: targetHabitId,
           name: title,
@@ -809,6 +1042,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           frequencyType: _targetMode == TaskTargetMode.days ? _frequencyType : 0,
           targetDaysPerWeek: _targetDaysPerWeek,
           completedDates: Set<String>.from(_completedDates),
+          subTasks: _subTasks,
         );
         ref.read(habitsProvider.notifier).addHabit(habit);
       }
@@ -860,38 +1094,19 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         if (editingBlockId != null && !_schedules.any((s) => s.id == editingBlockId)) {
           ref.read(scheduleProvider.notifier).deleteBlock(editingBlockId);
         }
-      } else {
-        // Si no se usó la lista de franjas, guardar el horario base único (con fallback seguro a 08:00 - 16:00):
-        final start = _startTime ?? const TimeOfDay(hour: 8, minute: 0);
-        final end = _endTime ?? const TimeOfDay(hour: 16, minute: 0);
-        final isNewBlock = !blocks.any((b) => b.id == blockId);
-        final scheduleBlock = ScheduleBlock(
-          id: blockId,
-          title: title,
-          startHour: start.hour,
-          startMinute: start.minute,
-          endHour: end.hour,
-          endMinute: end.minute,
-          colorValue: _selectedColor.value,
-          habitId: finalHabitId,
-          daysOfWeek: _activeWeekdays,
-          hasMonthlyHourTarget: hasHourTarget,
-          monthlyTargetHours: _monthlyTargetHours,
-          completedDates: _completedDates,
-          assignedDates: widget.blockToEdit?.assignedDates ?? [],
-          extraHours: _extraHours,
-        );
+      }
 
-        if (isNewBlock) {
-          ref.read(scheduleProvider.notifier).addBlock(scheduleBlock);
-        } else {
-          ref.read(scheduleProvider.notifier).updateBlock(scheduleBlock);
-        }
+      // Eliminar de Hive cualquier subtarea que el usuario haya borrado explícitamente
+      for (final delId in _deletedScheduleIds) {
+        ref.read(scheduleProvider.notifier).deleteBlock(delId);
       }
     } else {
       // Si el horario está desactivado, limpiar bloques asociados
       for (final s in _schedules) {
         ref.read(scheduleProvider.notifier).deleteBlock(s.id);
+      }
+      for (final delId in _deletedScheduleIds) {
+        ref.read(scheduleProvider.notifier).deleteBlock(delId);
       }
       if (editingBlockId != null) {
         ref.read(scheduleProvider.notifier).deleteBlock(editingBlockId);
@@ -955,6 +1170,121 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
       HapticFeedback.heavyImpact();
       Navigator.pop(context);
+    }
+  }
+
+  Future<void> _duplicateTask() async {
+    HapticFeedback.selectionClick();
+    final currentTitle = _nameController.text.trim();
+    final duplicatedTitle = currentTitle.isEmpty ? 'Copia' : '$currentTitle (Copia)';
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('¿Duplicar tarea?'),
+        content: Text(
+          'Se creará "$duplicatedTitle" como una nueva tarea independiente con sus subtareas y horarios listos para planificar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'Cancelar',
+              style: TextStyle(
+                color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.7),
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              'Duplicar',
+              style: TextStyle(
+                color: _selectedColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    final newHabitId = 'habit_${DateTime.now().millisecondsSinceEpoch}';
+    final habits = ref.read(habitsProvider);
+
+    // 1. Clonar subtareas con IDs nuevos y progreso limpio
+    final duplicatedSubTasks = _subTasks.asMap().entries.map((entry) {
+      return SubTask(
+        id: 'subtask_${DateTime.now().millisecondsSinceEpoch}_${entry.key}',
+        title: entry.value.title,
+        completedDates: const {},
+        orderIndex: entry.key,
+      );
+    }).toList();
+
+    // 2. Si es hábito (o visible en órbita o tiene subtareas)
+    final bool shouldCreateHabit = _showInOrbit || widget.habitToEdit != null || _subTasks.isNotEmpty;
+    if (shouldCreateHabit) {
+      final newHabit = Habit(
+        id: newHabitId,
+        name: duplicatedTitle,
+        colorValue: _selectedColor.value,
+        targetDays: _targetMode == TaskTargetMode.days ? _targetDays : 20,
+        orderIndex: habits.length,
+        isNumeric: false,
+        dailyTarget: 1,
+        dailyUnit: '',
+        activeWeekdays: _activeWeekdays,
+        hasMonthlyTarget: _targetMode == TaskTargetMode.days,
+        frequencyType: _targetMode == TaskTargetMode.days ? _frequencyType : 0,
+        targetDaysPerWeek: _targetDaysPerWeek,
+        completedDates: const {},
+        subTasks: duplicatedSubTasks,
+      );
+      ref.read(habitsProvider.notifier).addHabit(newHabit);
+    }
+
+    // 3. Si tiene horarios asignados, clonar los bloques de horario
+    if (_hasSchedule) {
+      final finalHabitId = shouldCreateHabit ? newHabitId : null;
+      final hasHourTarget = _targetMode == TaskTargetMode.hours;
+
+      for (int i = 0; i < _schedules.length; i++) {
+        final s = _schedules[i];
+        final newBlock = ScheduleBlock(
+          id: 'block_${DateTime.now().millisecondsSinceEpoch}_$i',
+          title: s.title.isEmpty ? duplicatedTitle : '${s.title} (Copia)',
+          startHour: s.startTime.hour,
+          startMinute: s.startTime.minute,
+          endHour: s.endTime.hour,
+          endMinute: s.endTime.minute,
+          colorValue: _selectedColor.value,
+          habitId: finalHabitId,
+          daysOfWeek: _activeWeekdays,
+          hasMonthlyHourTarget: hasHourTarget,
+          monthlyTargetHours: _monthlyTargetHours,
+          completedDates: const [],
+          assignedDates: const [],
+          extraHours: 0.0,
+        );
+        ref.read(scheduleProvider.notifier).addBlock(newBlock);
+      }
+    }
+
+    if (mounted) {
+      HapticFeedback.mediumImpact();
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Tarea duplicada: "$duplicatedTitle"'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -1038,34 +1368,71 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                     color: textColor,
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _selectedColor.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: _selectedColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        modeBadgeText,
-                        style: GoogleFonts.outfit(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: _selectedColor,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_isEditing) ...[
+                      GestureDetector(
+                        onTap: _duplicateTask,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
+                            borderRadius: AppTheme.radiusXs,
+                            border: Border.all(
+                              color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                              width: AppTheme.borderPrecision,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.copy_rounded, size: 12, color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Duplicar',
+                                style: AppTheme.monoStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
-                  ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _selectedColor.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: _selectedColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            modeBadgeText,
+                            style: GoogleFonts.outfit(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: _selectedColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1205,7 +1572,190 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
               },
             ),
 
-            // 3. Sección: Visibilidad y Modos (¿Dónde se muestra?)
+            // 3. Sección: Subtareas (Checklist)
+            _buildSectionTitle('Subtareas'),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: theme.scaffoldBackgroundColor,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.withValues(alpha: 0.15)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Text('📝 ', style: TextStyle(fontSize: 15)),
+                          Text(
+                            'Subtareas (${_subTasks.length})',
+                            style: TextStyle(
+                              color: textColor,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                      GestureDetector(
+                        onTap: () => _showSubTaskDialog(),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: _selectedColor.withValues(alpha: 0.12),
+                            borderRadius: AppTheme.radiusXs,
+                            border: Border.all(
+                              color: _selectedColor.withValues(alpha: 0.35),
+                              width: AppTheme.borderPrecision,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.add_rounded, size: 14, color: _selectedColor),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Añadir Subtarea',
+                                style: TextStyle(
+                                  color: _selectedColor,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_subTasks.isEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Opcional: Añade subtareas para marcar conforme avances en esta actividad.',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: textColor?.withValues(alpha: 0.45) ?? Colors.grey,
+                      ),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 12),
+                    Theme(
+                      data: Theme.of(context).copyWith(
+                        canvasColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                      ),
+                      child: ReorderableListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        buildDefaultDragHandles: false,
+                        itemCount: _subTasks.length,
+                        onReorder: (oldIndex, newIndex) {
+                          HapticFeedback.selectionClick();
+                          setState(() {
+                            if (newIndex > oldIndex) {
+                              newIndex -= 1;
+                            }
+                            final item = _subTasks.removeAt(oldIndex);
+                            _subTasks.insert(newIndex, item);
+                            for (int i = 0; i < _subTasks.length; i++) {
+                              _subTasks[i] = _subTasks[i].copyWith(orderIndex: i);
+                            }
+                          });
+                        },
+                        proxyDecorator: (child, index, animation) {
+                          return Material(
+                            color: Colors.transparent,
+                            elevation: 0,
+                            child: child,
+                          );
+                        },
+                        itemBuilder: (context, index) {
+                          final st = _subTasks[index];
+                          return Container(
+                            key: ValueKey(st.id),
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+                              borderRadius: AppTheme.radiusSm,
+                              border: Border.all(
+                                color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                                width: AppTheme.borderPrecision,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                ReorderableDragStartListener(
+                                  index: index,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: Icon(
+                                      Icons.drag_indicator_rounded,
+                                      size: 16,
+                                      color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: _selectedColor,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    st.title,
+                                    style: AppTheme.bodyStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                    ),
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () => _showSubTaskDialog(subTaskToEdit: st, index: index),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    margin: const EdgeInsets.only(right: 6),
+                                    decoration: BoxDecoration(
+                                      color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
+                                      borderRadius: BorderRadius.circular(5),
+                                    ),
+                                    child: Icon(Icons.edit_outlined, size: 13, color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary),
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () {
+                                    HapticFeedback.selectionClick();
+                                    setState(() => _subTasks.removeAt(index));
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.redAccent.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(5),
+                                    ),
+                                    child: const Icon(Icons.delete_outline_rounded, size: 13, color: Colors.redAccent),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            // 4. Sección: Visibilidad y Modos (¿Dónde se muestra?)
             _buildSectionTitle('Visibilidad y Modos'),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -1354,64 +1904,94 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                 ],
               ),
 
-              // Lista de Franjas configuradas
+              // Lista de Subtareas / Horarios configurados
               if (_schedules.isNotEmpty) ...[
-                ..._schedules.map((item) {
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: AppTheme.bentoCard(
-                      isLight: !isDark,
-                      borderRadius: AppTheme.radiusSm,
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: _selectedColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                item.title,
-                                style: AppTheme.displayStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
-                                ),
-                              ),
-                              Text(
-                                '${item.formattedRange} · ${item.formattedDuration}${item.isOvernight ? ' · 🌙 Nocturno' : ''}',
-                                style: AppTheme.monoStyle(
-                                  fontSize: 10.5,
-                                  color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            setState(() => _schedules.remove(item));
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
+                ..._schedules.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final item = entry.value;
+                  return GestureDetector(
+                    onTap: () => _showScheduleDialog(itemToEdit: item, editIndex: index),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: AppTheme.bentoCard(
+                        isLight: !isDark,
+                        borderRadius: AppTheme.radiusSm,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
                             decoration: BoxDecoration(
-                              color: Colors.redAccent.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(6),
+                              color: _selectedColor,
+                              shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.close_rounded, size: 14, color: Colors.redAccent),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.title,
+                                  style: AppTheme.displayStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                  ),
+                                ),
+                                Text(
+                                  '${item.formattedRange} · ${item.formattedDuration}${item.isOvernight ? ' · 🌙 Nocturno' : ''}',
+                                  style: AppTheme.monoStyle(
+                                    fontSize: 10.5,
+                                    color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Botón Editar
+                          GestureDetector(
+                            onTap: () => _showScheduleDialog(itemToEdit: item, editIndex: index),
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              margin: const EdgeInsets.only(right: 6),
+                              decoration: BoxDecoration(
+                                color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                                  width: AppTheme.borderPrecision,
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.edit_outlined,
+                                size: 14,
+                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                              ),
+                            ),
+                          ),
+                          // Botón Eliminar
+                          GestureDetector(
+                            onTap: () {
+                              HapticFeedback.mediumImpact();
+                              setState(() {
+                                _deletedScheduleIds.add(item.id);
+                                _schedules.removeAt(index);
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Icon(Icons.delete_outline_rounded, size: 14, color: Colors.redAccent),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 }),
@@ -1886,22 +2466,50 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
               ),
             ),
 
-            // Botón Eliminar si se está editando
+            // Botones de acción secundaria si se está editando
             if (_isEditing) ...[
               const SizedBox(height: 8),
-              Center(
-                child: TextButton.icon(
-                  onPressed: _deleteTask,
-                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
-                  label: const Text(
-                    'Eliminar Tarea',
-                    style: TextStyle(
-                      color: Colors.redAccent,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TextButton.icon(
+                    onPressed: _duplicateTask,
+                    icon: Icon(
+                      Icons.copy_rounded,
+                      color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+                      size: 16,
+                    ),
+                    label: Text(
+                      'Duplicar Tarea',
+                      style: TextStyle(
+                        color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13.5,
+                      ),
                     ),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Text(
+                    '·',
+                    style: TextStyle(
+                      color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  TextButton.icon(
+                    onPressed: _deleteTask,
+                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 16),
+                    label: const Text(
+                      'Eliminar Tarea',
+                      style: TextStyle(
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ],
@@ -1945,7 +2553,12 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     Habit? linkedHabit;
     if (_linkedHabitId != null) {
       linkedHabit = habits.cast<Habit?>().firstWhere((h) => h?.id == _linkedHabitId, orElse: () => null);
+    } else if (widget.habitToEdit != null && _schedules.isNotEmpty) {
+      linkedHabit = widget.habitToEdit;
     }
+
+    final bool isAlreadyLinked = linkedHabit != null;
+    final habitColor = linkedHabit?.color ?? _selectedColor;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1953,15 +2566,49 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              'Vincular a un Hábito Existente',
-              style: TextStyle(
-                color: textColor?.withOpacity(0.9),
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
+            Row(
+              children: [
+                Text(
+                  'Vincular a un Hábito Existente',
+                  style: TextStyle(
+                    color: textColor?.withValues(alpha: 0.9),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (isAlreadyLinked) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      color: habitColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: habitColor.withValues(alpha: 0.35),
+                        width: 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.link_rounded, size: 11, color: habitColor),
+                        const SizedBox(width: 3),
+                        Text(
+                          'VINCULADO',
+                          style: AppTheme.monoStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: habitColor,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
             ),
-            if (linkedHabit != null)
+            if (isAlreadyLinked && widget.habitToEdit == null)
               GestureDetector(
                 onTap: () {
                   HapticFeedback.selectionClick();
@@ -1973,7 +2620,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                 child: Text(
                   'Desvincular',
                   style: TextStyle(
-                    color: Colors.redAccent.withOpacity(0.85),
+                    color: Colors.redAccent.withValues(alpha: 0.85),
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1983,13 +2630,13 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         ),
         const SizedBox(height: 3),
         Text(
-          linkedHabit != null
-              ? 'Este horario sumará automáticamente al objetivo de "${linkedHabit.name}".'
+          isAlreadyLinked
+              ? 'Este horario suma automáticamente al objetivo de "${linkedHabit.name}".'
               : 'Selecciona si este horario es una variante de un hábito existente:',
           style: TextStyle(
-            color: linkedHabit != null ? AppTheme.dynamicAccent(isDark) : textColor?.withOpacity(0.5),
+            color: isAlreadyLinked ? habitColor : textColor?.withValues(alpha: 0.5),
             fontSize: 11.5,
-            fontWeight: linkedHabit != null ? FontWeight.w600 : FontWeight.normal,
+            fontWeight: isAlreadyLinked ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
         const SizedBox(height: 8),
@@ -1998,45 +2645,43 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           physics: const BouncingScrollPhysics(),
           child: Row(
             children: [
-              // Chip: Nuevo independiente
-              GestureDetector(
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  setState(() {
-                    _linkedHabitId = null;
-                    _showInOrbit = true;
-                  });
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _linkedHabitId == null
-                        ? (isDark ? Colors.white24 : Colors.black12)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: _linkedHabitId == null
-                          ? (isDark ? Colors.white70 : Colors.black87)
-                          : (isDark ? Colors.white24 : Colors.black12),
-                      width: _linkedHabitId == null ? 1.5 : 1.0,
+              // Solo mostrar "➕ Hábito independiente" si NO está ya vinculado
+              if (!isAlreadyLinked) ...[
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      _linkedHabitId = null;
+                      _showInOrbit = true;
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white24 : Colors.black12,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark ? Colors.white70 : Colors.black87,
+                        width: 1.5,
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    '➕ Hábito independiente',
-                    style: TextStyle(
-                      color: textColor,
-                      fontSize: 11.5,
-                      fontWeight: _linkedHabitId == null ? FontWeight.bold : FontWeight.w500,
+                    child: Text(
+                      '➕ Hábito independiente',
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
+                const SizedBox(width: 8),
+              ],
 
               // Chips de hábitos existentes
               ...habits.map((h) {
-                final isSelected = _linkedHabitId == h.id;
-                final habitColor = h.color;
+                final isSelected = (linkedHabit?.id == h.id) || (_linkedHabitId == h.id);
+                final hColor = h.color;
 
                 return Padding(
                   padding: const EdgeInsets.only(right: 8.0),
@@ -2044,13 +2689,15 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                     onTap: () {
                       HapticFeedback.selectionClick();
                       setState(() {
-                        if (isSelected) {
+                        if (isSelected && widget.habitToEdit == null) {
                           _linkedHabitId = null;
                           _showInOrbit = true;
                         } else {
                           _linkedHabitId = h.id;
-                          _selectedColor = habitColor;
-                          _showInOrbit = false; // Ya está en la órbita a través de su hábito
+                          _selectedColor = hColor;
+                          if (widget.habitToEdit == null) {
+                            _showInOrbit = false; // Ya está en la órbita a través de su hábito
+                          }
                         }
                       });
                     },
@@ -2058,12 +2705,12 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: isSelected
-                            ? habitColor.withOpacity(0.2)
+                            ? hColor.withValues(alpha: 0.2)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
                           color: isSelected
-                              ? habitColor
+                              ? hColor
                               : (isDark ? Colors.white24 : Colors.black12),
                           width: isSelected ? 1.6 : 1.0,
                         ),
@@ -2075,7 +2722,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                             width: 8,
                             height: 8,
                             decoration: BoxDecoration(
-                              color: habitColor,
+                              color: hColor,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -2083,14 +2730,14 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                           Text(
                             h.name,
                             style: TextStyle(
-                              color: isSelected ? habitColor : textColor,
+                              color: isSelected ? hColor : textColor,
                               fontSize: 11.5,
                               fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                             ),
                           ),
                           if (isSelected) ...[
                             const SizedBox(width: 4),
-                            Icon(Icons.check_rounded, size: 13, color: habitColor),
+                            Icon(Icons.check_rounded, size: 13, color: hColor),
                           ],
                         ],
                       ),

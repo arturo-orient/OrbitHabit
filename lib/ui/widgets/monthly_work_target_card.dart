@@ -406,15 +406,37 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  '// TOQUE PARA CONFIGURAR',
-                  style: AppTheme.monoStyle(
-                    fontSize: 9,
-                    color: isDark
-                        ? AppTheme.obsidianTextMuted
-                        : AppTheme.boneTextMuted,
+                if (shifts.isNotEmpty)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'EXTRA: ',
+                        style: AppTheme.monoStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: isDark
+                              ? AppTheme.obsidianTextMuted
+                              : AppTheme.boneTextMuted,
+                        ),
+                      ),
+                      _buildQuickHourBtn(shifts.first.id, -1.0, '-1h', isDark),
+                      const SizedBox(width: 4),
+                      _buildQuickHourBtn(shifts.first.id, 1.0, '+1h', isDark),
+                      const SizedBox(width: 4),
+                      _buildQuickHourBtn(shifts.first.id, 2.0, '+2h', isDark),
+                    ],
+                  )
+                else
+                  Text(
+                    '// TOQUE PARA CONFIGURAR',
+                    style: AppTheme.monoStyle(
+                      fontSize: 9,
+                      color: isDark
+                          ? AppTheme.obsidianTextMuted
+                          : AppTheme.boneTextMuted,
+                    ),
                   ),
-                ),
                 if (isCurrentMonthSelected && todayShift != null)
                   GestureDetector(
                     onTap: () {
@@ -535,7 +557,60 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
               ),
             ],
           ),
+          if (widget.onEditShift != null) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                widget.onEditShift!(s);
+              },
+              child: Container(
+                padding: const EdgeInsets.all(4.5),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white.withValues(alpha: 0.07) : Colors.black.withValues(alpha: 0.05),
+                  borderRadius: AppTheme.radiusXs,
+                  border: Border.all(
+                    color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                    width: AppTheme.borderPrecision,
+                  ),
+                ),
+                child: Icon(
+                  Icons.edit_outlined,
+                  size: 13,
+                  color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+                ),
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildQuickHourBtn(String blockId, double delta, String label, bool isDark) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        ref.read(scheduleProvider.notifier).addExtraHours(blockId, delta, widget.currentMonth);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+        decoration: BoxDecoration(
+          color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.05),
+          borderRadius: AppTheme.radiusXs,
+          border: Border.all(
+            color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+            width: AppTheme.borderPrecision,
+          ),
+        ),
+        child: Text(
+          label,
+          style: AppTheme.monoStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            color: delta > 0 ? (isDark ? Colors.white70 : Colors.black87) : Colors.redAccent,
+          ),
+        ),
       ),
     );
   }

@@ -140,6 +140,360 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     );
   }
 
+  void _showReorderHabitsSheet() {
+    HapticFeedback.selectionClick();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Consumer(
+          builder: (context, ref, _) {
+            final habits = ref.watch(habitsProvider);
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.72,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border.all(
+                  color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                  width: AppTheme.borderPrecision,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : Colors.black12,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.swap_vert_rounded, size: 20, color: AppTheme.dynamicAccent(isDark)),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Reordenar Hábitos',
+                            style: AppTheme.displayStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      GestureDetector(
+                        onTap: () => Navigator.pop(ctx),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: AppTheme.dynamicAccent(isDark).withValues(alpha: 0.15),
+                            borderRadius: AppTheme.radiusXs,
+                            border: Border.all(
+                              color: AppTheme.dynamicAccent(isDark).withValues(alpha: 0.35),
+                              width: AppTheme.borderPrecision,
+                            ),
+                          ),
+                          child: Text(
+                            'Listo',
+                            style: AppTheme.monoStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.dynamicAccent(isDark),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Mantén pulsado y arrastra cualquier hábito para cambiar su posición en la lista.',
+                    style: AppTheme.bodyStyle(
+                      fontSize: 12,
+                      color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: Theme(
+                      data: Theme.of(context).copyWith(
+                        canvasColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                      ),
+                      child: ReorderableListView.builder(
+                        physics: const BouncingScrollPhysics(),
+                        buildDefaultDragHandles: false,
+                        itemCount: habits.length,
+                        onReorder: (oldIndex, newIndex) {
+                          HapticFeedback.selectionClick();
+                          ref.read(habitsProvider.notifier).reorderHabits(oldIndex, newIndex);
+                        },
+                        proxyDecorator: (child, index, animation) {
+                          return Material(
+                            color: Colors.transparent,
+                            elevation: 0,
+                            child: child,
+                          );
+                        },
+                        itemBuilder: (context, index) {
+                          final h = habits[index];
+                          return Container(
+                            key: ValueKey(h.id),
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+                              borderRadius: AppTheme.radiusSm,
+                              border: Border.all(
+                                color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                                width: AppTheme.borderPrecision,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                ReorderableDragStartListener(
+                                  index: index,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(right: 12),
+                                    child: Icon(
+                                      Icons.drag_indicator_rounded,
+                                      size: 18,
+                                      color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: h.color,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    h.name,
+                                    style: AppTheme.bodyStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  h.hasMonthlyTarget ? '${h.targetDays} días' : '${h.subTasks.length} subtareas',
+                                  style: AppTheme.monoStyle(
+                                    fontSize: 11,
+                                    color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showReorderBlocksSheet() {
+    HapticFeedback.selectionClick();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Consumer(
+          builder: (context, ref, _) {
+            final allBlocks = ref.watch(scheduleProvider);
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.72,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border.all(
+                  color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                  width: AppTheme.borderPrecision,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : Colors.black12,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.swap_vert_rounded, size: 20, color: AppTheme.dynamicAccent(isDark)),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Reordenar Horarios 24h',
+                            style: AppTheme.displayStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      GestureDetector(
+                        onTap: () => Navigator.pop(ctx),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: AppTheme.dynamicAccent(isDark).withValues(alpha: 0.15),
+                            borderRadius: AppTheme.radiusXs,
+                            border: Border.all(
+                              color: AppTheme.dynamicAccent(isDark).withValues(alpha: 0.35),
+                              width: AppTheme.borderPrecision,
+                            ),
+                          ),
+                          child: Text(
+                            'Listo',
+                            style: AppTheme.monoStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.dynamicAccent(isDark),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Arrastra para cambiar el orden de tus bloques en el reloj y en la lista diaria.',
+                    style: AppTheme.bodyStyle(
+                      fontSize: 12,
+                      color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: Theme(
+                      data: Theme.of(context).copyWith(
+                        canvasColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                      ),
+                      child: ReorderableListView.builder(
+                        physics: const BouncingScrollPhysics(),
+                        buildDefaultDragHandles: false,
+                        itemCount: allBlocks.length,
+                        onReorder: (oldIndex, newIndex) {
+                          HapticFeedback.selectionClick();
+                          ref.read(scheduleProvider.notifier).reorderBlocks(oldIndex, newIndex);
+                        },
+                        proxyDecorator: (child, index, animation) {
+                          return Material(
+                            color: Colors.transparent,
+                            elevation: 0,
+                            child: child,
+                          );
+                        },
+                        itemBuilder: (context, index) {
+                          final b = allBlocks[index];
+                          return Container(
+                            key: ValueKey(b.id),
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+                              borderRadius: AppTheme.radiusSm,
+                              border: Border.all(
+                                color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                                width: AppTheme.borderPrecision,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                ReorderableDragStartListener(
+                                  index: index,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(right: 12),
+                                    child: Icon(
+                                      Icons.drag_indicator_rounded,
+                                      size: 18,
+                                      color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: b.color,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    b.title,
+                                    style: AppTheme.bodyStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  '${b.startHour.toString().padLeft(2, '0')}:${b.startMinute.toString().padLeft(2, '0')} - ${b.endHour.toString().padLeft(2, '0')}:${b.endMinute.toString().padLeft(2, '0')}',
+                                  style: AppTheme.monoStyle(
+                                    fontSize: 11,
+                                    color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   String _getTodayDateLabel() {
     final now = DateTime.now();
     const dayNames = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -210,6 +564,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     final scheduleBlocks = ref.watch(scheduleProvider);
     final showConfetti = ref.watch(confettiStateProvider);
     final monthName = _getMonthName(_currentMonth.month);
+
+    final heavyDutyShield = StreakUtils.computeHeavyDutyShieldDates(scheduleBlocks);
+    final effectiveVacationDates = {...settings.vacationDates, ...heavyDutyShield}.toList();
 
     final now = DateTime.now();
     final yesterday = now.subtract(const Duration(days: 1));
@@ -575,9 +932,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                     ),
                   ),
 
-                // VISTA 0: ÓRBITA MENSUAL CLÁSICA
-                if (_selectedView == 0) ...[
-                  // Barra de Estado del Mes (Instrumento)
+                // Transición Dimensional Suiza entre Modo Órbita (Rueda Mensual) y Reloj 24h
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 280),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    layoutBuilder: (currentChild, previousChildren) {
+                      return Stack(
+                        fit: StackFit.expand,
+                        alignment: Alignment.topCenter,
+                        children: [
+                          ...previousChildren,
+                          if (currentChild != null) currentChild,
+                        ],
+                      );
+                    },
+                    transitionBuilder: (child, animation) {
+                      return FadeTransition(
+                        opacity: CurvedAnimation(
+                          parent: animation,
+                          curve: const Interval(0.15, 1.0, curve: Curves.easeOutCubic),
+                        ),
+                        child: ScaleTransition(
+                          scale: Tween<double>(begin: 0.965, end: 1.0).animate(
+                            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+                          ),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: _selectedView == 0
+                        ? Column(
+                            key: const ValueKey<int>(0),
+                            children: [
+                              // Barra de Estado del Mes (Instrumento)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
                     child: Row(
@@ -697,6 +1086,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                             color: AppTheme.dynamicAccent(isDark),
                           ),
                         ),
+                        if (habits.length > 1) ...[
+                          const SizedBox(width: 10),
+                          GestureDetector(
+                            onTap: _showReorderHabitsSheet,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                              decoration: BoxDecoration(
+                                color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
+                                borderRadius: AppTheme.radiusXs,
+                                border: Border.all(
+                                  color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                                  width: AppTheme.borderPrecision,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.swap_vert_rounded, size: 13, color: AppTheme.dynamicAccent(isDark)),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'REORDENAR',
+                                    style: AppTheme.monoStyle(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -720,6 +1141,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                                     group: group,
                                     currentMonth: _currentMonth,
                                     onTap: () => _editScheduleGroup(group),
+                                    onEditShift: (shift) => _editScheduleBlock(shift),
                                   ),
                                 );
                               }
@@ -732,7 +1154,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                                   ? (completedThisMonth / habit.targetDays * 100).clamp(0, 100).toInt()
                                   : null;
                               
-                              final streak = StreakUtils.calculateCurrentStreak(habit, settings.vacationDates);
+                              final streak = StreakUtils.calculateCurrentStreak(habit, effectiveVacationDates);
 
                               // Telemetría de los 7 días de la semana en curso (Lunes a Domingo)
                               final now = DateTime.now();
@@ -759,6 +1181,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                                     ref.read(habitsProvider.notifier).toggleDay(habit.id, todayIso);
                                   },
                                   onTap: () => _editHabit(habit),
+                                  subTasks: habit.subTasks,
+                                  todayIso: todayIso,
+                                  onToggleSubTask: (st) {
+                                    HapticFeedback.selectionClick();
+                                    SoundService().playCheck();
+                                    ref.read(habitsProvider.notifier).toggleSubTask(habit.id, st.id, todayIso);
+                                  },
                                 ),
                               );
                             },
@@ -807,7 +1236,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                       ),
                     ),
                   ),
-                ] else ...[
+                ],
+              )
+            : Column(
+                key: const ValueKey<int>(1),
+                children: [
                   // VISTA 1: RELOJ ORBITAL 24H (HORARIO / RUTINA)
                   // Barra Superior del Reloj 24h: Fecha + Botón Planificador de Turnos
                   Padding(
@@ -904,6 +1337,72 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                           ),
                         ),
                       ),
+                    ),
+                  ),
+
+                  // Separador de Sección Técnico para 24h
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 6),
+                    child: Row(
+                      children: [
+                        Text(
+                          'HOY // BLOQUES 24H',
+                          style: AppTheme.monoStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.4,
+                            color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          '[${todayBlocks.length.toString().padLeft(2, '0')}]',
+                          style: AppTheme.monoStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.dynamicAccent(isDark),
+                          ),
+                        ),
+                        if (scheduleBlocks.length > 1) ...[
+                          const SizedBox(width: 10),
+                          GestureDetector(
+                            onTap: _showReorderBlocksSheet,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                              decoration: BoxDecoration(
+                                color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
+                                borderRadius: AppTheme.radiusXs,
+                                border: Border.all(
+                                  color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                                  width: AppTheme.borderPrecision,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.swap_vert_rounded, size: 13, color: AppTheme.dynamicAccent(isDark)),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'REORDENAR',
+                                    style: AppTheme.monoStyle(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
 
@@ -1005,10 +1504,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                     ),
                   ),
                 ],
-              ],
+              ),
             ),
           ),
-        ),
+        ],
+      ),
+    ),
+  ),
         if (showConfetti)
           Positioned.fill(
             child: ConfettiOverlay(
@@ -1386,7 +1888,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
           setState(() {
             _selectedView = index;
           });
-          _replayEntrance();
         }
       },
       child: AnimatedContainer(

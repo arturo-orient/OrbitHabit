@@ -154,6 +154,9 @@ class ScheduleBlock {
     return 0.0;
   }
 
+  /// Alias for getExtraHoursForMonth
+  double getMonthlyExtraHours(DateTime month) => getExtraHoursForMonth(month);
+
   /// Calculate total worked hours in a specific month (strictly completed or past dates)
   double getMonthlyWorkedHours(DateTime month, [Habit? linkedHabit]) {
     final prefix = '${month.year}-${month.month.toString().padLeft(2, '0')}';

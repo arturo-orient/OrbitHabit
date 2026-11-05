@@ -44,6 +44,33 @@
   <em>04. Creador Unificado &nbsp;·&nbsp; 05. Selector Cromático HSV/HEX &nbsp;·&nbsp; 06. Telemetría y Rachas &nbsp;·&nbsp; 07. Ajustes Zen</em>
 </p>
 
+#### 🚀 What's New in v1.2.6 (Subtasks Checklist System, Multi-Task Calendar, Heavy Duty Shield & Precision Duplication)
+OrbitHabit v1.2.6 introduces a complete subtasks ecosystem, multi-task calendar support, marathon shift streak shielding, in-situ reordering, and fluid dimensional navigation:
+
+* 📝 **Full Subtasks Checklist Ecosystem (`SubTask` & `HabitProgressCard`)**:
+  * **Interactive Inline Checklist**: Expandable checklist within each habit card with real-time feedback `SUBTAREAS (X/Y)`. Marking all subtasks automatically checks off the parent habit with celebratory feedback.
+  * **Micro-Segmented Visual Meter**: High-precision segmented progress bar that dynamically illuminates segment-by-segment in the habit's exact color as subtasks are completed.
+  * **Drag & Drop Reordering**: Reorder subtasks effortlessly in the task sheet via technical drag handles with haptic feedback and instant index synchronization.
+  * **In-Situ Edit & Delete**: Modify titles or delete subtasks individually with independent IDs without affecting parent habit properties.
+* ⎘ **1-Touch Task Duplication with Confirmation**:
+  * Added **`[ ⎘ Duplicar ]`** button with safety confirmation dialog in `UnifiedTaskSheet`.
+  * Instantly clones complex routines, subtasks, color palette, and schedules with fresh IDs and clean progress tracking.
+* ⇅ **In-Place Reorder Sheets (Orbit Mode & 24H Clock)**:
+  * Integrated **`[ ⇅ REORDENAR ]`** controls directly in section headers (`REGISTRO // HÁBITOS` and `HOY // BLOQUES 24H`).
+  * Dedicated Swiss Bento modal sheets featuring `ReorderableListView` with real-time persistence to Hive and reactive UI updates.
+* 📅 **Multi-Task Calendar & Drag-to-Paint (`ShiftCalendarScreen`)**:
+  * **Multi-Task Day Cell Architecture**: Assign 2 or more shifts/tasks to the same calendar day without overwriting. Rendered with geometric Swiss chromatic dots and dual pill rows.
+  * **Continuous Drag-to-Paint**: Drag your finger across calendar days to paint or erase shifts effortlessly with selection haptics.
+  * **Day Inspector on Long Press**: Inspect all tasks for any day with quick overtime modifiers (`[-1h]`, `[+1h]`, `[+2h]`) and 1-tap shift block editing.
+* 🛡️ **Heavy Duty Streak Shield (`StreakUtils.computeHeavyDutyShieldDates`)**:
+  * Days with demanding marathon work shifts ($\ge 12$ hours total, e.g. 12h/16h/24h hospital or emergency guards) automatically shield secondary habit streaks against breaks.
+* 🖼️ **Poster PNG Customization & Clean Layouts (`SchedulePosterService`)**:
+  * Selective block filtering (`includedBlockIds`) and toggleable telemetry footer (`showTelemetryFooter`) eliminating empty gaps in exported posters.
+* 🔗 **Automatic Linked Habit Indicator (`UnifiedTaskSheet`)**:
+  * Automatically detects and displays **`[ 🔗 VINCULADO ]`** badge when schedules are linked to a habit, hiding the redundant independent habit option.
+* 🌀 **Dimensional Morph Transition between Orbit & 24H Clock (`HomeScreen`)**:
+  * Replaced instant cuts with a smooth cubic morph transition (`AnimatedSwitcher` with micro-scale `0.965 → 1.0` and cross-fade) between the Monthly Orbit Wheel and the 24H Clock Dial.
+
 #### 🚀 What's New in v1.2.5 (Smart Overnight 24H Clock Dial & Zero-False-Hours Precision)
 OrbitHabit v1.2.5 solves the overnight shift circular visualization and strictly enforces uncompleted day rules:
 

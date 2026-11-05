@@ -1,4 +1,5 @@
 import '../domain/models/habit.dart';
+import '../domain/models/schedule_block.dart';
 
 class StreakUtils {
   /// Devuelve el número de ISO week para una fecha dada (Lunes = 1)
@@ -42,6 +43,35 @@ class StreakUtils {
       }
     }
     return count;
+  }
+
+  /// Devuelve el conjunto de fechas ISO (YYYY-MM-DD) donde la suma de horas de turnos
+  /// asignados o completados alcanza o supera [thresholdHours] (por defecto 12.0h).
+  /// En estas fechas, los hábitos personales gozan del "Escudo de Guardia Pesada",
+  /// evitando que una jornada laboral maratoniana o doble turno rompa injustamente su racha.
+  static Set<String> computeHeavyDutyShieldDates(
+    List<ScheduleBlock> blocks, {
+    double thresholdHours = 12.0,
+  }) {
+    if (blocks.isEmpty) return const {};
+
+    final Map<String, double> hoursPerDate = {};
+    for (final block in blocks) {
+      final double hours = block.durationInMinutes / 60.0;
+      final dates = {...block.assignedDates, ...block.completedDates};
+      for (final date in dates) {
+        hoursPerDate[date] = (hoursPerDate[date] ?? 0.0) + hours;
+      }
+    }
+
+    final shieldDates = <String>{};
+    hoursPerDate.forEach((date, totalHours) {
+      if (totalHours >= thresholdHours) {
+        shieldDates.add(date);
+      }
+    });
+
+    return shieldDates;
   }
 
   static int calculateCurrentStreak(Habit habit, [List<String> pausedDates = const []]) {

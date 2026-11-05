@@ -130,6 +130,53 @@ class HabitNotifier extends Notifier<List<Habit>> {
     }
   }
 
+  /// Alterna el estado de una subtarea para una fecha dada (YYYY-MM-DD).
+  /// Si todas las subtareas se completan, marca automáticamente el hábito como completado.
+  Future<void> toggleSubTask(String habitId, String subTaskId, String dateIso) async {
+    final habitIndex = state.indexWhere((h) => h.id == habitId);
+    if (habitIndex == -1) return;
+
+    final habit = state[habitIndex];
+    final updatedSubTasks = habit.subTasks.map((st) {
+      if (st.id == subTaskId) {
+        final newDates = Set<String>.from(st.completedDates);
+        if (newDates.contains(dateIso)) {
+          newDates.remove(dateIso);
+        } else {
+          newDates.add(dateIso);
+        }
+        return st.copyWith(completedDates: newDates);
+      }
+      return st;
+    }).toList();
+
+    // Comprobar si todas las subtareas están completadas para hoy
+    final allCompleted = updatedSubTasks.isNotEmpty &&
+        updatedSubTasks.every((st) => st.isCompletedOn(dateIso));
+
+    final newCompletedDates = Set<String>.from(habit.completedDates);
+    if (allCompleted) {
+      newCompletedDates.add(dateIso);
+    } else {
+      if (habit.subTasks.isNotEmpty) {
+        newCompletedDates.remove(dateIso);
+      }
+    }
+
+    final updatedHabit = habit.copyWith(
+      subTasks: updatedSubTasks,
+      completedDates: newCompletedDates,
+    );
+
+    await updateHabit(updatedHabit);
+
+    if (allCompleted != habit.completedDates.contains(dateIso)) {
+      try {
+        await ref.read(scheduleProvider.notifier).syncDateWithHabit(habitId, dateIso, allCompleted);
+      } catch (_) {}
+    }
+  }
+
   /// Unifica hábitos duplicados de turnos de trabajo bajo un solo hábito madre
   Future<void> consolidateWorkHabits(List<dynamic> rawBlocks) async {
     final habits = List<Habit>.from(state);

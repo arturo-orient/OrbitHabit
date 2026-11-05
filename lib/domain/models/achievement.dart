@@ -31,6 +31,12 @@ class Achievement {
     // 1. Calculate general statistics
     final int habitsCount = habits.length;
     
+    // Escudo de Guardia Pesada: proteger rachas de hábitos en días con jornadas >= 12h
+    final heavyShieldDates = scheduleBlocks.isNotEmpty
+        ? StreakUtils.computeHeavyDutyShieldDates(scheduleBlocks)
+        : const <String>{};
+    final effectiveVacationDates = {...vacationDates, ...heavyShieldDates}.toList();
+    
     int maxStreakAcrossAll = 0;
     int totalCompletions = 0;
     final Map<String, int> dailyCompletionsCount = {};
@@ -53,7 +59,7 @@ class Achievement {
     for (final habit in habits) {
       uniqueColors.add(habit.color.value);
       
-      final maxStreak = StreakUtils.calculateMaxStreak(habit, vacationDates);
+      final maxStreak = StreakUtils.calculateMaxStreak(habit, effectiveVacationDates);
       if (maxStreak > maxStreakAcrossAll) {
         maxStreakAcrossAll = maxStreak;
       }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../domain/models/habit.dart';
 import '../theme/app_theme.dart';
 
 /// Tarjeta de progreso de hábito con estándar Neo-Bento, física táctil elástica,
@@ -13,6 +14,9 @@ class HabitProgressCard extends StatefulWidget {
   final VoidCallback? onTap;
   final bool isCompletedToday;
   final VoidCallback? onToggleToday;
+  final List<SubTask>? subTasks;
+  final String? todayIso;
+  final Function(SubTask subTask)? onToggleSubTask;
 
   const HabitProgressCard({
     Key? key,
@@ -24,6 +28,9 @@ class HabitProgressCard extends StatefulWidget {
     this.onTap,
     this.isCompletedToday = false,
     this.onToggleToday,
+    this.subTasks,
+    this.todayIso,
+    this.onToggleSubTask,
   }) : super(key: key);
 
   @override
@@ -32,6 +39,7 @@ class HabitProgressCard extends StatefulWidget {
 
 class _HabitProgressCardState extends State<HabitProgressCard> with SingleTickerProviderStateMixin {
   bool _isPressed = false;
+  bool _isExpanded = false;
 
   // Niveles cromáticos técnicos para las rachas
   Color? _getStreakBadgeColor(bool isDark) {
@@ -134,8 +142,11 @@ class _HabitProgressCardState extends State<HabitProgressCard> with SingleTicker
                     ? widget.color.withValues(alpha: 0.25)
                     : null),
           ),
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
+              Row(
+                children: [
               // Interruptor Táctico Quick-Check (Direct Toggle)
               GestureDetector(
                 onTap: () {
@@ -259,8 +270,124 @@ class _HabitProgressCardState extends State<HabitProgressCard> with SingleTicker
               _buildWeeklyTelemetry(isDark),
             ],
           ),
-        ),
+          if (widget.subTasks != null && widget.subTasks!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Divider(
+              height: 1,
+              color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+            ),
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                setState(() => _isExpanded = !_isExpanded);
+              },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                            size: 15,
+                            color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'SUBTAREAS (${widget.todayIso != null ? widget.subTasks!.where((s) => s.isCompletedOn(widget.todayIso!)).length : 0}/${widget.subTasks!.length})',
+                            style: AppTheme.monoStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        _isExpanded ? 'Ocultar' : 'Ver subtareas',
+                        style: AppTheme.monoStyle(
+                          fontSize: 9,
+                          color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  // Micro-barra de progreso segmentada de alta precisión suiza
+                  Row(
+                    children: widget.subTasks!.map((st) {
+                      final isDone = widget.todayIso != null && st.isCompletedOn(widget.todayIso!);
+                      return Expanded(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          height: 2.2,
+                          margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                          decoration: BoxDecoration(
+                            color: isDone
+                                ? widget.color
+                                : (isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08)),
+                            borderRadius: BorderRadius.circular(1),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+            AnimatedCrossFade(
+              firstChild: const SizedBox.shrink(),
+              secondChild: Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Column(
+                  children: [
+                    ...widget.subTasks!.map((st) {
+                      final isDone = widget.todayIso != null && st.isCompletedOn(widget.todayIso!);
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3.5),
+                        child: GestureDetector(
+                          onTap: () => widget.onToggleSubTask?.call(st),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isDone ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                                size: 15,
+                                color: isDone ? widget.color : (isDark ? Colors.white38 : Colors.black38),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  st.title,
+                                  style: AppTheme.bodyStyle(
+                                    fontSize: 12.5,
+                                    color: isDone
+                                        ? (isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted)
+                                        : (isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary),
+                                  ).copyWith(
+                                    decoration: isDone ? TextDecoration.lineThrough : null,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+              crossFadeState: _isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 180),
+            ),
+          ],
+        ],
       ),
-    );
+    ),
+  ),
+);
   }
 }

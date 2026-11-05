@@ -15,6 +15,7 @@ import 'package:orbithabit/domain/models/schedule_block.dart';
 import 'package:orbithabit/utils/streak_utils.dart';
 import 'package:orbithabit/data/database_service.dart';
 import 'package:orbithabit/providers/habit_provider.dart';
+import 'package:orbithabit/providers/schedule_provider.dart';
 import 'package:orbithabit/domain/models/user_settings.dart';
 import 'package:orbithabit/services/backup_service.dart';
 import 'package:orbithabit/services/schedule_poster_service.dart';
@@ -508,6 +509,343 @@ void main() {
 
       expect(savedPath, isNotNull);
       expect(savedPath, contains('orbit_test_poster.png'));
+    });
+
+    test('toggleShiftOnDate supports multiple tasks on the same date without overwriting', () async {
+      final fakeDb = FakeDatabaseService();
+      final container = ProviderContainer(
+        overrides: [databaseProvider.overrideWithValue(fakeDb)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(scheduleProvider.notifier);
+      final block1 = ScheduleBlock(
+        id: 'block_morning',
+        title: 'Mañana',
+        startHour: 7,
+        startMinute: 0,
+        endHour: 15,
+        endMinute: 0,
+        colorValue: 0xFF84A59D,
+        daysOfWeek: [1, 2, 3, 4, 5],
+      );
+      final block2 = ScheduleBlock(
+        id: 'block_evening',
+        title: 'Tarde',
+        startHour: 15,
+        startMinute: 0,
+        endHour: 23,
+        endMinute: 0,
+        colorValue: 0xFFF28482,
+        daysOfWeek: [1, 2, 3, 4, 5],
+      );
+
+      await notifier.replaceAllBlocks([block1, block2]);
+
+      const dateIso = '2026-11-10';
+      // Toggle date on block 1
+      await notifier.toggleShiftOnDate(block1.id, dateIso);
+      var state = container.read(scheduleProvider);
+      expect(state.firstWhere((b) => b.id == block1.id).assignedDates, contains(dateIso));
+
+      // Toggle date on block 2 -> both must have dateIso!
+      await notifier.toggleShiftOnDate(block2.id, dateIso);
+      state = container.read(scheduleProvider);
+      expect(state.firstWhere((b) => b.id == block1.id).assignedDates, contains(dateIso));
+      expect(state.firstWhere((b) => b.id == block2.id).assignedDates, contains(dateIso));
+
+      // Toggling block 1 again removes dateIso only from block 1
+      await notifier.toggleShiftOnDate(block1.id, dateIso);
+      state = container.read(scheduleProvider);
+      expect(state.firstWhere((b) => b.id == block1.id).assignedDates, isNot(contains(dateIso)));
+      expect(state.firstWhere((b) => b.id == block2.id).assignedDates, contains(dateIso));
+    });
+
+    test('SchedulePosterService.renderMonthlyPosterPng generates valid PNG applying includedBlockIds and showTelemetryFooter', () async {
+      final block1 = ScheduleBlock(
+        id: 'b1',
+        title: 'Mañana',
+        startHour: 8,
+        startMinute: 0,
+        endHour: 16,
+        endMinute: 0,
+        colorValue: 0xFF84A59D,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        assignedDates: ['2026-11-05'],
+      );
+      final block2 = ScheduleBlock(
+        id: 'b2',
+        title: 'Noche',
+        startHour: 23,
+        startMinute: 0,
+        endHour: 7,
+        endMinute: 0,
+        colorValue: 0xFF9EA1D4,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        assignedDates: ['2026-11-05'],
+      );
+
+      // Only include block1, no footer
+      final bytesOnlyB1 = await SchedulePosterService.renderMonthlyPosterPng(
+        month: DateTime(2026, 11),
+        blocks: [block1, block2],
+        userName: 'Arturo',
+        isDark: true,
+        includedBlockIds: {'b1'},
+        showTelemetryFooter: false,
+      );
+
+      expect(bytesOnlyB1, isNotEmpty);
+      expect(bytesOnlyB1[0], 0x89);
+      expect(bytesOnlyB1[1], 0x50);
+      expect(bytesOnlyB1[2], 0x4E);
+      expect(bytesOnlyB1[3], 0x47);
+
+      // Full poster with both blocks and footer
+      final bytesFull = await SchedulePosterService.renderMonthlyPosterPng(
+        month: DateTime(2026, 11),
+        blocks: [block1, block2],
+        userName: 'Arturo',
+        isDark: false,
+        showTelemetryFooter: true,
+      );
+
+      expect(bytesFull, isNotEmpty);
+      expect(bytesFull[0], 0x89);
+    });
+
+    test('computeHeavyDutyShieldDates detects shifts >= 12h and protects secondary habit streaks', () {
+      // 1. Guardias y turnos:
+      // - 2026-11-01: 8h shift (under 12h threshold) -> NO shield
+      // - 2026-11-02: 12h marathon shift -> SHIELD
+      // - 2026-11-03: Two 8h shifts = 16h total -> SHIELD
+      const regularShift = ScheduleBlock(
+        id: 's_8h',
+        title: 'Turno 8h',
+        startHour: 8,
+        startMinute: 0,
+        endHour: 16,
+        endMinute: 0,
+        colorValue: 0xFF84A59D,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        assignedDates: ['2026-11-01', '2026-11-03'],
+      );
+      const marathonShift = ScheduleBlock(
+        id: 's_12h',
+        title: 'Guardia 12h',
+        startHour: 8,
+        startMinute: 0,
+        endHour: 20,
+        endMinute: 0,
+        colorValue: 0xFFF28482,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        assignedDates: ['2026-11-02'],
+      );
+      const extraShift = ScheduleBlock(
+        id: 's_extra_8h',
+        title: 'Refuerzo 8h',
+        startHour: 16,
+        startMinute: 0,
+        endHour: 24,
+        endMinute: 0,
+        colorValue: 0xFF9EA1D4,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        assignedDates: ['2026-11-03'],
+      );
+
+      final blocks = [regularShift, marathonShift, extraShift];
+      final shieldDates = StreakUtils.computeHeavyDutyShieldDates(blocks);
+
+      expect(shieldDates.contains('2026-11-01'), isFalse);
+      expect(shieldDates.contains('2026-11-02'), isTrue);
+      expect(shieldDates.contains('2026-11-03'), isTrue);
+
+      final habit = Habit(
+        id: 'read_book',
+        name: 'Leer 20 páginas',
+        colorValue: 0xFF84A59D,
+        targetDays: 21,
+        orderIndex: 0,
+        activeWeekdays: [1, 2, 3, 4, 5, 6, 7],
+        completedDates: {'2026-11-01'},
+      );
+
+      final streakWithShield = StreakUtils.calculateMaxStreak(habit, shieldDates.toList());
+      expect(streakWithShield, 1);
+    });
+
+    test('ScheduleNotifier deletes sub-task/shift block permanently while preserving sibling shifts', () async {
+      final fakeDb = FakeDatabaseService();
+      final container = ProviderContainer(
+        overrides: [databaseProvider.overrideWithValue(fakeDb)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(scheduleProvider.notifier);
+      const parentHabitId = 'work_hospital';
+
+      const shiftA = ScheduleBlock(
+        id: 'shift_a',
+        title: 'Mañana',
+        startHour: 7,
+        startMinute: 0,
+        endHour: 15,
+        endMinute: 0,
+        colorValue: 0xFFF28482,
+        habitId: parentHabitId,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        assignedDates: ['2026-11-01'],
+      );
+      const shiftB = ScheduleBlock(
+        id: 'shift_b',
+        title: 'Noche',
+        startHour: 23,
+        startMinute: 0,
+        endHour: 7,
+        endMinute: 0,
+        colorValue: 0xFF84A59D,
+        habitId: parentHabitId,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        assignedDates: ['2026-11-01'],
+      );
+
+      await notifier.replaceAllBlocks([shiftA, shiftB]);
+      expect(container.read(scheduleProvider).length, 2);
+
+      // Eliminamos la subtarea B
+      await notifier.deleteBlock(shiftB.id);
+
+      final remaining = container.read(scheduleProvider);
+      expect(remaining.length, 1);
+      expect(remaining.first.id, 'shift_a');
+      expect(remaining.any((b) => b.id == 'shift_b'), isFalse);
+    });
+
+    test('Habit SubTasks checklist toggles and automatically marks parent habit complete when all done', () async {
+      final fakeDb = FakeDatabaseService();
+      final container = ProviderContainer(
+        overrides: [databaseProvider.overrideWithValue(fakeDb)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(habitsProvider.notifier);
+      const dateIso = '2026-11-05';
+
+      final habit = Habit(
+        id: 'gym_routine',
+        name: 'Gimnasio',
+        colorValue: 0xFF84A59D,
+        targetDays: 20,
+        orderIndex: 0,
+        subTasks: const [
+          SubTask(id: 'st_warmup', title: 'Calentamiento 10m'),
+          SubTask(id: 'st_bench', title: 'Press banca'),
+        ],
+      );
+
+      await notifier.addHabit(habit);
+      expect(container.read(habitsProvider).first.completedDates.contains(dateIso), isFalse);
+
+      // 1. Completar primera subtarea
+      await notifier.toggleSubTask('gym_routine', 'st_warmup', dateIso);
+      var currentHabit = container.read(habitsProvider).first;
+      expect(currentHabit.subTasks.first.isCompletedOn(dateIso), isTrue);
+      expect(currentHabit.subTasks.last.isCompletedOn(dateIso), isFalse);
+      expect(currentHabit.completedDates.contains(dateIso), isFalse);
+
+      // 2. Completar segunda subtarea -> ¡Hábito principal completado automáticamente!
+      await notifier.toggleSubTask('gym_routine', 'st_bench', dateIso);
+      currentHabit = container.read(habitsProvider).first;
+      expect(currentHabit.subTasks.every((st) => st.isCompletedOn(dateIso)), isTrue);
+      expect(currentHabit.completedDates.contains(dateIso), isTrue);
+
+      // 3. Desmarcar una subtarea -> Hábito principal pasa a incompleto
+      await notifier.toggleSubTask('gym_routine', 'st_warmup', dateIso);
+      currentHabit = container.read(habitsProvider).first;
+      expect(currentHabit.completedDates.contains(dateIso), isFalse);
+    });
+
+    test('SubTask reordering correctly assigns orderIndex and preserves task properties', () {
+      final subTasks = [
+        const SubTask(id: 'st_1', title: 'Paso 1', orderIndex: 0),
+        const SubTask(id: 'st_2', title: 'Paso 2', orderIndex: 1),
+        const SubTask(id: 'st_3', title: 'Paso 3', orderIndex: 2),
+      ];
+
+      // Simulate moving st_3 (index 2) to top (index 0)
+      final reordered = List<SubTask>.from(subTasks);
+      final item = reordered.removeAt(2);
+      reordered.insert(0, item);
+
+      for (int i = 0; i < reordered.length; i++) {
+        reordered[i] = reordered[i].copyWith(orderIndex: i);
+      }
+
+      expect(reordered[0].title, 'Paso 3');
+      expect(reordered[0].orderIndex, 0);
+      expect(reordered[1].title, 'Paso 1');
+      expect(reordered[1].orderIndex, 1);
+      expect(reordered[2].title, 'Paso 2');
+      expect(reordered[2].orderIndex, 2);
+    });
+
+    test('Cloning/duplicating habit produces fresh habit with clean progress and cloned subtasks', () async {
+      final fakeDb = FakeDatabaseService();
+      final container = ProviderContainer(
+        overrides: [databaseProvider.overrideWithValue(fakeDb)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(habitsProvider.notifier);
+      final original = Habit(
+        id: 'habit_original',
+        name: 'Rutina Foco',
+        colorValue: 0xFF10B981,
+        targetDays: 25,
+        orderIndex: 0,
+        completedDates: {'2026-11-01', '2026-11-02'},
+        subTasks: const [
+          SubTask(id: 'st_a', title: 'Revisar notas', completedDates: {'2026-11-01'}),
+          SubTask(id: 'st_b', title: 'Ejecutar bloque 45m', completedDates: {'2026-11-01'}),
+        ],
+      );
+
+      await notifier.addHabit(original);
+
+      // Duplicate logic
+      final duplicatedTitle = '${original.name} (Copia)';
+      final duplicatedSubTasks = original.subTasks.asMap().entries.map((entry) {
+        return SubTask(
+          id: 'subtask_clone_${entry.key}',
+          title: entry.value.title,
+          completedDates: const {},
+          orderIndex: entry.key,
+        );
+      }).toList();
+
+      final duplicatedHabit = Habit(
+        id: 'habit_clone',
+        name: duplicatedTitle,
+        colorValue: original.colorValue,
+        targetDays: original.targetDays,
+        orderIndex: 1,
+        completedDates: const {},
+        subTasks: duplicatedSubTasks,
+      );
+
+      await notifier.addHabit(duplicatedHabit);
+
+      final state = container.read(habitsProvider);
+      expect(state.length, 2);
+
+      final cloned = state.firstWhere((h) => h.id == 'habit_clone');
+      expect(cloned.name, 'Rutina Foco (Copia)');
+      expect(cloned.completedDates, isEmpty);
+      expect(cloned.subTasks.length, 2);
+      expect(cloned.subTasks.first.title, 'Revisar notas');
+      expect(cloned.subTasks.first.completedDates, isEmpty);
+      expect(cloned.subTasks.last.title, 'Ejecutar bloque 45m');
+      expect(cloned.subTasks.last.completedDates, isEmpty);
     });
   });
 }

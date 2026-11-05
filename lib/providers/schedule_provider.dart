@@ -173,7 +173,7 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
     await _persist();
   }
 
-  /// Asigna o desasigna un turno a una fecha ISO (YYYY-MM-DD)
+  /// Asigna o desasigna un turno a una fecha ISO (YYYY-MM-DD) preservando otros turnos del mismo día
   Future<void> toggleShiftOnDate(String blockId, String dateIso) async {
     state = [
       for (final b in state)
@@ -184,9 +184,7 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
                 : (List<String>.from(b.assignedDates)..add(dateIso)),
           )
         else
-          b.copyWith(
-            assignedDates: List<String>.from(b.assignedDates)..remove(dateIso),
-          ),
+          b,
     ];
     await _persist();
   }
@@ -202,7 +200,7 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
     await _persist();
   }
 
-  /// Asigna un turno a múltiples fechas a la vez
+  /// Asigna un turno a múltiples fechas a la vez preservando otros turnos en esas fechas
   Future<void> batchAssignShift(String blockId, List<String> datesIso) async {
     state = [
       for (final b in state)
@@ -211,9 +209,7 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
             assignedDates: (Set<String>.from(b.assignedDates)..addAll(datesIso)).toList(),
           )
         else
-          b.copyWith(
-            assignedDates: b.assignedDates.where((d) => !datesIso.contains(d)).toList(),
-          ),
+          b,
     ];
     await _persist();
   }
