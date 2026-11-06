@@ -467,7 +467,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
       backgroundColor: isDark ? AppTheme.obsidianCanvas : AppTheme.boneCanvas,
       appBar: AppBar(
         title: Text(
-          'Planificador de Horarios',
+          'Calendario',
           style: AppTheme.displayStyle(
             fontSize: 17,
             fontWeight: FontWeight.w700,
@@ -941,7 +941,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                       crossAxisAlignment: CrossAxisAlignment.stretch,
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        for (int i = 0; i < assignedShifts.length && i < 2; i++) ...[
+                                        for (int i = 0; i < assignedShifts.length && i < (assignedShifts.length > 2 ? 1 : 2); i++) ...[
                                           if (i > 0) const SizedBox(height: 1.5),
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 2.5, vertical: 0.8),
@@ -969,9 +969,9 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                         ],
                                         if (assignedShifts.length > 2)
                                           Padding(
-                                            padding: const EdgeInsets.only(top: 1),
+                                            padding: const EdgeInsets.only(top: 1.5),
                                             child: Text(
-                                              '+${assignedShifts.length - 2}',
+                                              '+${assignedShifts.length - 1} más',
                                               textAlign: TextAlign.right,
                                               style: AppTheme.monoStyle(
                                                 fontSize: 7,

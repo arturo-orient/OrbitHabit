@@ -714,36 +714,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Marca & Usuario
-                      Row(
-                        children: [
-                          Text(
-                            'OrbitHabit',
-                            style: AppTheme.displayStyle(
-                              fontSize: 19,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.4,
-                              color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.05),
-                              borderRadius: AppTheme.radiusXs,
-                            ),
-                            child: Text(
-                              settings.userName.toUpperCase(),
-                              style: AppTheme.monoStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.8,
-                                color: AppTheme.dynamicAccent(isDark),
-                              ),
-                            ),
-                          ),
-                        ],
+                      // Marca
+                      Text(
+                        'OrbitHabit',
+                        style: AppTheme.displayStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.4,
+                          color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                        ),
                       ),
                       // Cluster de Controles de Precisión
                       Row(
@@ -1023,16 +1002,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                           ],
                         ),
 
-                        // Telemetría del mes
-                        Text(
-                          '// RADIAL DIAL',
-                          style: AppTheme.monoStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 1.0,
-                            color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
-                          ),
-                        ),
+                        // Botón Calendario (unificado con Vista 24H)
+                        _buildCalendarButton(isDark),
                       ],
                     ),
                   ),
@@ -1058,11 +1029,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
 
                   // Separador de Sección Técnico
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 8),
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
                     child: Row(
                       children: [
                         Text(
-                          'REGISTRO // HÁBITOS',
+                          'HÁBITOS',
                           style: AppTheme.monoStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
@@ -1075,15 +1046,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                           child: Container(
                             height: 1,
                             color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          '[${(workShiftGroups.length + regularHabits.length).toString().padLeft(2, '0')}]',
-                          style: AppTheme.monoStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.dynamicAccent(isDark),
                           ),
                         ),
                         if (habits.length > 1) ...[
@@ -1280,45 +1242,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                             ],
                           ),
                         ),
-                        GestureDetector(
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const ShiftCalendarScreen()),
-                            );
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: AppTheme.dynamicAccent(isDark).withValues(alpha: 0.12),
-                              borderRadius: AppTheme.radiusSm,
-                              border: Border.all(
-                                color: AppTheme.dynamicAccent(isDark).withValues(alpha: 0.35),
-                                width: AppTheme.borderPrecision,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.edit_calendar_rounded,
-                                  size: 14,
-                                  color: AppTheme.dynamicAccent(isDark),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Cuadrante Turnos',
-                                  style: AppTheme.monoStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppTheme.dynamicAccent(isDark),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                        _buildCalendarButton(isDark),
                       ],
                     ),
                   ),
@@ -1877,9 +1801,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     return months[month - 1];
   }
 
+  Widget _buildCalendarButton(bool isDark) {
+    final accent = AppTheme.dynamicAccent(isDark);
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ShiftCalendarScreen()),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: 0.12),
+          borderRadius: AppTheme.radiusSm,
+          border: Border.all(
+            color: accent.withValues(alpha: 0.35),
+            width: AppTheme.borderPrecision,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.calendar_month_rounded,
+              size: 14,
+              color: accent,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Calendario',
+              style: AppTheme.monoStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+                color: accent,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCompactViewTab(int index, IconData icon, String label) {
     final isSelected = _selectedView == index;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = AppTheme.dynamicAccent(isDark);
 
     return GestureDetector(
       onTap: () {
@@ -1893,28 +1861,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
         curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
           color: isSelected
-              ? (isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.08))
+              ? (isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08))
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(3),
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(
+            color: isSelected
+                ? accent.withValues(alpha: isDark ? 0.45 : 0.35)
+                : Colors.transparent,
+            width: AppTheme.borderPrecision,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               icon,
-              size: 13,
+              size: 15,
               color: isSelected
-                  ? AppTheme.dynamicAccent(isDark)
+                  ? accent
                   : (isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 5),
             Text(
               label,
               style: AppTheme.monoStyle(
-                fontSize: 10,
+                fontSize: 11.5,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                 color: isSelected
                     ? (isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary)

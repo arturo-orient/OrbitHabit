@@ -181,10 +181,11 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           _linkedHabitId = habit.id;
         }
       } else if (block != null) {
+        final blk = block;
         final related = blocks.where((b) =>
-            b.id == block!.id ||
-            (block!.habitId != null && b.habitId == block!.habitId) ||
-            (b.title.trim().toLowerCase() == block!.title.trim().toLowerCase())).toList();
+            b.id == blk.id ||
+            (blk.habitId != null && b.habitId == blk.habitId) ||
+            (b.title.trim().toLowerCase() == blk.title.trim().toLowerCase())).toList();
         for (final b in related) {
           if (!_schedules.any((s) => s.id == b.id)) {
             _schedules.add(_ScheduleItem(
@@ -1006,7 +1007,6 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
     // IDs finales: si es nuevo, se genera un ID estrictamente único con timestamp y aleatorio
     final targetHabitId = editingHabitId ?? _linkedHabitId ?? 'habit_${DateTime.now().millisecondsSinceEpoch}';
-    final blockId = editingBlockId ?? 'block_${DateTime.now().millisecondsSinceEpoch}';
 
     // 3. Manejo de Modo Órbita (Rueda de Hábitos) y Subtareas
     if (_showInOrbit || _linkedHabitId != null || _subTasks.isNotEmpty) {
@@ -1764,8 +1764,10 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: Colors.grey.withOpacity(0.15)),
               ),
-              child: Column(
-                children: [
+              child: Material(
+                color: Colors.transparent,
+                child: Column(
+                  children: [
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Row(
@@ -1862,6 +1864,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                 ],
               ),
             ),
+          ),
 
             // 4. Sección Horario (Solo si _hasSchedule está activado)
             if (_hasSchedule) ...[

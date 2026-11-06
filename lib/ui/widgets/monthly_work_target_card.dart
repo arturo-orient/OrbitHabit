@@ -116,8 +116,8 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
     return GestureDetector(
       onTap: widget.onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
-        padding: const EdgeInsets.all(14),
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+        padding: const EdgeInsets.all(16),
         decoration: AppTheme.bentoCard(
           isLight: !isDark,
           borderRadius: AppTheme.radiusMd,
@@ -283,9 +283,9 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
               ),
             ),
 
-            // 3. Botón de Desglose por Horario (si hay múltiples turnos)
-            if (shifts.length > 1) ...[
-              const SizedBox(height: 8),
+            // 3. Botón de Desglose de Turnos y Horas Extra
+            if (shifts.isNotEmpty) ...[
+              const SizedBox(height: 12),
               GestureDetector(
                 onTap: () {
                   HapticFeedback.selectionClick();
@@ -294,7 +294,7 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
                   });
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   decoration: BoxDecoration(
                     color: isDark
                         ? Colors.white.withValues(alpha: 0.03)
@@ -361,12 +361,12 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
                 ),
               ),
 
-              // 4. Contenido del Desglose Desplegable
+              // 4. Contenido del Desglose Desplegable (Turnos + Controles de Horas Extra)
               AnimatedCrossFade(
                 firstChild: const SizedBox.shrink(),
                 secondChild: Container(
                   margin: const EdgeInsets.only(top: 8),
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: isDark
                         ? Colors.black.withValues(alpha: 0.35)
@@ -378,6 +378,7 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
                     ),
                   ),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       for (int i = 0; i < breakdown.length; i++) ...[
                         if (i > 0)
@@ -390,6 +391,38 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
                           ),
                         _buildShiftRow(breakdown[i], isDark, accent),
                       ],
+                      Divider(
+                        height: 16,
+                        thickness: 0.5,
+                        color: isDark
+                            ? AppTheme.obsidianBorder
+                            : AppTheme.boneBorder,
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'AJUSTE HORAS EXTRA',
+                            style: AppTheme.monoStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                              color: isDark
+                                  ? AppTheme.obsidianTextSecondary
+                                  : AppTheme.boneTextSecondary,
+                            ),
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildQuickHourBtn(shifts.first.id, -1.0, '-1h', isDark),
+                              const SizedBox(width: 6),
+                              _buildQuickHourBtn(shifts.first.id, 1.0, '+1h', isDark),
+                              const SizedBox(width: 6),
+                              _buildQuickHourBtn(shifts.first.id, 2.0, '+2h', isDark),
+                            ],
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -400,43 +433,24 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
               ),
             ],
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
 
-            // 5. Pie: Botón rápido de turno de hoy o configurar
+            // 5. Pie Limpio y Aireado: Estado o Botón rápido de turno de hoy
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                if (shifts.isNotEmpty)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'EXTRA: ',
-                        style: AppTheme.monoStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          color: isDark
-                              ? AppTheme.obsidianTextMuted
-                              : AppTheme.boneTextMuted,
-                        ),
-                      ),
-                      _buildQuickHourBtn(shifts.first.id, -1.0, '-1h', isDark),
-                      const SizedBox(width: 4),
-                      _buildQuickHourBtn(shifts.first.id, 1.0, '+1h', isDark),
-                      const SizedBox(width: 4),
-                      _buildQuickHourBtn(shifts.first.id, 2.0, '+2h', isDark),
-                    ],
-                  )
-                else
-                  Text(
-                    '// TOQUE PARA CONFIGURAR',
-                    style: AppTheme.monoStyle(
-                      fontSize: 9,
-                      color: isDark
-                          ? AppTheme.obsidianTextMuted
-                          : AppTheme.boneTextMuted,
-                    ),
+                Text(
+                  shifts.isNotEmpty && todayShift != null
+                      ? 'HOY · ${todayShift.title.toUpperCase()} (${todayShift.formattedTimeRange})'
+                      : '// TOQUE PARA CONFIGURAR',
+                  style: AppTheme.monoStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w600,
+                    color: isDark
+                        ? AppTheme.obsidianTextMuted
+                        : AppTheme.boneTextMuted,
                   ),
+                ),
                 if (isCurrentMonthSelected && todayShift != null)
                   GestureDetector(
                     onTap: () {
@@ -448,7 +462,7 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3.5),
+                          horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
                         color: isTodayDone
                             ? color.withValues(alpha: 0.18)
@@ -468,10 +482,10 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
                             isTodayDone
                                 ? Icons.check_circle_rounded
                                 : Icons.radio_button_unchecked_rounded,
-                            size: 11,
+                            size: 12,
                             color: isTodayDone ? color : (isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted),
                           ),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 5),
                           Text(
                             isTodayDone ? 'TURNO HECHO' : 'REGISTRAR HOY',
                             style: AppTheme.monoStyle(

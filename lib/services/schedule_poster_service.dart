@@ -63,7 +63,7 @@ class SchedulePosterService {
     final gridWidth = width - margin * 2 - 56.0;
     final colWidth = gridWidth / 7.0;
 
-    final gridTopY = margin + 145.0;
+    final gridTopY = margin + 174.0;
     final gridHeight = numRows * cellHeight + (numRows - 1) * cellGap;
     final gridBottomY = gridTopY + gridHeight;
 
@@ -464,9 +464,10 @@ class SchedulePosterService {
         }
       }
 
-      // Dibujar estadísticas por turno en fila
+      // Dibujar estadísticas por turno en cuadrícula de 2 columnas limpia
       var statX = footerRect.left + 20.0;
-      final statY = footerRect.top + 46.0;
+      var statY = footerRect.top + 44.0;
+      final colSpan = (footerRect.width - 40.0) / 2.0;
 
       if (shiftStats.isEmpty) {
         _drawText(
@@ -483,28 +484,26 @@ class SchedulePosterService {
           final count = item['count'] as int;
           final hours = item['hours'] as double;
 
+          final itemX = statX + (i % 2) * colSpan;
+          final itemY = statY + (i ~/ 2) * 28.0;
+
           // Indicador cuadrado
           final badgePaint = Paint()..color = shiftColor;
           canvas.drawRRect(
-            RRect.fromRectAndRadius(Rect.fromLTWH(statX, statY, 12, 12), const Radius.circular(3)),
+            RRect.fromRectAndRadius(Rect.fromLTWH(itemX, itemY, 12, 12), const Radius.circular(3)),
             badgePaint,
           );
 
           _drawText(
             canvas: canvas,
             text: '$title: $count turnos · ${hours.toStringAsFixed(1)}h',
-            offset: Offset(statX + 18, statY - 2),
+            offset: Offset(itemX + 18, itemY - 2),
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
               color: textPrimary,
             ),
           );
-
-          statX += 230.0;
-          if (statX > footerRect.right - 200) {
-            statX = footerRect.left + 20.0;
-          }
         }
       }
 
@@ -559,8 +558,11 @@ class SchedulePosterService {
   }
 
   static TextPainter _buildTextPainter(String text, TextStyle style) {
+    final effectiveStyle = style.fontFamily == null
+        ? style.copyWith(fontFamily: 'Roboto')
+        : style;
     final painter = TextPainter(
-      text: TextSpan(text: text, style: style),
+      text: TextSpan(text: text, style: effectiveStyle),
       textDirection: TextDirection.ltr,
     );
     painter.layout();
