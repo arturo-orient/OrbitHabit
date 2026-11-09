@@ -25,6 +25,7 @@ import '../theme/app_theme.dart';
 import 'settings_screen.dart';
 import 'statistics_screen.dart';
 import '../widgets/orbit_guide_sheet.dart';
+import '../widgets/guided_tour_overlay.dart';
 import 'shift_calendar_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -37,21 +38,107 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProviderStateMixin {
   DateTime _currentMonth = DateTime.now();
   int _selectedView = 0; // 0 = Órbita Mensual, 1 = Reloj Horario 24h
-  int? _tourStep; // null = inactivo, 0..4 = tour guiado interactivo
+  int? _tourStep; // null = inactivo, 0..6 = tour guiado interactivo de 7 pasos
+  bool _loadedTemporaryTourDemo = false;
   late AnimationController _entranceController;
+
+  // GlobalKeys para medición quirúrgica del Spotlight en el Tutorial Guiado
+  final GlobalKey _viewSwitcherTourKey = GlobalKey(debugLabel: 'tour_view_switcher');
+  final GlobalKey _orbitDialTourKey = GlobalKey(debugLabel: 'tour_orbit_dial');
+  final GlobalKey _addHabitBtnTourKey = GlobalKey(debugLabel: 'tour_add_habit_btn');
+  final GlobalKey _firstHabitCardTourKey = GlobalKey(debugLabel: 'tour_first_habit_card');
+  final GlobalKey _clockDialTourKey = GlobalKey(debugLabel: 'tour_clock_dial');
+  final GlobalKey _calendarBtnTourKey = GlobalKey(debugLabel: 'tour_calendar_btn');
+  final GlobalKey _statsBtnTourKey = GlobalKey(debugLabel: 'tour_stats_btn');
+
+  Future<void> _startGuidedTour() async {
+    HapticFeedback.mediumImpact();
+    final habits = ref.read(habitsProvider);
+    final scheduleBlocks = ref.read(scheduleProvider);
+
+    // Ghost Demo State: Si la app está vacía, cargar temporalmente la demo durante el tour
+    if (habits.isEmpty && scheduleBlocks.isEmpty) {
+      _loadedTemporaryTourDemo = true;
+      await DemoSeederService.seedDemoData(ref);
+      _replayEntrance();
+    }
+
+    if (!mounted) return;
+    _goToTourStep(0);
+  }
+
+  Future<void> _cleanupTourDemoIfNeeded() async {
+    if (_loadedTemporaryTourDemo) {
+      _loadedTemporaryTourDemo = false;
+      await DemoSeederService.exitDemoMode(ref);
+    }
+  }
 
   void _goToTourStep(int? step) {
     HapticFeedback.selectionClick();
     setState(() {
       _tourStep = step;
       if (step != null) {
-        if (step == 2 || step == 3) {
+        if (step == 4 || step == 5) {
           _selectedView = 1;
         } else {
           _selectedView = 0;
         }
       }
     });
+
+    if (step != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        GlobalKey? scrollTargetKey;
+        if (step == 2) scrollTargetKey = _addHabitBtnTourKey;
+        if (step == 3) scrollTargetKey = _firstHabitCardTourKey;
+
+        if (scrollTargetKey?.currentContext != null) {
+          try {
+            await Scrollable.ensureVisible(
+              scrollTargetKey!.currentContext!,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+            );
+          } catch (_) {}
+        }
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  Future<void> _openTourTaskSheet() async {
+    HapticFeedback.mediumImpact();
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: const UnifiedTaskSheet(
+            defaultEnableSchedule: false,
+            isTourMode: true,
+          ),
+        ),
+      ),
+    );
+    if (mounted && _tourStep == 2) {
+      _goToTourStep(3);
+    }
+  }
+
+  Future<void> _openTourCalendarScreen() async {
+    HapticFeedback.mediumImpact();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ShiftCalendarScreen(isTourMode: true),
+      ),
+    );
+    if (mounted && _tourStep == 5) {
+      _goToTourStep(6);
+    }
   }
 
   @override
@@ -729,6 +816,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                         children: [
                           // Selector de vista compacto [ ÓRBITA | 24H ]
                           Container(
+                            key: _viewSwitcherTourKey,
                             padding: const EdgeInsets.all(2),
                             decoration: AppTheme.bentoCard(
                               isLight: !isDark,
@@ -743,65 +831,72 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                           ),
                           const SizedBox(width: 8),
 
-                          // Estadísticas
-                          GestureDetector(
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const StatisticsScreen()),
-                              );
-                            },
-                            child: Container(
-                              width: 34,
-                              height: 34,
-                              decoration: AppTheme.bentoCard(
-                                isLight: !isDark,
-                                borderRadius: AppTheme.radiusXs,
-                              ),
-                              alignment: Alignment.center,
-                              child: Icon(
-                                Icons.bar_chart_rounded,
-                                size: 17,
-                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-
-                          // Tour Guiado Interactivo / Manual Técnico
-                          GestureDetector(
-                            onTap: () => _goToTourStep(0),
-                            onLongPress: () {
-                              HapticFeedback.selectionClick();
-                              showModalBottomSheet(
-                                context: context,
-                                backgroundColor: Colors.transparent,
-                                isScrollControlled: true,
-                                builder: (_) => FractionallySizedBox(
-                                  heightFactor: 0.88,
-                                  child: OrbitGuideSheet(
-                                    onStartTour: () => _goToTourStep(0),
+                          // Estadísticas y Guía (?) agrupados bajo _statsBtnTourKey para el Paso 7
+                          Row(
+                            key: _statsBtnTourKey,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Estadísticas
+                              GestureDetector(
+                                onTap: () {
+                                  HapticFeedback.selectionClick();
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => const StatisticsScreen()),
+                                  );
+                                },
+                                child: Container(
+                                  width: 34,
+                                  height: 34,
+                                  decoration: AppTheme.bentoCard(
+                                    isLight: !isDark,
+                                    borderRadius: AppTheme.radiusXs,
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Icon(
+                                    Icons.bar_chart_rounded,
+                                    size: 17,
+                                    color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
                                   ),
                                 ),
-                              );
-                            },
-                            child: Container(
-                              width: 34,
-                              height: 34,
-                              decoration: AppTheme.bentoCard(
-                                isLight: !isDark,
-                                borderRadius: AppTheme.radiusXs,
                               ),
-                              alignment: Alignment.center,
-                              child: Icon(
-                                Icons.help_outline_rounded,
-                                size: 17,
-                                color: _tourStep != null
-                                    ? AppTheme.dynamicAccent(isDark)
-                                    : (isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary),
+                              const SizedBox(width: 8),
+
+                              // Tour Guiado Interactivo / Manual Técnico
+                              GestureDetector(
+                                onTap: _startGuidedTour,
+                                onLongPress: () {
+                                  HapticFeedback.selectionClick();
+                                  showModalBottomSheet(
+                                    context: context,
+                                    backgroundColor: Colors.transparent,
+                                    isScrollControlled: true,
+                                    builder: (_) => FractionallySizedBox(
+                                      heightFactor: 0.88,
+                                      child: OrbitGuideSheet(
+                                        onStartTour: _startGuidedTour,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: Container(
+                                  width: 34,
+                                  height: 34,
+                                  decoration: AppTheme.bentoCard(
+                                    isLight: !isDark,
+                                    borderRadius: AppTheme.radiusXs,
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Icon(
+                                    Icons.help_outline_rounded,
+                                    size: 17,
+                                    color: _tourStep != null
+                                        ? AppTheme.dynamicAccent(isDark)
+                                        : (isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary),
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
                           const SizedBox(width: 8),
 
@@ -1015,6 +1110,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                       child: AspectRatio(
                         aspectRatio: 1.0,
                         child: Padding(
+                          key: _orbitDialTourKey,
                           padding: const EdgeInsets.all(16.0),
                           child: OrbitTracker(
                             habits: orbitHabits,
@@ -1093,86 +1189,99 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                             physics: const BouncingScrollPhysics(),
                             itemCount: workShiftGroups.length + regularHabits.length,
                             itemBuilder: (context, index) {
-                              if (index < workShiftGroups.length) {
-                                final group = workShiftGroups[index];
-                                return StaggeredAccordionItem(
-                                  key: ValueKey('work_group_${group.title}_${group.shifts.map((s) => s.id).join("_")}'),
-                                  index: index,
-                                  parentAnimation: _entranceController,
-                                  child: MonthlyWorkTargetCard(
-                                    group: group,
-                                    currentMonth: _currentMonth,
-                                    onTap: () => _editScheduleGroup(group),
-                                    onEditShift: (shift) => _editScheduleBlock(shift),
+                                if (index < workShiftGroups.length) {
+                                  final group = workShiftGroups[index];
+                                  return KeyedSubtree(
+                                    key: index == 0 ? _firstHabitCardTourKey : null,
+                                    child: StaggeredAccordionItem(
+                                      key: ValueKey('work_group_${group.title}_${group.shifts.map((s) => s.id).join("_")}'),
+                                      index: index,
+                                      parentAnimation: _entranceController,
+                                      child: MonthlyWorkTargetCard(
+                                        group: group,
+                                        currentMonth: _currentMonth,
+                                        onTap: () => _editScheduleGroup(group),
+                                        onEditShift: (shift) => _editScheduleBlock(shift),
+                                      ),
+                                    ),
+                                  );
+                                }
+
+                                final habitIndex = index - workShiftGroups.length;
+                                final habit = regularHabits[habitIndex];
+                                final monthPrefix = '${_currentMonth.year}-${_currentMonth.month.toString().padLeft(2, '0')}';
+                                final completedThisMonth = habit.completedDates.where((d) => d.startsWith(monthPrefix)).length;
+                                final percentage = habit.hasMonthlyTarget 
+                                    ? (completedThisMonth / habit.targetDays * 100).clamp(0, 100).toInt()
+                                    : null;
+                                
+                                final streak = StreakUtils.calculateCurrentStreak(habit, effectiveVacationDates);
+
+                                // Telemetría de los 7 días de la semana en curso (Lunes a Domingo)
+                                final now = DateTime.now();
+                                final todayIso = now.toIso8601String().split('T').first;
+                                final weeklyCompletions = List.generate(7, (i) {
+                                  final d = DateTime(now.year, now.month, now.day - (now.weekday - 1) + i);
+                                  final iso = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+                                  return habit.completedDates.contains(iso);
+                                });
+
+                                return KeyedSubtree(
+                                  key: index == 0 ? _firstHabitCardTourKey : null,
+                                  child: StaggeredAccordionItem(
+                                    key: ValueKey('habit_${habit.id}'),
+                                    index: index,
+                                    parentAnimation: _entranceController,
+                                    child: HabitProgressCard(
+                                      name: habit.name,
+                                      color: habit.color,
+                                      percentage: percentage,
+                                      streak: streak,
+                                      weeklyCompletions: weeklyCompletions,
+                                      isCompletedToday: habit.completedDates.contains(todayIso),
+                                      onToggleToday: () {
+                                        SoundService().playCheck();
+                                        ref.read(habitsProvider.notifier).toggleDay(habit.id, todayIso);
+                                      },
+                                      onTap: () => _editHabit(habit),
+                                      subTasks: habit.subTasks,
+                                      todayIso: todayIso,
+                                      onToggleSubTask: (st) {
+                                        HapticFeedback.selectionClick();
+                                        SoundService().playCheck();
+                                        ref.read(habitsProvider.notifier).toggleSubTask(habit.id, st.id, todayIso);
+                                      },
+                                    ),
                                   ),
                                 );
-                              }
+                              },
+                            ),
+                    ),
 
-                              final habitIndex = index - workShiftGroups.length;
-                              final habit = regularHabits[habitIndex];
-                              final monthPrefix = '${_currentMonth.year}-${_currentMonth.month.toString().padLeft(2, '0')}';
-                              final completedThisMonth = habit.completedDates.where((d) => d.startsWith(monthPrefix)).length;
-                              final percentage = habit.hasMonthlyTarget 
-                                  ? (completedThisMonth / habit.targetDays * 100).clamp(0, 100).toInt()
-                                  : null;
-                              
-                              final streak = StreakUtils.calculateCurrentStreak(habit, effectiveVacationDates);
-
-                              // Telemetría de los 7 días de la semana en curso (Lunes a Domingo)
-                              final now = DateTime.now();
-                              final todayIso = now.toIso8601String().split('T').first;
-                              final weeklyCompletions = List.generate(7, (i) {
-                                final d = DateTime(now.year, now.month, now.day - (now.weekday - 1) + i);
-                                final iso = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-                                return habit.completedDates.contains(iso);
-                              });
-
-                              return StaggeredAccordionItem(
-                                key: ValueKey('habit_${habit.id}'),
-                                index: index,
-                                parentAnimation: _entranceController,
-                                child: HabitProgressCard(
-                                  name: habit.name,
-                                  color: habit.color,
-                                  percentage: percentage,
-                                  streak: streak,
-                                  weeklyCompletions: weeklyCompletions,
-                                  isCompletedToday: habit.completedDates.contains(todayIso),
-                                  onToggleToday: () {
-                                    SoundService().playCheck();
-                                    ref.read(habitsProvider.notifier).toggleDay(habit.id, todayIso);
-                                  },
-                                  onTap: () => _editHabit(habit),
-                                  subTasks: habit.subTasks,
-                                  todayIso: todayIso,
-                                  onToggleSubTask: (st) {
-                                    HapticFeedback.selectionClick();
-                                    SoundService().playCheck();
-                                    ref.read(habitsProvider.notifier).toggleSubTask(habit.id, st.id, todayIso);
-                                  },
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-
-                  // Botón Añadir Hábito (Bento de precisión)
+                  // Botón Añadir Hábito (Bento de precisión; se ilumina activamente en el Paso 3 del Tour)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
                     child: SizedBox(
+                      key: _addHabitBtnTourKey,
                       width: double.infinity,
                       height: 46,
                       child: ElevatedButton(
                         onPressed: _showAddHabitSheet,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
-                          foregroundColor: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                          backgroundColor: _tourStep == 2
+                              ? AppTheme.dynamicAccent(isDark)
+                              : (isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated),
+                          foregroundColor: _tourStep == 2
+                              ? (isDark ? const Color(0xFF0A0A0A) : Colors.white)
+                              : (isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary),
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: AppTheme.radiusSm,
                             side: BorderSide(
-                              color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
-                              width: AppTheme.borderPrecision,
+                              color: _tourStep == 2
+                                  ? AppTheme.dynamicAccent(isDark)
+                                  : (isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder),
+                              width: _tourStep == 2 ? 1.5 : AppTheme.borderPrecision,
                             ),
                           ),
                         ),
@@ -1182,15 +1291,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                             Icon(
                               Icons.add_rounded,
                               size: 18,
-                              color: AppTheme.dynamicAccent(isDark),
+                              color: _tourStep == 2
+                                  ? (isDark ? const Color(0xFF0A0A0A) : Colors.white)
+                                  : AppTheme.dynamicAccent(isDark),
                             ),
                             const SizedBox(width: 8),
                             Text(
                               'Añadir Hábito',
                               style: AppTheme.bodyStyle(
                                 fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                fontWeight: _tourStep == 2 ? FontWeight.w800 : FontWeight.w600,
+                                color: _tourStep == 2
+                                    ? (isDark ? const Color(0xFF0A0A0A) : Colors.white)
+                                    : (isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary),
                               ),
                             ),
                           ],
@@ -1242,7 +1355,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                             ],
                           ),
                         ),
-                        _buildCalendarButton(isDark),
+                        _buildCalendarButton(isDark, buttonKey: _calendarBtnTourKey),
                       ],
                     ),
                   ),
@@ -1254,6 +1367,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                       child: AspectRatio(
                         aspectRatio: 1.0,
                         child: Padding(
+                          key: _clockDialTourKey,
                           padding: const EdgeInsets.all(12.0),
                           child: OrbitClock24(
                             blocks: todayBlocks,
@@ -1454,344 +1568,158 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   Widget _buildTourOverlay(bool isDark) {
     if (_tourStep == null) return const SizedBox.shrink();
 
-    final step = _tourStep!;
+    final stepIndex = _tourStep!.clamp(0, 6);
     final accent = AppTheme.dynamicAccent(isDark);
 
-    final List<({
-      String tag,
-      String title,
-      String body,
-      IconData icon,
-      String focusText,
-    })> tourSteps = [
-      (
-        tag: 'PASO 1 DE 5 // VISTA MENSUAL',
-        title: '¡Bienvenido a tu Rueda del Mes! 🪐',
-        body: 'Olvídate de las listas aburridas. Aquí cada anillo es uno de tus hábitos y los números del 1 al 31 son los días del mes. Cuando cumples un día, su casilla se ilumina a todo color. Si un día te toca descansar, dejamos el hueco limpio para que no te agobies.',
-        icon: Icons.adjust_rounded,
-        focusText: 'Enfocando la Rueda Orbital concéntrica',
+    final steps = <GuidedTourStepData>[
+      // PASO 1 — Las Dos Lentes: Mes y Día
+      GuidedTourStepData(
+        stepNumber: 1,
+        title: 'Dos vistas conectadas',
+        body: 'Cambia aquí arriba entre ÓRBITA (tu mes completo de un vistazo) y 24H (tu día hora a hora). Todo lo que registres en una se actualiza en la otra.',
+        targetKey: _viewSwitcherTourKey,
+        spotlightPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        spotlightRadius: 8.0,
       ),
-      (
-        tag: 'PASO 2 DE 5 // HÁBITOS & TRABAJO',
-        title: 'Tus Hábitos y tu Bolsa de Horas 💼',
-        body: 'Aquí abajo verás tus hábitos diarios y tu tarjeta de trabajo. Si trabajas por turnos (mañanas, tardes o noches), todos se agrupan en una sola tarjeta para sumar tus horas del mes (por ejemplo, 120h) sin llenar la pantalla de ruido. Puedes pulsar \'Registrar Hoy\' para fichar en un segundo.',
-        icon: Icons.work_outline_rounded,
-        focusText: 'Enfocando las Tarjetas inferiores y Turnos agrupados',
+
+      // PASO 2 — La Rueda Orbital Mensual
+      GuidedTourStepData(
+        stepNumber: 2,
+        title: 'Tu mes en una sola rueda',
+        body: 'Cada anillo es uno de tus hábitos y los números del 1 al 31 son los días del mes. Los días cumplidos brillan a todo color y los descansos quedan limpios.',
+        targetKey: _orbitDialTourKey,
+        spotlightPadding: const EdgeInsets.all(4.0),
+        spotlightRadius: 12.0,
       ),
-      (
-        tag: 'PASO 3 DE 5 // CICLO DIARIO',
-        title: 'Tu Día en 24 Horas ⏰',
-        body: 'Hemos cambiado a la vista de Reloj 24H. Es como ver todo tu día de un vistazo desde las 00:00 hasta la medianoche. El puntito brillante se mueve en tiempo real contigo, y si tienes un turno de noche que cruza las 12 de la noche, el reloj lo une sin romperse. Además, si tocas cualquier franja de color, puedes editarla.',
-        icon: Icons.schedule_rounded,
-        focusText: 'Enfocando el Reloj Polar 24h y los arcos táctiles',
+
+      // PASO 3 — Crear y Configurar una Tarea (Acción Interactiva 3-A -> 3-B..3-E)
+      GuidedTourStepData(
+        stepNumber: 3,
+        customStepLabel: '3-A',
+        title: 'Crea tu primera tarea',
+        body: 'Vamos a ver lo rápido que se crea un hábito o turno. Toca el botón iluminado "+ Añadir Hábito".',
+        targetKey: _addHabitBtnTourKey,
+        isInteractiveAction: true,
+        interactiveHint: 'Toca el botón iluminado para continuar',
+        spotlightPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        spotlightRadius: 8.0,
       ),
-      (
-        tag: 'PASO 4 DE 5 // PLANIFICADOR RÁPIDO',
-        title: 'Pinta tu Mes en Segundos 🗓️',
-        body: '¿Tienes horarios rotativos que cambian cada semana? Pulsa en \'Cuadrante Turnos\'. Ahí podrás elegir tu turno como si fuera un pincel, tocar los días del calendario para armar tu mes entero y descargar un póster en imagen de alta calidad para compartirlo.',
-        icon: Icons.calendar_month_rounded,
-        focusText: 'Enfocando el botón Cuadrante Turnos (arriba a la derecha)',
+
+      // PASO 4 — Tarjetas, Subtareas y Reordenar
+      GuidedTourStepData(
+        stepNumber: 4,
+        title: 'Tus tareas día a día',
+        body: 'Marca el día con un toque, despliega las subtareas para avanzar paso a paso o ficha tu turno en "Registrar Hoy". Con "REORDENAR" cambias el orden de los anillos.',
+        targetKey: _firstHabitCardTourKey,
+        spotlightPadding: const EdgeInsets.fromLTRB(4, 38, 4, 6),
+        spotlightRadius: 10.0,
       ),
-      (
-        tag: 'PASO 5 DE 5 // LISTOS PARA COMENZAR',
-        title: '¡Todo listo para despegar! 🚀',
-        body: 'Si quieres trastear con la app llena de datos antes de crear tus propios hábitos, pulsa el botón de abajo para activar el Modo Demo. Podrás quitarlo cuando quieras con un solo clic desde la barra superior.',
-        icon: Icons.rocket_launch_rounded,
-        focusText: 'Todo configurado para empezar',
+
+      // PASO 5 — El Reloj Polar de 24 Horas
+      GuidedTourStepData(
+        stepNumber: 5,
+        title: 'Tu día en 24 horas',
+        body: 'El punto brillante se mueve con la hora actual. Toca cualquier arco de color dentro del reloj para editar ese horario al instante, o toca el centro para fichar.',
+        targetKey: _clockDialTourKey,
+        spotlightPadding: const EdgeInsets.all(4.0),
+        spotlightRadius: 12.0,
+      ),
+
+      // PASO 6 — El Calendario Mensual (Acción Interactiva 6-A -> 6-B)
+      GuidedTourStepData(
+        stepNumber: 6,
+        customStepLabel: '6-A',
+        title: 'Planifica tu mes en segundos',
+        body: '¿Tienes turnos rotativos o quieres organizar tus semanas? Toca el botón iluminado "Calendario".',
+        targetKey: _calendarBtnTourKey,
+        isInteractiveAction: true,
+        interactiveHint: 'Toca el botón iluminado para continuar',
+        spotlightPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        spotlightRadius: 8.0,
+      ),
+
+      // PASO 7 — Estadísticas, Escudo de Guardia y Despegue
+      GuidedTourStepData(
+        stepNumber: 7,
+        title: '¡Todo listo para despegar!',
+        body: 'En Estadísticas verás tus rachas y horas. Además, los días con guardias de +12h activan el Escudo de Guardia para proteger tus rachas. Puedes repetir esta guía cuando quieras tocando (?).',
+        targetKey: _statsBtnTourKey,
+        spotlightPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        spotlightRadius: 8.0,
       ),
     ];
 
-    final current = tourSteps[step.clamp(0, 4)];
+    VoidCallback? interactiveCallback;
+    if (stepIndex == 2) {
+      interactiveCallback = _openTourTaskSheet;
+    } else if (stepIndex == 3) {
+      interactiveCallback = () {
+        final regularHabits = ref.read(habitsProvider);
+        if (regularHabits.isNotEmpty) {
+          final todayIso = DateTime.now().toIso8601String().split('T').first;
+          SoundService().playCheck();
+          ref.read(habitsProvider.notifier).toggleDay(regularHabits.first.id, todayIso);
+        }
+        _goToTourStep(4);
+      };
+    } else if (stepIndex == 5) {
+      interactiveCallback = _openTourCalendarScreen;
+    }
 
     return Positioned.fill(
-      child: Container(
-        color: Colors.black.withValues(alpha: 0.40),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Indicador visual superior de sección enfocada
-              Padding(
-                padding: const EdgeInsets.only(top: 14, left: 16, right: 16),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF141418) : Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: accent,
-                      width: 1.2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: accent.withValues(alpha: 0.18),
-                        blurRadius: 14,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(current.icon, size: 15, color: accent),
-                      const SizedBox(width: 8),
-                      Text(
-                        current.focusText,
-                        style: AppTheme.monoStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
+      child: GuidedTourOverlay(
+        currentStepIndex: stepIndex,
+        steps: steps,
+        onNext: () => _goToTourStep(stepIndex + 1),
+        onPrevious: () => _goToTourStep(stepIndex - 1),
+        onSkip: () async {
+          await _cleanupTourDemoIfNeeded();
+          if (mounted) {
+            setState(() => _tourStep = null);
+          }
+        },
+        onInteractiveTargetTap: interactiveCallback,
+        onCreateFirstTask: () async {
+          await _cleanupTourDemoIfNeeded();
+          if (!mounted) return;
+          setState(() {
+            _tourStep = null;
+            _selectedView = 0;
+          });
+          _showAddHabitSheet();
+        },
+        onExploreWithDemo: () async {
+          final habits = ref.read(habitsProvider);
+          final blocks = ref.read(scheduleProvider);
+          if (!DemoSeederService.isDemoModeActive(habits, blocks)) {
+            await DemoSeederService.seedDemoData(ref);
+          }
+          _loadedTemporaryTourDemo = false;
+          _replayEntrance();
+          if (!mounted) return;
+          setState(() => _tourStep = null);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
+              backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
+              content: Text(
+                'Órbita de demostración cargada con éxito ⚡',
+                style: AppTheme.monoStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: accent,
                 ),
               ),
-
-              const Spacer(),
-
-              // Tarjeta Neo-Bento Flotante del Tour
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 500),
-                  child: Container(
-                    margin: const EdgeInsets.all(16),
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
-                        width: 1.2,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: isDark ? 0.6 : 0.12),
-                          blurRadius: 28,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Cabecera del Tour
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              current.tag,
-                              style: AppTheme.monoStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w700,
-                                color: accent,
-                                letterSpacing: 1.0,
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () {
-                                HapticFeedback.selectionClick();
-                                setState(() => _tourStep = null);
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.close_rounded,
-                                  size: 15,
-                                  color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-
-                        // Barra de progreso de 5 pasos
-                        Row(
-                          children: List.generate(5, (index) {
-                            final isPassed = index <= step;
-                            return Expanded(
-                              child: Container(
-                                height: 3.5,
-                                margin: EdgeInsets.only(right: index < 4 ? 6.0 : 0.0),
-                                decoration: BoxDecoration(
-                                  color: isPassed
-                                      ? accent
-                                      : (isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.1)),
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
-                              ),
-                            );
-                          }),
-                        ),
-                        const SizedBox(height: 14),
-
-                        // Título Humano
-                        Text(
-                          current.title,
-                          style: AppTheme.displayStyle(
-                            fontSize: 16.5,
-                            fontWeight: FontWeight.w800,
-                            color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-
-                        // Descripción Humana
-                        Text(
-                          current.body,
-                          style: AppTheme.bodyStyle(
-                            fontSize: 13,
-                            height: 1.45,
-                            color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-
-                        // Botones de Navegación del Tour
-                        if (step == 4) ...[
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: () {
-                                    HapticFeedback.selectionClick();
-                                    setState(() => _tourStep = null);
-                                  },
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                    side: BorderSide(
-                                      color: isDark ? AppTheme.obsidianBorderHover : AppTheme.boneBorder,
-                                    ),
-                                    shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
-                                  ),
-                                  child: Text(
-                                    '¡Entendido, empezar!',
-                                    style: AppTheme.displayStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () async {
-                                    HapticFeedback.mediumImpact();
-                                    await DemoSeederService.seedDemoData(ref);
-                                    _replayEntrance();
-                                    setState(() => _tourStep = null);
-                                    if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        behavior: SnackBarBehavior.floating,
-                                        shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
-                                        backgroundColor: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
-                                        content: Text(
-                                          'Órbita de demostración cargada con éxito ⚡',
-                                          style: AppTheme.monoStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                            color: accent,
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: accent,
-                                    foregroundColor: isDark ? Colors.black : Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
-                                  ),
-                                  child: Text(
-                                    '⚡ Probar Modo Demo',
-                                    style: AppTheme.displayStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: isDark ? Colors.black : Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ] else ...[
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              if (step > 0)
-                                TextButton(
-                                  onPressed: () => _goToTourStep(step - 1),
-                                  child: Text(
-                                    '← Anterior',
-                                    style: AppTheme.bodyStyle(
-                                      fontSize: 13,
-                                      color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
-                                    ),
-                                  ),
-                                )
-                              else
-                                TextButton(
-                                  onPressed: () {
-                                    HapticFeedback.selectionClick();
-                                    setState(() => _tourStep = null);
-                                  },
-                                  child: Text(
-                                    'Cerrar tutorial',
-                                    style: AppTheme.bodyStyle(
-                                      fontSize: 13,
-                                      color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
-                                    ),
-                                  ),
-                                ),
-                              ElevatedButton(
-                                onPressed: () => _goToTourStep(step + 1),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: accent,
-                                  foregroundColor: isDark ? Colors.black : Colors.white,
-                                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(borderRadius: AppTheme.radiusSm),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      'Siguiente',
-                                      style: AppTheme.displayStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: isDark ? Colors.black : Colors.white,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Icon(
-                                      Icons.arrow_forward_rounded,
-                                      size: 15,
-                                      color: isDark ? Colors.black : Colors.white,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
+        onStartFromScratch: () async {
+          await _cleanupTourDemoIfNeeded();
+          if (mounted) {
+            setState(() => _tourStep = null);
+          }
+        },
       ),
     );
   }
@@ -1801,25 +1729,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     return months[month - 1];
   }
 
-  Widget _buildCalendarButton(bool isDark) {
+  Widget _buildCalendarButton(bool isDark, {Key? buttonKey}) {
     final accent = AppTheme.dynamicAccent(isDark);
+    final isHighlightedInTour = _tourStep == 5;
     return GestureDetector(
+      key: buttonKey,
       onTap: () {
+        if (isHighlightedInTour) {
+          _openTourCalendarScreen();
+          return;
+        }
         HapticFeedback.selectionClick();
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const ShiftCalendarScreen()),
         );
       },
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: accent.withValues(alpha: 0.12),
+          color: isHighlightedInTour
+              ? accent.withValues(alpha: isDark ? 0.24 : 0.18)
+              : accent.withValues(alpha: 0.12),
           borderRadius: AppTheme.radiusSm,
           border: Border.all(
-            color: accent.withValues(alpha: 0.35),
-            width: AppTheme.borderPrecision,
+            color: isHighlightedInTour ? accent : accent.withValues(alpha: 0.35),
+            width: isHighlightedInTour ? 1.8 : AppTheme.borderPrecision,
           ),
+          boxShadow: isHighlightedInTour
+              ? [
+                  BoxShadow(
+                    color: accent.withValues(alpha: isDark ? 0.32 : 0.22),
+                    blurRadius: 12,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -2160,6 +2106,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
       final Set<String> groupCompletedDates = {};
       for (final s in g.shifts) {
         groupCompletedDates.addAll(s.completedDates);
+        groupCompletedDates.addAll(g.getEffectiveWorkedDatesForShift(s, _currentMonth));
       }
       if (g.habit != null) {
         groupCompletedDates.addAll(g.habit!.completedDates);

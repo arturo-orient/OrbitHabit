@@ -109,6 +109,9 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
             completedDates: b.completedDates.contains(dateIso)
                 ? b.completedDates
                 : [...b.completedDates, dateIso],
+            assignedDates: b.assignedDates.contains(dateIso)
+                ? b.assignedDates
+                : [...b.assignedDates, dateIso],
           )
         else
           b,
@@ -129,6 +132,9 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
               completedDates: isDone
                   ? (List<String>.from(b.completedDates)..remove(dateIso))
                   : (List<String>.from(b.completedDates)..add(dateIso)),
+              assignedDates: (!isDone && !b.assignedDates.contains(dateIso))
+                  ? (List<String>.from(b.assignedDates)..add(dateIso))
+                  : b.assignedDates,
             );
           })()
         ] else
@@ -178,11 +184,17 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
     state = [
       for (final b in state)
         if (b.id == blockId)
-          b.copyWith(
-            assignedDates: b.assignedDates.contains(dateIso)
-                ? (List<String>.from(b.assignedDates)..remove(dateIso))
-                : (List<String>.from(b.assignedDates)..add(dateIso)),
-          )
+          (() {
+            final isAssigned = b.assignedDates.contains(dateIso);
+            return b.copyWith(
+              assignedDates: isAssigned
+                  ? (List<String>.from(b.assignedDates)..remove(dateIso))
+                  : (List<String>.from(b.assignedDates)..add(dateIso)),
+              completedDates: isAssigned
+                  ? (List<String>.from(b.completedDates)..remove(dateIso))
+                  : b.completedDates,
+            );
+          })()
         else
           b,
     ];
@@ -195,6 +207,7 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
       for (final b in state)
         b.copyWith(
           assignedDates: List<String>.from(b.assignedDates)..remove(dateIso),
+          completedDates: List<String>.from(b.completedDates)..remove(dateIso),
         ),
     ];
     await _persist();

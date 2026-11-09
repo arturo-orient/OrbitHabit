@@ -61,12 +61,14 @@ class UnifiedTaskSheet extends ConsumerStatefulWidget {
   final Habit? habitToEdit;
   final ScheduleBlock? blockToEdit;
   final bool defaultEnableSchedule;
+  final bool isTourMode;
 
   const UnifiedTaskSheet({
     Key? key,
     this.habitToEdit,
     this.blockToEdit,
     this.defaultEnableSchedule = false,
+    this.isTourMode = false,
   }) : super(key: key);
 
   @override
@@ -106,6 +108,51 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
   late int _monthlyTargetHours;
   late double _extraHours;
   late List<String> _completedDates;
+  List<String> _assignedDates = [];
+  bool _didSyncAssignedDates = false;
+  DateTime? _calendarMonth;
+
+  // Estado del sub-tour guiado paso a paso dentro del creador de tareas (3-B, 3-C, 3-D, 3-E)
+  int _tourSubStep = 0;
+  final GlobalKey _tourIdentitySectionKey = GlobalKey(debugLabel: 'sheet_tour_identity');
+  final GlobalKey _tourSubtasksSectionKey = GlobalKey(debugLabel: 'sheet_tour_subtasks');
+  final GlobalKey _tourVisibilitySectionKey = GlobalKey(debugLabel: 'sheet_tour_visibility');
+  final GlobalKey _tourTargetSectionKey = GlobalKey(debugLabel: 'sheet_tour_target');
+
+  void _goToTourSubStep(int nextStep) {
+    HapticFeedback.selectionClick();
+    final clamped = nextStep.clamp(0, 3);
+    setState(() {
+      _tourSubStep = clamped;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final keys = [
+        _tourIdentitySectionKey,
+        _tourSubtasksSectionKey,
+        _tourSectionVisibilityOrFallbackKey,
+        _tourTargetSectionKey,
+      ];
+      final targetContext = keys[clamped].currentContext;
+      if (targetContext != null) {
+        try {
+          await Scrollable.ensureVisible(
+            targetContext,
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOutCubic,
+            alignment: 0.12,
+          );
+        } catch (_) {}
+      }
+    });
+  }
+
+  GlobalKey get _tourSectionVisibilityOrFallbackKey => _tourVisibilitySectionKey;
+
+  static const _monthNames = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+  static const _weekdaysShort = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
   final List<Color> _palette = const [
     Color(0xFFEF4444), // Rojo Carmín
@@ -132,15 +179,21 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     Habit? habit = widget.habitToEdit;
     ScheduleBlock? block = widget.blockToEdit;
 
-    // Vinculación cruzada por ID explícito
+    // Vinculación cruzada por ID explícito o por nombre coincidente
     if (habit != null && block == null) {
       block = blocks.cast<ScheduleBlock?>().firstWhere(
-            (b) => b?.habitId == habit!.id,
+            (b) =>
+                b != null &&
+                (b.habitId == habit!.id ||
+                    b.title.trim().toLowerCase() == habit.name.trim().toLowerCase()),
             orElse: () => null,
           );
-    } else if (block != null && habit == null && block.habitId != null) {
+    } else if (block != null && habit == null) {
       habit = habits.cast<Habit?>().firstWhere(
-            (h) => h?.id == block!.habitId,
+            (h) =>
+                h != null &&
+                ((block!.habitId != null && h.id == block.habitId) ||
+                    h.name.trim().toLowerCase() == block.title.trim().toLowerCase()),
             orElse: () => null,
           );
     }
@@ -210,16 +263,47 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         _extraHours = 0.0;
       }
 
-      // Fechas completadas unificadas
-      final mergedSet = <String>{};
-      if (habit != null) mergedSet.addAll(habit.completedDates);
-      if (block != null) mergedSet.addAll(block.completedDates);
-      _completedDates = mergedSet.toList();
+      // Fechas completadas y asignadas unificadas desde el Calendario General
+      final todayIso = DateTime.now().toIso8601String().split('T').first;
+      final mergedCompletedSet = <String>{};
+      final mergedAssignedSet = <String>{};
+      if (habit != null) {
+        mergedCompletedSet.addAll(habit.completedDates);
+      }
+      if (block != null) {
+        mergedCompletedSet.addAll(block.completedDates);
+        mergedAssignedSet.addAll(block.assignedDates);
+        for (final d in block.assignedDates) {
+          if (d.compareTo(todayIso) < 0) mergedCompletedSet.add(d);
+        }
+      }
+      for (final s in _schedules) {
+        final b = blocks.cast<ScheduleBlock?>().firstWhere(
+              (blk) => blk?.id == s.id,
+              orElse: () => null,
+            );
+        if (b != null) {
+          mergedCompletedSet.addAll(b.completedDates);
+          mergedAssignedSet.addAll(b.assignedDates);
+          for (final d in b.assignedDates) {
+            if (d.compareTo(todayIso) < 0) mergedCompletedSet.add(d);
+          }
+        }
+      }
+      mergedAssignedSet.addAll(mergedCompletedSet);
+      _completedDates = mergedCompletedSet.toList();
+      _assignedDates = mergedAssignedSet.toList();
 
       // Modo de Meta
-      if (block != null && block.hasMonthlyHourTarget) {
+      final relatedHourBlock = (block != null && block.hasMonthlyHourTarget)
+          ? block
+          : blocks.cast<ScheduleBlock?>().firstWhere(
+                (b) => b != null && _schedules.any((s) => s.id == b.id) && b.hasMonthlyHourTarget,
+                orElse: () => null,
+              );
+      if (relatedHourBlock != null) {
         _targetMode = TaskTargetMode.hours;
-        _monthlyTargetHours = block.monthlyTargetHours;
+        _monthlyTargetHours = relatedHourBlock.monthlyTargetHours;
       } else if (habit != null && habit.hasMonthlyTarget) {
         _targetMode = TaskTargetMode.days;
         _monthlyTargetHours = 120;
@@ -248,6 +332,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       _monthlyTargetHours = 120;
       _extraHours = 0.0;
       _completedDates = [];
+      _assignedDates = [];
     }
   }
 
@@ -926,16 +1011,51 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     final habits = ref.read(habitsProvider);
     final blocks = ref.read(scheduleProvider);
 
-    // 1. Identificadores si estamos editando
-    final editingHabitId = widget.habitToEdit?.id ?? widget.blockToEdit?.habitId;
-    final editingBlockId = widget.blockToEdit?.id;
+    // 1. Identificadores si estamos editando (incluyendo vinculaciones cruzadas y bloques propios)
+    final originalTitle = (widget.habitToEdit?.name ?? widget.blockToEdit?.title)?.trim().toLowerCase();
+    final editingHabitId = widget.habitToEdit?.id ??
+        widget.blockToEdit?.habitId ??
+        _linkedHabitId ??
+        (_isEditing && originalTitle != null
+            ? habits
+                .cast<Habit?>()
+                .firstWhere(
+                  (h) => h != null && h.name.trim().toLowerCase() == originalTitle,
+                  orElse: () => null,
+                )
+                ?.id
+            : null);
 
-    // 2. Validación de Duplicados: proteger contra sobreescritura y colisión de nombres
+    final editingBlockId = widget.blockToEdit?.id ??
+        (_schedules.isNotEmpty ? _schedules.first.id : null) ??
+        (editingHabitId != null
+            ? blocks
+                .cast<ScheduleBlock?>()
+                .firstWhere(
+                  (b) => b != null && b.habitId == editingHabitId,
+                  orElse: () => null,
+                )
+                ?.id
+            : null);
+
+    final ownBlockIds = <String>{
+      if (widget.blockToEdit != null) widget.blockToEdit!.id,
+      if (editingBlockId != null) editingBlockId,
+      ..._schedules.map((s) => s.id),
+      ..._deletedScheduleIds,
+      for (final b in blocks)
+        if ((editingHabitId != null && b.habitId == editingHabitId) ||
+            (_isEditing && originalTitle != null && b.title.trim().toLowerCase() == originalTitle))
+          b.id,
+    };
+
+    // 2. Validación de Duplicados: proteger contra colisión con OTRAS tareas distintas
     if (_showInOrbit && _linkedHabitId == null) {
       final duplicateHabit = habits.cast<Habit?>().firstWhere(
             (h) =>
                 h != null &&
                 h.id != editingHabitId &&
+                !(_isEditing && originalTitle != null && h.name.trim().toLowerCase() == originalTitle) &&
                 h.name.trim().toLowerCase() == title.toLowerCase(),
             orElse: () => null,
           );
@@ -949,9 +1069,14 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     }
 
     if (_hasSchedule) {
+      if (_startTime == null && _endTime == null && _schedules.isEmpty) {
+        _startTime = const TimeOfDay(hour: 8, minute: 0);
+        _endTime = const TimeOfDay(hour: 16, minute: 0);
+      }
+
       if (_startTime == null || _endTime == null) {
         // Si NO está en la órbita ni vinculado a nada, sí es obligatorio indicar horas para el reloj
-        if (!_showInOrbit && _linkedHabitId == null) {
+        if (!_showInOrbit && _linkedHabitId == null && _schedules.isEmpty) {
           HapticFeedback.vibrate();
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -988,7 +1113,8 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       final duplicateBlock = blocks.cast<ScheduleBlock?>().firstWhere(
             (b) =>
                 b != null &&
-                b.id != editingBlockId &&
+                !ownBlockIds.contains(b.id) &&
+                (editingHabitId == null || b.habitId != editingHabitId) &&
                 b.title.trim().toLowerCase() == title.toLowerCase(),
             orElse: () => null,
           );
@@ -1024,6 +1150,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           hasMonthlyTarget: _targetMode == TaskTargetMode.days,
           frequencyType: _targetMode == TaskTargetMode.days ? _frequencyType : existingHabit.frequencyType,
           targetDaysPerWeek: _targetDaysPerWeek,
+          completedDates: Set<String>.from(_completedDates),
           subTasks: _subTasks,
         );
         ref.read(habitsProvider.notifier).updateHabit(updatedHabit);
@@ -1052,19 +1179,90 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     }
 
     // 4. Manejo de Modo Reloj 24h
-    if (_hasSchedule) {
+    if (_hasSchedule || _targetMode == TaskTargetMode.hours) {
       final finalHabitId = _linkedHabitId ?? (_showInOrbit ? targetHabitId : null);
-      final hasHourTarget = (_showInOrbit && _targetMode == TaskTargetMode.hours) ||
-          (_linkedHabitId != null &&
-              (habits.cast<Habit?>().firstWhere((h) => h?.id == _linkedHabitId, orElse: () => null)?.hasMonthlyTarget ?? false));
+      final hasHourTarget = _targetMode == TaskTargetMode.hours;
 
-      // Guardar todos los horarios definidos en la lista _schedules:
-      for (final s in _schedules) {
+      final effectiveSchedules = <_ScheduleItem>[
+        ..._schedules.map((s) {
+          if (_schedules.length == 1 && widget.habitToEdit != null && s.title.trim().toLowerCase() == widget.habitToEdit!.name.trim().toLowerCase()) {
+            return _ScheduleItem(
+              id: s.id,
+              title: title,
+              startTime: s.startTime,
+              endTime: s.endTime,
+            );
+          }
+          if (_schedules.length == 1 && widget.blockToEdit != null && s.id == widget.blockToEdit!.id) {
+            return _ScheduleItem(
+              id: s.id,
+              title: title,
+              startTime: s.startTime,
+              endTime: s.endTime,
+            );
+          }
+          return s;
+        }),
+        if (_schedules.isEmpty)
+          _ScheduleItem(
+            id: editingBlockId ?? 'block_${DateTime.now().millisecondsSinceEpoch}',
+            title: title,
+            startTime: _startTime ?? const TimeOfDay(hour: 8, minute: 0),
+            endTime: _endTime ?? const TimeOfDay(hour: 16, minute: 0),
+          ),
+      ];
+
+      // Calcular fechas ya asignadas en otros bloques de la misma tarea (si tiene múltiples turnos)
+      final allOtherBlocksAssigned = <String>{};
+      final allOtherBlocksCompleted = <String>{};
+      if (effectiveSchedules.length > 1) {
+        for (final s in effectiveSchedules.skip(1)) {
+          final b = blocks.cast<ScheduleBlock?>().firstWhere(
+                (blk) => blk?.id == s.id,
+                orElse: () => null,
+              );
+          if (b != null) {
+            allOtherBlocksAssigned.addAll(b.assignedDates.where((d) => _assignedDates.contains(d)));
+            allOtherBlocksCompleted.addAll(b.completedDates.where((d) => _completedDates.contains(d)));
+          }
+        }
+      }
+
+      // Guardar todos los horarios definidos:
+      for (int idx = 0; idx < effectiveSchedules.length; idx++) {
+        final s = effectiveSchedules[idx];
         final existingBlock = blocks.cast<ScheduleBlock?>().firstWhere(
               (b) => b?.id == s.id,
               orElse: () => null,
             );
         final isNew = existingBlock == null;
+        final List<String> blockCompletedDates;
+        final List<String> blockAssignedDates;
+
+        if (effectiveSchedules.length == 1) {
+          blockCompletedDates = List<String>.from(_completedDates);
+          blockAssignedDates = <String>{
+            ..._assignedDates,
+            ..._completedDates,
+          }.toList();
+        } else if (idx == 0) {
+          blockCompletedDates = _completedDates
+              .where((d) => (existingBlock?.completedDates.contains(d) ?? false) || !allOtherBlocksCompleted.contains(d))
+              .toList();
+          blockAssignedDates = <String>{
+            ..._assignedDates.where((d) => (existingBlock?.assignedDates.contains(d) ?? false) || !allOtherBlocksAssigned.contains(d)),
+            ...blockCompletedDates,
+          }.toList();
+        } else {
+          blockCompletedDates = (existingBlock?.completedDates ?? const <String>[])
+              .where((d) => _completedDates.contains(d))
+              .toList();
+          blockAssignedDates = <String>{
+            ...(existingBlock?.assignedDates ?? const <String>[]).where((d) => _assignedDates.contains(d)),
+            ...blockCompletedDates,
+          }.toList();
+        }
+
         final scheduleBlock = ScheduleBlock(
           id: s.id,
           title: s.title,
@@ -1077,8 +1275,9 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           daysOfWeek: _activeWeekdays,
           hasMonthlyHourTarget: hasHourTarget,
           monthlyTargetHours: _monthlyTargetHours,
-          completedDates: existingBlock?.completedDates ?? _completedDates,
-          assignedDates: existingBlock?.assignedDates ?? (widget.blockToEdit?.id == s.id ? widget.blockToEdit!.assignedDates : const []),
+          completedDates: blockCompletedDates,
+          assignedDates: blockAssignedDates,
+          monthlyExtraHours: existingBlock?.monthlyExtraHours ?? const {},
           extraHours: existingBlock?.extraHours ?? _extraHours,
         );
 
@@ -1089,9 +1288,9 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         }
       }
 
-      if (_schedules.isNotEmpty) {
+      if (effectiveSchedules.isNotEmpty) {
         // Si antes había un bloque individual genérico y ahora se usan franjas múltiples, eliminar el genérico viejo para que no choquen horas:
-        if (editingBlockId != null && !_schedules.any((s) => s.id == editingBlockId)) {
+        if (editingBlockId != null && !effectiveSchedules.any((s) => s.id == editingBlockId)) {
           ref.read(scheduleProvider.notifier).deleteBlock(editingBlockId);
         }
       }
@@ -1303,6 +1502,278 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     );
   }
 
+  Widget _wrapTourSection({
+    required int stepIndex,
+    required GlobalKey sectionKey,
+    required bool isDark,
+    required Widget child,
+  }) {
+    if (!widget.isTourMode) return child;
+
+    final isFocused = _tourSubStep == stepIndex;
+    final accent = Theme.of(context).colorScheme.primary;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () {
+        if (!isFocused) {
+          _goToTourSubStep(stepIndex);
+        }
+      },
+      child: AnimatedOpacity(
+        key: sectionKey,
+        duration: const Duration(milliseconds: 220),
+        opacity: isFocused ? 1.0 : 0.32,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          margin: EdgeInsets.symmetric(vertical: isFocused ? 6.0 : 0.0),
+          padding: EdgeInsets.all(isFocused ? 12.0 : 0.0),
+          decoration: BoxDecoration(
+            color: isFocused
+                ? accent.withValues(alpha: isDark ? 0.08 : 0.06)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: isFocused
+                ? Border.all(
+                    color: accent,
+                    width: 1.8,
+                  )
+                : null,
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTourGuideCard(bool isDark) {
+    final accent = Theme.of(context).colorScheme.primary;
+    final cardBg = isDark ? const Color(0xFF141414) : const Color(0xFFF6F5F2);
+    final cardBorder = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFD8D5CE);
+    final textPrimary = isDark ? const Color(0xFFF4F3EF) : const Color(0xFF0A0A0A);
+    final textSecondary = isDark ? const Color(0xFF9E9C96) : const Color(0xFF52514E);
+
+    const subSteps = <({String label, String title, String body})>[
+      (
+        label: '3-B',
+        title: '1. Nombre y Color Visual',
+        body: 'Ponle nombre a tu hábito o turno y elige el color con el que brillará su anillo en la rueda y en el reloj.',
+      ),
+      (
+        label: '3-C',
+        title: '2. Subtareas paso a paso',
+        body: 'Opcional: divide cualquier actividad en pequeños pasos (ej. Calentar, Pesas, Estirar) para ir marcando tu avance.',
+      ),
+      (
+        label: '3-D',
+        title: '3. Dónde se muestra y Horario',
+        body: 'Elige si aparece en el Reloj 24h con hora fija (incluso turnos nocturnos), en la Rueda Mensual o en ambos a la vez.',
+      ),
+      (
+        label: '3-E',
+        title: '4. Días activos y Tipo de Meta',
+        body: 'Selecciona qué días aplica y define tu objetivo: sin meta, por días al mes o por Bolsa de Horas si trabajas por turnos.',
+      ),
+    ];
+
+    final current = subSteps[_tourSubStep.clamp(0, subSteps.length - 1)];
+    final isLastSubStep = _tourSubStep >= subSteps.length - 1;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: accent.withValues(alpha: 0.75),
+          width: 1.2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text(
+                  '[ PASO ${current.label} / 07 ]',
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTheme.monoStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: accent,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  Navigator.of(context).pop();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : Colors.black.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(5),
+                    border: Border.all(color: cardBorder, width: 1.0),
+                  ),
+                  child: Text(
+                    '[ VOLVER AL TOUR ]',
+                    style: AppTheme.monoStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                      color: textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Mini barra de 4 secciones del formulario con animación fluida
+          Row(
+            children: List.generate(subSteps.length, (i) {
+              final active = i <= _tourSubStep;
+              return Expanded(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOutCubic,
+                  height: 3.0,
+                  margin: EdgeInsets.only(right: i < subSteps.length - 1 ? 5.0 : 0.0),
+                  decoration: BoxDecoration(
+                    color: active
+                        ? accent
+                        : (isDark
+                            ? Colors.white.withValues(alpha: 0.12)
+                            : Colors.black.withValues(alpha: 0.10)),
+                    borderRadius: BorderRadius.circular(1.5),
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 10),
+
+          // Contenido del sub-paso con transición suave (Fade + Slide + AnimatedSize)
+          AnimatedSize(
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topLeft,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0.03, 0.0),
+                      end: Offset.zero,
+                    ).animate(CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutCubic,
+                    )),
+                    child: child,
+                  ),
+                );
+              },
+              child: Column(
+                key: ValueKey<int>(_tourSubStep),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    current.title,
+                    style: AppTheme.displayStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w800,
+                      color: textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    current.body,
+                    style: AppTheme.bodyStyle(
+                      fontSize: 12.5,
+                      height: 1.4,
+                      color: textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              if (_tourSubStep > 0) ...[
+                GestureDetector(
+                  onTap: () => _goToTourSubStep(_tourSubStep - 1),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: cardBorder, width: 1.0),
+                    ),
+                    child: Text(
+                      '[ ← ANTERIOR ]',
+                      style: AppTheme.monoStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ] else
+                const SizedBox.shrink(),
+              Flexible(
+                child: GestureDetector(
+                  onTap: () {
+                    if (isLastSubStep) {
+                      HapticFeedback.mediumImpact();
+                      Navigator.of(context).pop();
+                    } else {
+                      _goToTourSubStep(_tourSubStep + 1);
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: accent,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      isLastSubStep ? '[ VOLVER AL TOUR → ]' : '[ SIGUIENTE PARTE → ]',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: AppTheme.monoStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? const Color(0xFF0A0A0A) : Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1321,6 +1792,9 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.90,
+      ),
       decoration: BoxDecoration(
         color: isDark ? AppTheme.obsidianSurfaceElevated : AppTheme.boneSurfaceElevated,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
@@ -1337,109 +1811,94 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
             MediaQuery.of(context).padding.bottom +
             18,
       ),
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Arrastrador superior
-            Center(
-              child: Container(
-                width: 42,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Arrastrador superior
+          Center(
+            child: Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const SizedBox(height: 18),
+          ),
+          const SizedBox(height: 14),
 
-            // Título de la Hoja
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  _isEditing ? 'Editar Tarea' : 'Nueva Tarea',
-                  style: GoogleFonts.outfit(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: textColor,
-                  ),
+          // Título de la Hoja
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _isEditing ? 'Editar Tarea' : 'Nueva Tarea',
+                style: GoogleFonts.outfit(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: textColor,
                 ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_isEditing) ...[
-                      GestureDetector(
-                        onTap: _duplicateTask,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                          margin: const EdgeInsets.only(right: 8),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _selectedColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
                           decoration: BoxDecoration(
-                            color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
-                            borderRadius: AppTheme.radiusXs,
-                            border: Border.all(
-                              color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
-                              width: AppTheme.borderPrecision,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.copy_rounded, size: 12, color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Duplicar',
-                                style: AppTheme.monoStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
-                                ),
-                              ),
-                            ],
+                            color: _selectedColor,
+                            shape: BoxShape.circle,
                           ),
                         ),
-                      ),
-                    ],
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _selectedColor.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: _selectedColor,
-                              shape: BoxShape.circle,
-                            ),
+                        const SizedBox(width: 6),
+                        Text(
+                          modeBadgeText,
+                          style: GoogleFonts.outfit(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: _selectedColor,
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            modeBadgeText,
-                            style: GoogleFonts.outfit(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: _selectedColor,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
 
-            // 1. Nombre de la Tarea
-            TextField(
+          // Tarjeta Guía fijada en la parte superior durante el Tour Guiado (Pasos 3-B a 3-E)
+          if (widget.isTourMode) _buildTourGuideCard(isDark),
+
+          // Formulario desplazable con secciones iluminadas dinámicamente
+          Flexible(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // SECCIÓN 3-B: Nombre + Color Visual
+                  _wrapTourSection(
+                    stepIndex: 0,
+                    sectionKey: _tourIdentitySectionKey,
+                    isDark: isDark,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 1. Nombre de la Tarea
+                        TextField(
               controller: _nameController,
               onChanged: (val) {
                 if (_nameError != null) {
@@ -1571,7 +2030,18 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                 );
               },
             ),
+          ],
+        ),
+      ),
 
+      // SECCIÓN 3-C: Subtareas (Checklist)
+      _wrapTourSection(
+        stepIndex: 1,
+        sectionKey: _tourSubtasksSectionKey,
+        isDark: isDark,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             // 3. Sección: Subtareas (Checklist)
             _buildSectionTitle('Subtareas'),
             Container(
@@ -1754,7 +2224,18 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                 ],
               ),
             ),
+          ],
+        ),
+      ),
 
+      // SECCIÓN 3-D: Visibilidad y Modos + Horarios
+      _wrapTourSection(
+        stepIndex: 2,
+        sectionKey: _tourVisibilitySectionKey,
+        isDark: isDark,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             // 4. Sección: Visibilidad y Modos (¿Dónde se muestra?)
             _buildSectionTitle('Visibilidad y Modos'),
             Container(
@@ -2141,7 +2622,18 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                 ],
               ],
             ],
+          ],
+        ),
+      ),
 
+      // SECCIÓN 3-E: Días de la Semana + Tipo de Meta
+      _wrapTourSection(
+        stepIndex: 3,
+        sectionKey: _tourTargetSectionKey,
+        isDark: isDark,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             // 5. Días de la Semana Activos (Repetición)
             _buildSectionTitle('Días de la Semana (Repetición habitual)'),
             Wrap(
@@ -2249,7 +2741,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                   decoration: BoxDecoration(
                     color: theme.scaffoldBackgroundColor,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: _selectedColor.withOpacity(0.3)),
+                    border: Border.all(color: _selectedColor.withValues(alpha: 0.3)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2261,7 +2753,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                           Text(
                             'Objetivo al mes:',
                             style: TextStyle(
-                              color: textColor?.withOpacity(0.8),
+                              color: textColor?.withValues(alpha: 0.85),
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
                             ),
@@ -2269,7 +2761,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                           Row(
                             children: [
                               IconButton(
-                                icon: Icon(Icons.remove, color: textColor?.withOpacity(0.6)),
+                                icon: Icon(Icons.remove, color: textColor?.withValues(alpha: 0.6)),
                                 onPressed: () {
                                   if (_monthlyTargetHours > 10) {
                                     setState(() => _monthlyTargetHours -= 10);
@@ -2277,22 +2769,26 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                                 },
                               ),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                                 decoration: BoxDecoration(
-                                  color: _selectedColor.withOpacity(0.15),
+                                  color: _selectedColor.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: _selectedColor.withValues(alpha: 0.35),
+                                    width: AppTheme.borderPrecision,
+                                  ),
                                 ),
-                              ),
-                              Text(
-                                '$_monthlyTargetHours h',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: _selectedColor,
+                                child: Text(
+                                  '$_monthlyTargetHours h',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: _selectedColor,
+                                  ),
                                 ),
                               ),
                               IconButton(
-                                icon: Icon(Icons.add, color: textColor?.withOpacity(0.6)),
+                                icon: Icon(Icons.add, color: textColor?.withValues(alpha: 0.6)),
                                 onPressed: () {
                                   if (_monthlyTargetHours < 300) {
                                     setState(() => _monthlyTargetHours += 10);
@@ -2303,147 +2799,18 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                           ),
                         ],
                       ),
-                      const Divider(height: 20),
-
-                      // Horas Extra
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Horas extra acumuladas:',
-                            style: TextStyle(color: textColor?.withOpacity(0.7), fontSize: 13),
-                          ),
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: Icon(Icons.remove, color: textColor?.withOpacity(0.6)),
-                                onPressed: () {
-                                  if (_extraHours > 0) {
-                                    setState(() => _extraHours = (_extraHours - 1.0).clamp(0.0, 300.0));
-                                  }
-                                },
-                              ),
-                              Text(
-                                '+${_extraHours.toStringAsFixed(0)} h',
-                                style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 14),
-                              ),
-                              IconButton(
-                                icon: Icon(Icons.add, color: textColor?.withOpacity(0.6)),
-                                onPressed: () {
-                                  setState(() => _extraHours += 1.0);
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const Divider(height: 20),
-
-                      // Selector de días trabajados en el mes actual (1..31)
-                      Builder(
-                        builder: (context) {
-                          final now = DateTime.now();
-                          final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
-                          final shiftHours = _durationMinutes / 60.0;
-                          final currentMonthPrefix = '${now.year}-${now.month.toString().padLeft(2, '0')}';
-                          final completedThisMonth = _completedDates.where((d) => d.startsWith(currentMonthPrefix)).length;
-                          final totalWorkedHours = (completedThisMonth * shiftHours) + _extraHours;
-
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Sesiones este mes:',
-                                    style: TextStyle(
-                                      color: textColor?.withOpacity(0.85),
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: _selectedColor.withOpacity(0.15),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      '$completedThisMonth sesiones · ${totalWorkedHours.toStringAsFixed(0)} / ${_monthlyTargetHours}h',
-                                      style: GoogleFonts.outfit(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: _selectedColor,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                'Toca los días en los que has completado el horario:',
-                                style: TextStyle(color: textColor?.withOpacity(0.5), fontSize: 11),
-                              ),
-                              const SizedBox(height: 10),
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children: List.generate(daysInMonth, (index) {
-                                  final dayNum = index + 1;
-                                  final dateIso = '${now.year}-${now.month.toString().padLeft(2, '0')}-${dayNum.toString().padLeft(2, '0')}';
-                                  final isWorked = _completedDates.contains(dateIso);
-                                  final isToday = dayNum == now.day;
-
-                                  return GestureDetector(
-                                    onTap: () {
-                                      HapticFeedback.selectionClick();
-                                      setState(() {
-                                        if (isWorked) {
-                                          _completedDates.remove(dateIso);
-                                        } else {
-                                          _completedDates.add(dateIso);
-                                        }
-                                      });
-                                    },
-                                    child: AnimatedContainer(
-                                      duration: const Duration(milliseconds: 150),
-                                      width: 35,
-                                      height: 35,
-                                      decoration: BoxDecoration(
-                                        color: isWorked ? _selectedColor : Colors.transparent,
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: isWorked
-                                              ? _selectedColor
-                                              : isToday
-                                                  ? _selectedColor.withOpacity(0.6)
-                                                  : Colors.grey.withOpacity(0.25),
-                                          width: isToday ? 1.8 : 1.0,
-                                        ),
-                                      ),
-                                      alignment: Alignment.center,
-                                      child: Text(
-                                        '$dayNum',
-                                        style: GoogleFonts.outfit(
-                                          fontSize: 12,
-                                          fontWeight: isWorked || isToday ? FontWeight.bold : FontWeight.normal,
-                                          color: isWorked ? Colors.white : textColor?.withOpacity(0.75),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
+                      const SizedBox(height: 12),
+                      Divider(color: Colors.grey.withValues(alpha: 0.15), height: 1),
+                      const SizedBox(height: 12),
+                      _buildLinkedTaskCalendar(textColor, isDark),
                     ],
                   ),
                 ),
               ],
             ],
+          ],
+        ),
+      ),
 
             const SizedBox(height: 28),
 
@@ -2518,7 +2885,10 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           ],
         ),
       ),
-    );
+    ),
+  ],
+),
+);
   }
 
   Widget _buildTabOption(TaskTargetMode mode, String label) {
@@ -2527,7 +2897,16 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       child: GestureDetector(
         onTap: () {
           HapticFeedback.selectionClick();
-          setState(() => _targetMode = mode);
+          setState(() {
+            _targetMode = mode;
+            if (mode == TaskTargetMode.hours && !_hasSchedule) {
+              _hasSchedule = true;
+              if (_startTime == null && _endTime == null && _schedules.isEmpty) {
+                _startTime = const TimeOfDay(hour: 8, minute: 0);
+                _endTime = const TimeOfDay(hour: 16, minute: 0);
+              }
+            }
+          });
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
@@ -2549,6 +2928,329 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildLinkedTaskCalendar(Color? textColor, bool isDark) {
+    final calMonth = _calendarMonth ??= DateTime(DateTime.now().year, DateTime.now().month, 1);
+    final year = calMonth.year;
+    final month = calMonth.month;
+    final monthPrefix = '$year-${month.toString().padLeft(2, '0')}';
+    final daysInMonth = DateTime(year, month + 1, 0).day;
+    final firstDayWeekday = DateTime(year, month, 1).weekday; // 1 = Lunes .. 7 = Domingo
+    final leadingEmptyCells = firstDayWeekday - 1;
+    final totalCells = leadingEmptyCells + daysInMonth;
+    final rowsCount = (totalCells / 7).ceil();
+    final todayIso = DateTime.now().toIso8601String().split('T').first;
+
+    // Asegurar sincronización con bloques existentes incluso tras Hot Reload
+    if (_didSyncAssignedDates != true) {
+      _didSyncAssignedDates = true;
+      final blocks = ref.read(scheduleProvider);
+      final targetHabitId = widget.habitToEdit?.id ?? widget.blockToEdit?.habitId ?? _linkedHabitId;
+      final currentTitle = _nameController.text.trim().toLowerCase();
+      final mergedAssigned = <String>{..._assignedDates, ..._completedDates};
+      final mergedCompleted = <String>{..._completedDates};
+      for (final b in blocks) {
+        final matchesBlock = (widget.blockToEdit != null && b.id == widget.blockToEdit!.id) ||
+            (targetHabitId != null && b.habitId == targetHabitId) ||
+            _schedules.any((s) => s.id == b.id) ||
+            (currentTitle.isNotEmpty && b.title.trim().toLowerCase() == currentTitle);
+        if (matchesBlock) {
+          mergedAssigned.addAll(b.assignedDates);
+          mergedCompleted.addAll(b.completedDates);
+          for (final d in b.assignedDates) {
+            if (d.compareTo(todayIso) < 0) mergedCompleted.add(d);
+          }
+        }
+      }
+      mergedAssigned.addAll(mergedCompleted);
+      _assignedDates = mergedAssigned.toList();
+      _completedDates = mergedCompleted.toList();
+    }
+
+    final completedInMonth = _completedDates.where((d) => d.startsWith(monthPrefix)).toSet();
+    final assignedInMonth = <String>{
+      ..._assignedDates.where((d) => d.startsWith(monthPrefix)),
+      ...completedInMonth,
+    };
+    final pendingCount = assignedInMonth.where((d) => !completedInMonth.contains(d)).length;
+    final completedCount = completedInMonth.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Cabecera: Título + Navegación de Mes
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.calendar_month_rounded,
+                  size: 15,
+                  color: _selectedColor,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Calendario del mes',
+                  style: TextStyle(
+                    color: textColor?.withValues(alpha: 0.9),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      _calendarMonth = DateTime(year, month - 1, 1);
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05),
+                      borderRadius: AppTheme.radiusXs,
+                    ),
+                    child: Icon(
+                      Icons.chevron_left_rounded,
+                      size: 16,
+                      color: textColor?.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    '${_monthNames[month - 1]} $year',
+                    style: AppTheme.monoStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: textColor?.withValues(alpha: 0.85),
+                    ),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      _calendarMonth = DateTime(year, month + 1, 1);
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05),
+                      borderRadius: AppTheme.radiusXs,
+                    ),
+                    child: Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: textColor?.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+
+        // Resumen rápido: Completados vs Pendientes
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: _selectedColor.withValues(alpha: 0.2),
+                borderRadius: AppTheme.radiusXs,
+                border: Border.all(
+                  color: _selectedColor.withValues(alpha: 0.5),
+                  width: 1.0,
+                ),
+              ),
+              child: Text(
+                '$completedCount completados',
+                style: AppTheme.monoStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.bold,
+                  color: _selectedColor,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: _selectedColor.withValues(alpha: 0.07),
+                borderRadius: AppTheme.radiusXs,
+                border: Border.all(
+                  color: _selectedColor.withValues(alpha: 0.25),
+                  width: 1.0,
+                ),
+              ),
+              child: Text(
+                '$pendingCount por completar',
+                style: AppTheme.monoStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                  color: textColor?.withValues(alpha: 0.6),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // Cabecera de días de la semana (L M X J V S D)
+        Row(
+          children: List.generate(7, (i) {
+            final isWeekend = i >= 5;
+            return Expanded(
+              child: Center(
+                child: Text(
+                  _weekdaysShort[i],
+                  style: AppTheme.monoStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: isWeekend
+                        ? _selectedColor.withValues(alpha: 0.75)
+                        : textColor?.withValues(alpha: 0.45),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 6),
+
+        // Cuadrícula de días del mes (enlazada con el Calendario General)
+        Column(
+          children: List.generate(rowsCount, (rowIndex) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Row(
+                children: List.generate(7, (colIndex) {
+                  final cellIndex = rowIndex * 7 + colIndex;
+                  final dayNum = cellIndex - leadingEmptyCells + 1;
+                  if (dayNum < 1 || dayNum > daysInMonth) {
+                    return const Expanded(child: SizedBox(height: 36));
+                  }
+
+                  final dateIso = '$monthPrefix-${dayNum.toString().padLeft(2, '0')}';
+                  final isCompleted = completedInMonth.contains(dateIso);
+                  final isAssigned = assignedInMonth.contains(dateIso);
+                  final isPending = isAssigned && !isCompleted;
+                  final isToday = dateIso == todayIso;
+
+                  return Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() {
+                            if (!isAssigned) {
+                              // 1. Sin asignar -> Asignado / Pendiente (más opaco)
+                              _assignedDates.add(dateIso);
+                            } else if (isPending) {
+                              // 2. Pendiente -> Completado (coloreado vivo)
+                              _completedDates.add(dateIso);
+                            } else {
+                              // 3. Completado -> Sin asignar
+                              _completedDates.remove(dateIso);
+                              _assignedDates.remove(dateIso);
+                            }
+                          });
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 160),
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: isCompleted
+                                ? _selectedColor.withValues(alpha: isDark ? 0.88 : 0.92)
+                                : isPending
+                                    ? _selectedColor.withValues(alpha: isDark ? 0.16 : 0.14)
+                                    : (isDark
+                                        ? Colors.white.withValues(alpha: 0.03)
+                                        : Colors.black.withValues(alpha: 0.03)),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isCompleted
+                                  ? _selectedColor
+                                  : isPending
+                                      ? _selectedColor.withValues(alpha: isDark ? 0.42 : 0.38)
+                                      : isToday
+                                          ? (isDark ? Colors.white38 : Colors.black38)
+                                          : (isDark
+                                              ? Colors.white.withValues(alpha: 0.07)
+                                              : Colors.black.withValues(alpha: 0.07)),
+                              width: isCompleted ? 1.5 : (isPending || isToday ? 1.1 : 0.8),
+                            ),
+                          ),
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Text(
+                                '$dayNum',
+                                style: AppTheme.monoStyle(
+                                  fontSize: 12,
+                                  fontWeight: isCompleted
+                                      ? FontWeight.w800
+                                      : isPending
+                                          ? FontWeight.w700
+                                          : FontWeight.w500,
+                                  color: isCompleted
+                                      ? Colors.white
+                                      : isPending
+                                          ? _selectedColor.withValues(alpha: isDark ? 0.65 : 0.72)
+                                          : textColor?.withValues(alpha: 0.38),
+                                ),
+                              ),
+                              if (isCompleted)
+                                const Positioned(
+                                  top: 2,
+                                  right: 3,
+                                  child: Icon(
+                                    Icons.check_rounded,
+                                    size: 9,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              else if (isPending)
+                                Positioned(
+                                  top: 3,
+                                  right: 3,
+                                  child: Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: _selectedColor.withValues(alpha: 0.65),
+                                        width: 1.1,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            );
+          }),
+        ),
+      ],
     );
   }
 

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icon/app_icon.png" width="128" alt="OrbitHabit Warm Lo-Fi Orbital Logo"/>
+  <img src="assets/icon/app_icon.png" width="128" alt="OrbitHabit Nordic Sage Orbital Logo"/>
 </p>
 
 <h1 align="center">🪐 OrbitHabit</h1>
@@ -67,11 +67,11 @@
 
 ## 🚀 What's New in v1.2.6
 
-OrbitHabit **v1.2.6** delivers a major visual and ergonomic leap combining the new **"Warm Lo-Fi Orbital"** brand identity, Swiss Grid UI refinements, a complete interactive Subtasks Checklist ecosystem, and a Multi-Task Shift Calendar:
+OrbitHabit **v1.2.6** delivers a major visual and ergonomic leap combining the new **"Nordic Sage & Dual-Ring Minimal"** brand identity, Swiss Grid UI refinements, a complete interactive Subtasks Checklist ecosystem, and a Multi-Task Shift Calendar:
 
-* 🪐 **New "Warm Lo-Fi Orbital" Mathematical Vector Icon (`assets/icon/app_icon.png`)**:
+* 🪐 **New "Nordic Sage & Dual-Ring Minimal" Mathematical Vector Icon (`assets/icon/app_icon.png`)**:
   * Programmatically rendered at `1024×1024` via `dart:ui` (`Canvas` & `PictureRecorder`) strictly respecting the Android Adaptive Icon Safe Zone (`r ≤ 310px`).
-  * Features a warm-cool triad of concentric arcs (**Emerald Sage → Luminous Mint**, **Coral Rose → Warm Peach**, and **Golden Amber → Solar Sand**) over a deep obsidian radial glow (`#0D0E12`), with a luminous solar core and an orbiting satellite.
+  * Features two bold concentric arcs (**Forest Emerald `#1B665C` → Sage Turquoise `#43A899`** and **Terracotta Coral `#DF5C57` → Warm Peach `#FA9878`**) with soft tactile elevation shadows over a luminous Nordic Sage Mist background (`#F7FCFA` → `#DCECE6`), anchored by a Golden Amber solar core (`#F2A43A`) and a solid Emerald orbiting satellite.
   * Includes transparent foreground assets for **Android 14/15 Adaptive Icon parallax** (`mipmap-anydpi-v26`) and **Android 12+ native Splash API** (`values-v31`).
 * 🎛️ **Swiss Ergonomic Header & Unified `[ Calendario ]` Access (`HomeScreen`)**:
   * **Decluttered Top Bar**: Removed the redundant user name badge next to the brand mark to give maximum breathing room to the primary navigation controls.
@@ -239,16 +239,17 @@ lib/
 
 ---
 
-## 🎨 Chromatic System ("Warm Lo-Fi Orbital" & Swiss Grid)
+## 🎨 Chromatic System ("Nordic Sage Orbital" & Swiss Grid)
 
 | Swatch | Hex | Role / Name |
 |---|---|---|
-| ⬛ | `#0D0E12` | **Obsidiana Profundo** (Primary Dark Surface & Adaptive Icon Base) |
-| ⬜ | `#F6F5F2` | **Hueso Editorial** (Primary Light Surface) |
+| 🌿 | `#F7FCFA` → `#DCECE6` | **Bruma Salvia Nórdica** (App Icon Light Surface & Adaptive Base) |
+| ⬛ | `#0A0A0A` | **Obsidiana Profundo** (Primary Dark UI Surface) |
+| ⬜ | `#F6F5F2` | **Hueso Editorial** (Primary Light UI Surface) |
 | 🟢 | `#C8FF00` | **Lima Industrial** (High-Contrast Swiss Technical Accent) |
-| 🧪 | `#52968C` → `#84DCC6` | **Salvia Esmeralda a Turquesa Menta** (Outer Orbital Ring) |
-| 🪸 | `#E57A77` → `#FFAD87` | **Rosa Coral a Melocotón Luminoso** (Middle Orbital Ring) |
-| ☀️ | `#E8993E` → `#FFD166` | **Ámbar Dorado a Arena Solar** (Inner Orbital Ring) |
+| 🧪 | `#1B665C` → `#43A899` | **Esmeralda Bosque a Turquesa Salvia** (Outer Orbital Ring & Satellite) |
+| 🪸 | `#DF5C57` → `#FA9878` | **Coral Terracota a Melocotón Suave** (Inner Orbital Ring) |
+| ☀️ | `#F2A43A` | **Sol Ámbar Dorado** (Central Solar Core) |
 | 🟣 | `#9EA1D4` / `#B5A6C9` | **Lavanda Nocturno** (Night Shifts & Deep Focus Blocks) |
 
 ---

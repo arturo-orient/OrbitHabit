@@ -231,6 +231,26 @@ class DemoSeederService {
       orderIndex: 1,
       activeWeekdays: [1, 3, 5],
       completedDates: gymDates,
+      subTasks: [
+        SubTask(
+          id: 'demo_sub_1',
+          title: 'Calentamiento articular (10 min)',
+          completedDates: {fmt(today)},
+          orderIndex: 0,
+        ),
+        const SubTask(
+          id: 'demo_sub_2',
+          title: 'Bloque principal de fuerza',
+          completedDates: {},
+          orderIndex: 1,
+        ),
+        const SubTask(
+          id: 'demo_sub_3',
+          title: 'Estiramientos y movilidad',
+          completedDates: {},
+          orderIndex: 2,
+        ),
+      ],
     );
 
     // 2. Lectura Técnica (diario)

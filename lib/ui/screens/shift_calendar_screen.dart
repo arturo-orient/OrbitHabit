@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../domain/models/habit.dart';
 import '../../domain/models/schedule_block.dart';
+import '../../providers/habit_provider.dart';
 import '../../providers/schedule_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/schedule_poster_service.dart';
+import '../../services/sound_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/unified_task_sheet.dart';
 
@@ -12,7 +15,12 @@ import '../widgets/unified_task_sheet.dart';
 /// Permite pintar días con turnos específicos (mañanas, noches, guardias)
 /// adaptándose a horarios cambiantes mes a mes.
 class ShiftCalendarScreen extends ConsumerStatefulWidget {
-  const ShiftCalendarScreen({Key? key}) : super(key: key);
+  final bool isTourMode;
+
+  const ShiftCalendarScreen({
+    Key? key,
+    this.isTourMode = false,
+  }) : super(key: key);
 
   @override
   ConsumerState<ShiftCalendarScreen> createState() => _ShiftCalendarScreenState();
@@ -23,6 +31,297 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
   String? _activeShiftId; // ID del bloque seleccionado para pintar o null para modo libre/borrar
   bool _isEraseMode = false;
   String? _lastDraggedDateIso; // Control de drag-to-paint para no re-aplicar en la misma celda
+
+  // Estado y claves para el sub-recorrido interactivo del tutorial (6-B a 6-D)
+  int _tourSubStep = 0; // 0: 6-B (Paleta), 1: 6-C (Cuadrícula), 2: 6-D (Resumen y Póster PNG)
+  final GlobalKey _tourPaletteKey = GlobalKey();
+  final GlobalKey _tourGridKey = GlobalKey();
+  final GlobalKey _tourSummaryKey = GlobalKey();
+
+  void _goToTourSubStep(int nextIndex) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _tourSubStep = nextIndex.clamp(0, 2);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final keys = [_tourPaletteKey, _tourGridKey, _tourSummaryKey];
+      final targetCtx = keys[_tourSubStep].currentContext;
+      if (targetCtx != null) {
+        Scrollable.ensureVisible(
+          targetCtx,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          alignment: 0.25,
+        );
+      }
+    });
+  }
+
+  Widget _wrapTourSection({
+    required int sectionIndex,
+    required GlobalKey sectionKey,
+    required bool isDark,
+    required Widget child,
+  }) {
+    final isFocused = widget.isTourMode && _tourSubStep == sectionIndex;
+    final accent = Theme.of(context).colorScheme.primary;
+    return KeyedSubtree(
+      key: sectionKey,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+        padding: isFocused
+            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 10)
+            : EdgeInsets.zero,
+        decoration: BoxDecoration(
+          color: isFocused
+              ? accent.withValues(alpha: isDark ? 0.08 : 0.06)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: isFocused
+              ? Border.all(
+                  color: accent.withValues(alpha: 0.85),
+                  width: 1.5,
+                )
+              : null,
+          boxShadow: isFocused
+              ? [
+                  BoxShadow(
+                    color: accent.withValues(alpha: isDark ? 0.18 : 0.12),
+                    blurRadius: 12,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : null,
+        ),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _buildTourGuideCard(bool isDark) {
+    final accent = Theme.of(context).colorScheme.primary;
+    final cardBg = isDark ? const Color(0xFF141414) : const Color(0xFFF6F5F2);
+    final cardBorder = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFD8D5CE);
+    final textPrimary = isDark ? const Color(0xFFF4F3EF) : const Color(0xFF0A0A0A);
+    final textSecondary = isDark ? const Color(0xFF9E9C96) : const Color(0xFF52514E);
+
+    const subSteps = <({String label, String title, String body})>[
+      (
+        label: '6-B',
+        title: '1. Tus Horarios como Pinceles',
+        body: 'Elige aquí qué turno quieres asignar (Mañana, Tarde, Noche o Libre / Borrar) o toca "+ Nuevo Horario" para crear uno a medida.',
+      ),
+      (
+        label: '6-C',
+        title: '2. Toca o Desliza por el Mes',
+        body: 'Toca días sueltos o desliza el dedo para pintar semanas enteras de una pasada. Mantén pulsado cualquier día con turno para ver detalles.',
+      ),
+      (
+        label: '6-D',
+        title: '3. Resumen de Horas y Póster PNG',
+        body: 'Abajo tienes el balance automático de horas del mes, y arriba a la derecha el icono de cámara para exportar tu cuadrante en un Póster PNG.',
+      ),
+    ];
+
+    final current = subSteps[_tourSubStep.clamp(0, subSteps.length - 1)];
+    final isLastSubStep = _tourSubStep >= subSteps.length - 1;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: accent.withValues(alpha: 0.75),
+          width: 1.2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text(
+                  '[ PASO ${current.label} / 07 ]',
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTheme.monoStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: accent,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  Navigator.of(context).pop();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : Colors.black.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(5),
+                    border: Border.all(color: cardBorder, width: 1.0),
+                  ),
+                  child: Text(
+                    '[ VOLVER AL TOUR ]',
+                    style: AppTheme.monoStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                      color: textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Barra de progreso de 3 segmentos con animación fluida
+          Row(
+            children: List.generate(subSteps.length, (i) {
+              final active = i <= _tourSubStep;
+              return Expanded(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOutCubic,
+                  height: 3.0,
+                  margin: EdgeInsets.only(right: i < subSteps.length - 1 ? 5.0 : 0.0),
+                  decoration: BoxDecoration(
+                    color: active
+                        ? accent
+                        : (isDark
+                            ? Colors.white.withValues(alpha: 0.12)
+                            : Colors.black.withValues(alpha: 0.10)),
+                    borderRadius: BorderRadius.circular(1.5),
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 10),
+
+          // Contenido con transición suave (Fade + Slide + AnimatedSize)
+          AnimatedSize(
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topLeft,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0.03, 0.0),
+                      end: Offset.zero,
+                    ).animate(CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutCubic,
+                    )),
+                    child: child,
+                  ),
+                );
+              },
+              child: Column(
+                key: ValueKey<int>(_tourSubStep),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    current.title,
+                    style: AppTheme.displayStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w800,
+                      color: textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    current.body,
+                    style: AppTheme.bodyStyle(
+                      fontSize: 12.5,
+                      height: 1.4,
+                      color: textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              if (_tourSubStep > 0) ...[
+                GestureDetector(
+                  onTap: () => _goToTourSubStep(_tourSubStep - 1),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: cardBorder, width: 1.0),
+                    ),
+                    child: Text(
+                      '[ ← ANTERIOR ]',
+                      style: AppTheme.monoStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ] else
+                const SizedBox.shrink(),
+              Flexible(
+                child: GestureDetector(
+                  onTap: () {
+                    if (isLastSubStep) {
+                      HapticFeedback.mediumImpact();
+                      Navigator.of(context).pop();
+                    } else {
+                      _goToTourSubStep(_tourSubStep + 1);
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: accent,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      isLastSubStep ? '[ VOLVER AL TOUR → ]' : '[ SIGUIENTE PARTE → ]',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: AppTheme.monoStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? const Color(0xFF0A0A0A) : Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   static const _monthNames = [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -132,7 +431,39 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
   }
 
   List<ScheduleBlock> _getShiftsForDate(List<ScheduleBlock> blocks, String dateIso) {
-    return blocks.where((b) => b.assignedDates.contains(dateIso)).toList();
+    return blocks
+        .where((b) => b.assignedDates.contains(dateIso) || b.completedDates.contains(dateIso))
+        .toList();
+  }
+
+  bool _isShiftCompletedOnDate(
+    ScheduleBlock s,
+    String dateIso,
+    String todayIso,
+    List<Habit> habits,
+  ) {
+    if (s.completedDates.contains(dateIso)) return true;
+    if (s.habitId != null) {
+      final linked = habits.cast<Habit?>().firstWhere(
+            (h) => h?.id == s.habitId,
+            orElse: () => null,
+          );
+      if (linked != null && linked.completedDates.contains(dateIso)) {
+        return true;
+      }
+    } else {
+      final linkedByName = habits.cast<Habit?>().firstWhere(
+            (h) => h != null && h.name.trim().toLowerCase() == s.title.trim().toLowerCase(),
+            orElse: () => null,
+          );
+      if (linkedByName != null && linkedByName.completedDates.contains(dateIso)) {
+        return true;
+      }
+    }
+    if (s.assignedDates.contains(dateIso) && dateIso.compareTo(todayIso) < 0) {
+      return true;
+    }
+    return false;
   }
 
   void _showDayTasksSheet(
@@ -152,7 +483,9 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
         return Consumer(
           builder: (context, ref, _) {
             final liveBlocks = ref.watch(scheduleProvider);
-            final dayShifts = liveBlocks.where((b) => b.assignedDates.contains(dateIso)).toList();
+            final liveHabits = ref.watch(habitsProvider);
+            final todayIso = DateTime.now().toIso8601String().split('T').first;
+            final dayShifts = _getShiftsForDate(liveBlocks, dateIso);
             final monthName = _monthNames[_selectedMonth.month - 1];
 
             return SafeArea(
@@ -246,15 +579,16 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                           itemBuilder: (context, index) {
                             final s = dayShifts[index];
                             final shiftColor = s.color;
+                            final isDone = _isShiftCompletedOnDate(s, dateIso, todayIso, liveHabits);
 
                             return Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                               decoration: BoxDecoration(
-                                color: shiftColor.withValues(alpha: isDark ? 0.12 : 0.08),
+                                color: shiftColor.withValues(alpha: isDone ? (isDark ? 0.16 : 0.12) : (isDark ? 0.06 : 0.04)),
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
-                                  color: shiftColor.withValues(alpha: 0.4),
-                                  width: 1.0,
+                                  color: shiftColor.withValues(alpha: isDone ? 0.65 : 0.25),
+                                  width: isDone ? 1.3 : 1.0,
                                 ),
                               ),
                               child: Column(
@@ -267,7 +601,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                         width: 10,
                                         height: 10,
                                         decoration: BoxDecoration(
-                                          color: shiftColor,
+                                          color: isDone ? shiftColor : shiftColor.withValues(alpha: 0.35),
                                           shape: BoxShape.circle,
                                         ),
                                       ),
@@ -294,6 +628,48 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                           ],
                                         ),
                                       ),
+                                      GestureDetector(
+                                        onTap: () {
+                                          HapticFeedback.mediumImpact();
+                                          if (!isDone) {
+                                            SoundService().playCheck();
+                                          }
+                                          ref.read(scheduleProvider.notifier).toggleDateForBlock(s.id, dateIso);
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                                          decoration: BoxDecoration(
+                                            color: isDone
+                                                ? shiftColor.withValues(alpha: 0.22)
+                                                : (isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.05)),
+                                            borderRadius: AppTheme.radiusXs,
+                                            border: Border.all(
+                                              color: isDone ? shiftColor : (isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder),
+                                              width: AppTheme.borderPrecision,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                isDone ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                                                size: 12,
+                                                color: isDone ? shiftColor : (isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted),
+                                              ),
+                                              const SizedBox(width: 5),
+                                              Text(
+                                                isDone ? 'Completado' : 'Pendiente',
+                                                style: AppTheme.monoStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: isDone ? shiftColor : (isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
                                       IconButton(
                                         icon: const Icon(Icons.close_rounded, size: 18),
                                         tooltip: 'Quitar de este día',
@@ -312,7 +688,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                     Row(
                                       children: [
                                         Text(
-                                          'Extra: ${s.getMonthlyExtraHours(_selectedMonth).toStringAsFixed(0)}h',
+                                          'Extra mes: ${s.getMonthlyExtraHours(_selectedMonth).toStringAsFixed(0)}h',
                                           style: AppTheme.monoStyle(
                                             fontSize: 10,
                                             fontWeight: FontWeight.w600,
@@ -440,6 +816,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final blocks = ref.watch(scheduleProvider);
+    final habits = ref.watch(habitsProvider);
     final settings = ref.watch(settingsProvider);
     final now = DateTime.now();
     final todayIso = now.toIso8601String().split('T').first;
@@ -452,15 +829,27 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
     final daysInMonth = DateUtils.getDaysInMonth(_selectedMonth.year, _selectedMonth.month);
     final firstDayWeekday = DateTime(_selectedMonth.year, _selectedMonth.month, 1).weekday; // 1 = Lunes
 
-    // Calcular estadísticas del mes en curso
+    // Calcular estadísticas del mes en curso (completados vs planificados)
     final monthPrefix = '${_selectedMonth.year}-${_selectedMonth.month.toString().padLeft(2, '0')}';
     int totalAssignedShifts = 0;
+    int completedShiftsCount = 0;
     double totalEstimatedHours = 0.0;
+    double totalCompletedHours = 0.0;
 
     for (final b in blocks) {
-      final inMonth = b.assignedDates.where((d) => d.startsWith(monthPrefix)).length;
-      totalAssignedShifts += inMonth;
-      totalEstimatedHours += inMonth * (b.durationInMinutes / 60.0);
+      final monthDates = <String>{
+        ...b.assignedDates.where((d) => d.startsWith(monthPrefix)),
+        ...b.completedDates.where((d) => d.startsWith(monthPrefix)),
+      };
+      final shiftHours = b.durationInMinutes / 60.0;
+      totalAssignedShifts += monthDates.length;
+      totalEstimatedHours += (monthDates.length * shiftHours) + b.getExtraHoursForMonth(_selectedMonth);
+
+      final completedInMonth = monthDates
+          .where((d) => _isShiftCompletedOnDate(b, d, todayIso, habits))
+          .length;
+      completedShiftsCount += completedInMonth;
+      totalCompletedHours += (completedInMonth * shiftHours) + b.getExtraHoursForMonth(_selectedMonth);
     }
 
     return Scaffold(
@@ -484,16 +873,36 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
-          IconButton(
-            icon: Icon(
-              Icons.photo_camera_back_rounded,
-              size: 20,
-              color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 240),
+              decoration: BoxDecoration(
+                color: (widget.isTourMode && _tourSubStep == 2)
+                    ? Theme.of(context).colorScheme.primary.withValues(alpha: isDark ? 0.22 : 0.16)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                border: (widget.isTourMode && _tourSubStep == 2)
+                    ? Border.all(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 1.5,
+                      )
+                    : null,
+              ),
+              child: IconButton(
+                icon: Icon(
+                  Icons.photo_camera_back_rounded,
+                  size: 20,
+                  color: (widget.isTourMode && _tourSubStep == 2)
+                      ? Theme.of(context).colorScheme.primary
+                      : (isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary),
+                ),
+                tooltip: 'Exportar Póster PNG',
+                onPressed: () => _openPosterPreview(isDark, blocks, settings.userName),
+              ),
             ),
-            tooltip: 'Exportar Póster PNG',
-            onPressed: () => _openPosterPreview(isDark, blocks, settings.userName),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 8),
         ],
       ),
       body: SafeArea(
@@ -503,6 +912,9 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               children: [
+                if (widget.isTourMode)
+                  _buildTourGuideCard(isDark),
+
                 // 1. Selector de Mes con Atajo a Hoy
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -569,17 +981,24 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                 const SizedBox(height: 16),
 
                 // 2. Paleta de Horarios (Selector de qué horario pintar)
-                Text(
-                  'Elige un horario y toca los días:',
-                  style: AppTheme.bodyStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
-                  ),
-                ),
-                const SizedBox(height: 10),
+                _wrapTourSection(
+                  sectionIndex: 0,
+                  sectionKey: _tourPaletteKey,
+                  isDark: isDark,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Elige un horario y toca los días:',
+                        style: AppTheme.bodyStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
 
-                SingleChildScrollView(
+                      SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   physics: const BouncingScrollPhysics(),
                   child: Row(
@@ -761,15 +1180,22 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                     ],
                   ),
                 ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 20),
 
                 // 3. Cuadrícula de Calendario Mensual
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: AppTheme.bentoCard(
-                    isLight: !isDark,
-                    borderRadius: AppTheme.radiusMd,
-                  ),
+                _wrapTourSection(
+                  sectionIndex: 1,
+                  sectionKey: _tourGridKey,
+                  isDark: isDark,
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: AppTheme.bentoCard(
+                      isLight: !isDark,
+                      borderRadius: AppTheme.radiusMd,
+                    ),
                   child: Column(
                     children: [
                       // Cabecera L M X J V S D
@@ -830,6 +1256,10 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                           final isMulti = assignedShifts.length >= 2;
                           final primaryShift = hasShifts ? assignedShifts.first : null;
                           final primaryColor = primaryShift?.color;
+                          final isDayCompleted = hasShifts &&
+                              assignedShifts.every(
+                                (s) => _isShiftCompletedOnDate(s, dateIso, todayIso, habits),
+                              );
 
                           return GestureDetector(
                             onTap: () {
@@ -850,22 +1280,30 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                               duration: const Duration(milliseconds: 140),
                               decoration: BoxDecoration(
                                 color: hasShifts
-                                    ? (isMulti
-                                        ? primaryColor!.withValues(alpha: isDark ? 0.12 : 0.08)
-                                        : primaryColor!.withValues(alpha: isDark ? 0.22 : 0.16))
+                                    ? (isDayCompleted
+                                        ? (isMulti
+                                            ? primaryColor!.withValues(alpha: isDark ? 0.18 : 0.14)
+                                            : primaryColor!.withValues(alpha: isDark ? 0.30 : 0.22))
+                                        : primaryColor!.withValues(alpha: isDark ? 0.06 : 0.04))
                                     : (isDark
                                         ? Colors.white.withValues(alpha: 0.03)
                                         : Colors.black.withValues(alpha: 0.02)),
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
                                   color: hasShifts
-                                      ? (isToday ? AppTheme.dynamicAccent(isDark) : primaryColor!)
+                                      ? (isToday
+                                          ? AppTheme.dynamicAccent(isDark)
+                                          : (isDayCompleted
+                                              ? primaryColor!
+                                              : primaryColor!.withValues(alpha: isDark ? 0.28 : 0.24)))
                                       : (isToday
                                           ? AppTheme.dynamicAccent(isDark)
                                           : (isDark
                                               ? AppTheme.obsidianBorder.withValues(alpha: 0.5)
                                               : AppTheme.boneBorder.withValues(alpha: 0.5))),
-                                  width: (isToday || hasShifts) ? 1.4 : 0.8,
+                                  width: isToday
+                                      ? 1.5
+                                      : (hasShifts ? (isDayCompleted ? 1.5 : 0.9) : 0.8),
                                 ),
                               ),
                               padding: const EdgeInsets.all(3.5),
@@ -873,7 +1311,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  // Fila superior: Número de día + Punto(s) cromático(s)
+                                  // Fila superior: Número de día + Indicador de estado (Completado vs Pendiente)
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
@@ -881,11 +1319,15 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                         '$day',
                                         style: AppTheme.monoStyle(
                                           fontSize: 10.5,
-                                          fontWeight: isToday ? FontWeight.w800 : FontWeight.w600,
+                                          fontWeight: (isToday || isDayCompleted) ? FontWeight.w800 : FontWeight.w600,
                                           color: isToday
                                               ? AppTheme.dynamicAccent(isDark)
                                               : (hasShifts
-                                                  ? (isDark ? Colors.white : Colors.black87)
+                                                  ? (isDayCompleted
+                                                      ? (isDark ? Colors.white : Colors.black87)
+                                                      : (isDark
+                                                          ? Colors.white.withValues(alpha: 0.45)
+                                                          : Colors.black.withValues(alpha: 0.45)))
                                                   : (isDark
                                                       ? AppTheme.obsidianTextPrimary
                                                       : AppTheme.boneTextPrimary)),
@@ -894,27 +1336,64 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                       if (!hasShifts)
                                         const SizedBox.shrink()
                                       else if (!isMulti)
-                                        Container(
-                                          width: 5,
-                                          height: 5,
-                                          decoration: BoxDecoration(
-                                            color: primaryColor,
-                                            shape: BoxShape.circle,
-                                          ),
-                                        )
+                                        isDayCompleted
+                                            ? Container(
+                                                width: 12,
+                                                height: 12,
+                                                decoration: BoxDecoration(
+                                                  color: primaryColor,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                alignment: Alignment.center,
+                                                child: const Icon(
+                                                  Icons.check_rounded,
+                                                  size: 8.5,
+                                                  color: Colors.white,
+                                                ),
+                                              )
+                                            : Container(
+                                                width: 6,
+                                                height: 6,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.transparent,
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: primaryColor!.withValues(alpha: 0.45),
+                                                    width: 1.2,
+                                                  ),
+                                                ),
+                                              )
                                       else
                                         Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             for (int i = 0; i < assignedShifts.length && i < 3; i++) ...[
                                               if (i > 0) const SizedBox(width: 2),
-                                              Container(
-                                                width: 4.5,
-                                                height: 4.5,
-                                                decoration: BoxDecoration(
-                                                  color: assignedShifts[i].color,
-                                                  shape: BoxShape.circle,
-                                                ),
+                                              Builder(
+                                                builder: (context) {
+                                                  final itemDone = _isShiftCompletedOnDate(
+                                                    assignedShifts[i],
+                                                    dateIso,
+                                                    todayIso,
+                                                    habits,
+                                                  );
+                                                  return Container(
+                                                    width: 5,
+                                                    height: 5,
+                                                    decoration: BoxDecoration(
+                                                      color: itemDone
+                                                          ? assignedShifts[i].color
+                                                          : Colors.transparent,
+                                                      shape: BoxShape.circle,
+                                                      border: itemDone
+                                                          ? null
+                                                          : Border.all(
+                                                              color: assignedShifts[i].color.withValues(alpha: 0.45),
+                                                              width: 1.0,
+                                                            ),
+                                                    ),
+                                                  );
+                                                },
                                               ),
                                             ],
                                           ],
@@ -932,8 +1411,10 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                       overflow: TextOverflow.ellipsis,
                                       style: AppTheme.displayStyle(
                                         fontSize: 9,
-                                        fontWeight: FontWeight.w700,
-                                        color: primaryColor,
+                                        fontWeight: isDayCompleted ? FontWeight.w800 : FontWeight.w600,
+                                        color: isDayCompleted
+                                            ? primaryColor
+                                            : primaryColor!.withValues(alpha: isDark ? 0.48 : 0.52),
                                       ),
                                     )
                                   else
@@ -943,28 +1424,42 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                       children: [
                                         for (int i = 0; i < assignedShifts.length && i < (assignedShifts.length > 2 ? 1 : 2); i++) ...[
                                           if (i > 0) const SizedBox(height: 1.5),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 2.5, vertical: 0.8),
-                                            decoration: BoxDecoration(
-                                              color: assignedShifts[i].color.withValues(alpha: 0.22),
-                                              borderRadius: BorderRadius.circular(2.5),
-                                              border: Border(
-                                                left: BorderSide(
-                                                  color: assignedShifts[i].color,
-                                                  width: 2.2,
+                                          Builder(
+                                            builder: (context) {
+                                              final itemDone = _isShiftCompletedOnDate(
+                                                assignedShifts[i],
+                                                dateIso,
+                                                todayIso,
+                                                habits,
+                                              );
+                                              return Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 2.5, vertical: 0.8),
+                                                decoration: BoxDecoration(
+                                                  color: assignedShifts[i].color.withValues(alpha: itemDone ? 0.25 : 0.08),
+                                                  borderRadius: BorderRadius.circular(2.5),
+                                                  border: Border(
+                                                    left: BorderSide(
+                                                      color: assignedShifts[i].color.withValues(alpha: itemDone ? 1.0 : 0.4),
+                                                      width: 2.2,
+                                                    ),
+                                                  ),
                                                 ),
-                                              ),
-                                            ),
-                                            child: Text(
-                                              assignedShifts[i].title,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: AppTheme.monoStyle(
-                                                fontSize: 7.5,
-                                                fontWeight: FontWeight.w700,
-                                                color: isDark ? Colors.white : Colors.black87,
-                                              ),
-                                            ),
+                                                child: Text(
+                                                  assignedShifts[i].title,
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: AppTheme.monoStyle(
+                                                    fontSize: 7.5,
+                                                    fontWeight: itemDone ? FontWeight.w800 : FontWeight.w600,
+                                                    color: itemDone
+                                                        ? (isDark ? Colors.white : Colors.black87)
+                                                        : (isDark
+                                                            ? Colors.white.withValues(alpha: 0.48)
+                                                            : Colors.black.withValues(alpha: 0.48)),
+                                                  ),
+                                                ),
+                                              );
+                                            },
                                           ),
                                         ],
                                         if (assignedShifts.length > 2)
@@ -991,68 +1486,146 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                     );
                   },
                 ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // 4. Resumen Mensual
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: AppTheme.bentoCard(
-                    isLight: !isDark,
-                    borderRadius: AppTheme.radiusMd,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      const SizedBox(height: 12),
+                      Divider(
+                        height: 1,
+                        color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                      ),
+                      const SizedBox(height: 10),
+                      // Leyenda de estados (Completado vs Pendiente por completar)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            '$totalAssignedShifts días planificados',
-                            style: AppTheme.displayStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: isDark
-                                  ? AppTheme.obsidianTextPrimary
-                                  : AppTheme.boneTextPrimary,
-                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: AppTheme.dynamicAccent(isDark),
+                                  shape: BoxShape.circle,
+                                ),
+                                alignment: Alignment.center,
+                                child: Icon(
+                                  Icons.check_rounded,
+                                  size: 8.5,
+                                  color: isDark ? Colors.black : Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Completado',
+                                style: AppTheme.monoStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.05),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.35),
+                                    width: 1.2,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Pendiente (más opaco)',
+                                style: AppTheme.monoStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 2),
                           Text(
-                            '~${totalEstimatedHours.toStringAsFixed(0)} horas estimadas para este mes',
+                            'Mantén pulsado para detalles',
                             style: AppTheme.monoStyle(
-                              fontSize: 11,
-                              color: isDark
-                                  ? AppTheme.obsidianTextMuted
-                                  : AppTheme.boneTextMuted,
+                              fontSize: 9.5,
+                              color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
                             ),
                           ),
                         ],
                       ),
-                      ElevatedButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isDark
-                              ? AppTheme.accentPhosphor
-                              : AppTheme.boneTextPrimary,
-                          foregroundColor: isDark ? Colors.black : Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: AppTheme.radiusSm,
-                          ),
-                        ),
-                        child: Text(
-                          'Listo',
-                          style: AppTheme.displayStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
                     ],
+                  ),
+                ),
+                ),
+                const SizedBox(height: 16),
+
+                // 4. Resumen Mensual (Enlazado con Objetivos y Horas Completadas)
+                _wrapTourSection(
+                  sectionIndex: 2,
+                  sectionKey: _tourSummaryKey,
+                  isDark: isDark,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: AppTheme.bentoCard(
+                      isLight: !isDark,
+                      borderRadius: AppTheme.radiusMd,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '$completedShiftsCount completados · ${totalAssignedShifts - completedShiftsCount} pendientes',
+                                style: AppTheme.displayStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark
+                                      ? AppTheme.obsidianTextPrimary
+                                      : AppTheme.boneTextPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${totalCompletedHours.toStringAsFixed(0)}h completadas de ~${totalEstimatedHours.toStringAsFixed(0)}h planificadas',
+                                style: AppTheme.monoStyle(
+                                  fontSize: 11,
+                                  color: isDark
+                                      ? AppTheme.obsidianTextMuted
+                                      : AppTheme.boneTextMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: isDark
+                                ? AppTheme.accentPhosphor
+                                : AppTheme.boneTextPrimary,
+                            foregroundColor: isDark ? Colors.black : Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: AppTheme.radiusSm,
+                            ),
+                          ),
+                          child: Text(
+                            'Listo',
+                            style: AppTheme.displayStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),

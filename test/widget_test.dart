@@ -21,6 +21,8 @@ import 'package:orbithabit/services/backup_service.dart';
 import 'package:orbithabit/services/schedule_poster_service.dart';
 import 'package:orbithabit/utils/poster_saver.dart';
 import 'package:orbithabit/ui/widgets/orbit_clock_24.dart';
+import 'package:orbithabit/ui/widgets/guided_tour_overlay.dart';
+import 'package:flutter/material.dart';
 
 class FakeDatabaseService extends DatabaseService {
   final Map<String, dynamic> _settings = {};
@@ -846,6 +848,77 @@ void main() {
       expect(cloned.subTasks.first.completedDates, isEmpty);
       expect(cloned.subTasks.last.title, 'Ejecutar bloque 45m');
       expect(cloned.subTasks.last.completedDates, isEmpty);
+    });
+
+    testWidgets('GuidedTourOverlay renders 7-step Spotlight tour and triggers interactive target tap', (WidgetTester tester) async {
+      final targetKey = GlobalKey();
+      int currentStep = 0;
+      bool interactiveTapped = false;
+
+      final steps = [
+        GuidedTourStepData(
+          stepNumber: 1,
+          title: 'Dos vistas conectadas',
+          body: 'Cambia entre ÓRBITA y 24H.',
+          targetKey: targetKey,
+        ),
+        GuidedTourStepData(
+          stepNumber: 3,
+          title: 'Crea tu primera tarea',
+          body: 'Toca el botón iluminado.',
+          targetKey: targetKey,
+          isInteractiveAction: true,
+        ),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.light(),
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              return Scaffold(
+                body: Stack(
+                  children: [
+                    Center(
+                      child: ElevatedButton(
+                        key: targetKey,
+                        onPressed: () {},
+                        child: const Text('Añadir Hábito'),
+                      ),
+                    ),
+                    GuidedTourOverlay(
+                      currentStepIndex: currentStep,
+                      steps: steps,
+                      onNext: () => setState(() => currentStep = 1),
+                      onPrevious: () => setState(() => currentStep = 0),
+                      onSkip: () {},
+                      onInteractiveTargetTap: () {
+                        interactiveTapped = true;
+                      },
+                      onCreateFirstTask: () {},
+                      onExploreWithDemo: () {},
+                      onStartFromScratch: () {},
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      );
+
+      await tester.pump();
+      expect(find.text('Dos vistas conectadas'), findsOneWidget);
+      expect(find.text('[ PASO 01 / 02 ]'), findsOneWidget);
+
+      await tester.tap(find.text('[ SIGUIENTE → ]'));
+      await tester.pump();
+      expect(find.text('Crea tu primera tarea'), findsOneWidget);
+      expect(find.text('Toca el botón iluminado para continuar'), findsOneWidget);
+
+      await tester.tap(find.text('Toca el botón iluminado para continuar'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(interactiveTapped, isTrue);
     });
   });
 }
