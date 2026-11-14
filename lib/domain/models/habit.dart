@@ -72,6 +72,11 @@ class Habit {
   // Subtareas (Checklist) para cualquier hábito
   final List<SubTask> subTasks;
 
+  // Recordatorios personalizados por hábito
+  final bool hasReminder;
+  final int? reminderHour; // 0..23
+  final int? reminderMinute; // 0..59
+
   Habit({
     required this.id,
     required this.name,
@@ -88,11 +93,21 @@ class Habit {
     this.frequencyType = 0,
     this.targetDaysPerWeek = 3,
     this.subTasks = const [],
+    this.hasReminder = false,
+    this.reminderHour,
+    this.reminderMinute,
   })  : completedDates = completedDates ?? {},
         dailyProgress = dailyProgress ?? {},
         activeWeekdays = activeWeekdays ?? [1, 2, 3, 4, 5, 6, 7];
 
   Color get color => Color(colorValue);
+
+  String? get formattedReminderTime {
+    if (!hasReminder || reminderHour == null) return null;
+    final h = reminderHour!.toString().padLeft(2, '0');
+    final m = (reminderMinute ?? 0).toString().padLeft(2, '0');
+    return '$h:$m';
+  }
 
   Habit copyWith({
     String? id,
@@ -110,6 +125,10 @@ class Habit {
     int? frequencyType,
     int? targetDaysPerWeek,
     List<SubTask>? subTasks,
+    bool? hasReminder,
+    int? reminderHour,
+    int? reminderMinute,
+    bool clearReminderTime = false,
   }) {
     return Habit(
       id: id ?? this.id,
@@ -127,6 +146,9 @@ class Habit {
       frequencyType: frequencyType ?? this.frequencyType,
       targetDaysPerWeek: targetDaysPerWeek ?? this.targetDaysPerWeek,
       subTasks: subTasks ?? this.subTasks,
+      hasReminder: hasReminder ?? this.hasReminder,
+      reminderHour: clearReminderTime ? null : (reminderHour ?? this.reminderHour),
+      reminderMinute: clearReminderTime ? null : (reminderMinute ?? this.reminderMinute),
     );
   }
 
@@ -148,6 +170,9 @@ class Habit {
       'frequencyType': frequencyType,
       'targetDaysPerWeek': targetDaysPerWeek,
       'subTasks': subTasks.map((s) => s.toMap()).toList(),
+      'hasReminder': hasReminder,
+      'reminderHour': reminderHour,
+      'reminderMinute': reminderMinute,
     };
   }
 
@@ -172,6 +197,9 @@ class Habit {
               ?.map((e) => SubTask.fromMap(e as Map))
               .toList() ??
           [],
+      hasReminder: map['hasReminder'] as bool? ?? false,
+      reminderHour: (map['reminderHour'] as num?)?.toInt(),
+      reminderMinute: (map['reminderMinute'] as num?)?.toInt(),
     );
   }
 }

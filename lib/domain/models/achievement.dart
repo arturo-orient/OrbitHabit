@@ -42,11 +42,21 @@ class Achievement {
     final Map<String, int> dailyCompletionsCount = {};
 
     bool hasJan1 = false;
-    bool hasFeb29 = false;
-    bool hasOct31 = false;
-    bool hasDec25 = false;
+    bool hasEpiphany = false;
     bool hasFeb14 = false;
+    bool hasFeb29 = false;
+    bool hasPiDay = false;
+    bool hasFathersDay = false;
+    bool hasBookDay = false;
+    bool hasWorkersDay = false;
+    bool hasMothersDay = false;
     bool hasMay04 = false;
+    bool hasSanJuan = false;
+    bool hasBackToSchool = false;
+    bool hasOct31 = false;
+    bool hasPalindrome11 = false;
+    bool hasDec25 = false;
+    bool hasNewYearsEve = false;
     bool hasFriday13 = false;
     bool hasSaturday = false;
     bool hasSunday = false;
@@ -55,91 +65,84 @@ class Achievement {
     bool has66Streak = false;
 
     final Set<int> uniqueColors = {};
+    final Set<String> allCompletedDates = {};
+
+    void registerSpecialDate(String date) {
+      allCompletedDates.add(date);
+      final dt = DateTime.tryParse(date);
+      if (dt != null) {
+        if (dt.month == 1 && dt.day == 1) hasJan1 = true;
+        if (dt.month == 1 && dt.day == 6) hasEpiphany = true;
+        if (dt.month == 2 && dt.day == 14) hasFeb14 = true;
+        if (dt.month == 2 && dt.day == 29) hasFeb29 = true;
+        if (dt.month == 3 && dt.day == 14) hasPiDay = true;
+        if (dt.month == 3 && dt.day == 19) hasFathersDay = true;
+        if (dt.month == 4 && dt.day == 23) hasBookDay = true;
+        if (dt.month == 5 && dt.day == 1) hasWorkersDay = true;
+        if (dt.month == 5 && ((dt.weekday == DateTime.sunday && dt.day <= 7) || dt.day == 3)) {
+          hasMothersDay = true;
+        }
+        if (dt.month == 5 && dt.day == 4) hasMay04 = true;
+        if (dt.month == 6 && dt.day == 24) hasSanJuan = true;
+        if (dt.month == 9 && dt.day == 1) hasBackToSchool = true;
+        if (dt.month == 10 && dt.day == 31) hasOct31 = true;
+        if (dt.month == 11 && dt.day == 11) hasPalindrome11 = true;
+        if (dt.month == 12 && dt.day == 25) hasDec25 = true;
+        if (dt.month == 12 && dt.day == 31) hasNewYearsEve = true;
+        if (dt.weekday == DateTime.monday) hasMonday = true;
+        if (dt.weekday == DateTime.saturday) hasSaturday = true;
+        if (dt.weekday == DateTime.sunday) hasSunday = true;
+        if (dt.day == 13 && dt.weekday == DateTime.friday) hasFriday13 = true;
+      }
+    }
 
     for (final habit in habits) {
       uniqueColors.add(habit.color.value);
-      
+
       final maxStreak = StreakUtils.calculateMaxStreak(habit, effectiveVacationDates);
       if (maxStreak > maxStreakAcrossAll) {
         maxStreakAcrossAll = maxStreak;
       }
       if (maxStreak >= 66) has66Streak = true;
       if (habit.completedDates.length >= 100) hasIndividual100 = true;
-      
+
       totalCompletions += habit.completedDates.length;
 
       for (final date in habit.completedDates) {
         dailyCompletionsCount[date] = (dailyCompletionsCount[date] ?? 0) + 1;
-        if (date.endsWith('-01-01')) hasJan1 = true;
-        if (date.endsWith('-02-29')) hasFeb29 = true;
-        if (date.endsWith('-10-31')) hasOct31 = true;
-        if (date.endsWith('-12-25')) hasDec25 = true;
-        if (date.endsWith('-02-14')) hasFeb14 = true;
-        if (date.endsWith('-05-04')) hasMay04 = true;
-        
-        final dt = DateTime.tryParse(date);
-        if (dt != null) {
-          if (dt.weekday == 1) hasMonday = true;
-          if (dt.weekday == 6) hasSaturday = true;
-          if (dt.weekday == 7) hasSunday = true;
-          if (dt.day == 13 && dt.weekday == 5) hasFriday13 = true;
+        registerSpecialDate(date);
+      }
+    }
+
+    // Incluir también fechas completadas en bloques horarios para revocación/desbloqueo 100% reactivo
+    for (final block in scheduleBlocks) {
+      final linkedHabit = block.habitId != null
+          ? habits.cast<Habit?>().firstWhere(
+                (h) => h?.id == block.habitId,
+                orElse: () => null,
+              )
+          : habits.cast<Habit?>().firstWhere(
+                (h) => h != null && h.name.trim().toLowerCase() == block.title.trim().toLowerCase(),
+                orElse: () => null,
+              );
+
+      for (final date in block.completedDates) {
+        registerSpecialDate(date);
+        if (linkedHabit == null || !linkedHabit.completedDates.contains(date)) {
+          totalCompletions += 1;
+          dailyCompletionsCount[date] = (dailyCompletionsCount[date] ?? 0) + 1;
         }
       }
     }
 
-    final int maxHabitsCompletedInASingleDay = dailyCompletionsCount.isEmpty 
-        ? 0 
+    final int maxHabitsCompletedInASingleDay = dailyCompletionsCount.isEmpty
+        ? 0
         : dailyCompletionsCount.values.reduce(math.max);
 
     final bool hasRainbow = habitsCount >= 5 && uniqueColors.length >= 5;
     final bool hasVacation = vacationDates.isNotEmpty;
     final bool hasWeekendWarrior = hasSaturday && hasSunday;
     final bool hasJackpot = totalCompletions >= 77;
-
-    // 27. Dedicado: Superar el objetivo de horas de trabajo mensual (ej. 120h)
-    bool hasDedicatedWorker = false;
-    double maxHoursWorked = 0.0;
-    int targetHours = 120;
-    final now = DateTime.now();
-    final todayIso = now.toIso8601String().split('T').first;
-    final prefix = '${now.year}-${now.month.toString().padLeft(2, '0')}';
-    double totalWorkHours = 0.0;
-
-    for (final block in scheduleBlocks) {
-      if (block.hasMonthlyHourTarget) {
-        targetHours = block.monthlyTargetHours;
-
-        final linkedHabit = habits.cast<Habit?>().firstWhere(
-              (h) => h?.id == block.habitId,
-              orElse: () => null,
-            );
-
-        final Set<String> workedDatesInMonth = {};
-
-        for (final d in block.completedDates) {
-          if (d.startsWith(prefix)) workedDatesInMonth.add(d);
-        }
-        if (linkedHabit != null) {
-          for (final d in linkedHabit.completedDates) {
-            if (d.startsWith(prefix)) workedDatesInMonth.add(d);
-          }
-        }
-
-        for (final d in block.assignedDates) {
-          if (d.startsWith(prefix) && d.compareTo(todayIso) < 0) {
-            workedDatesInMonth.add(d);
-          }
-        }
-
-        totalWorkHours += workedDatesInMonth.length * (block.durationInMinutes / 60.0);
-        totalWorkHours += block.getExtraHoursForMonth(now);
-      }
-    }
-
-    maxHoursWorked = totalWorkHours;
-    if (maxHoursWorked >= targetHours && targetHours > 0) {
-      hasDedicatedWorker = true;
-    }
 
     // 2. Define the achievements list
     return [
@@ -409,19 +412,108 @@ class Achievement {
         isUnlocked: hasIndividual100,
         color: 0xFFE0E0E0, // Plata
       ),
-      // 27. Dedicado (Horas Extra & Turnos)
+
+      // --- 10 LOGROS DE DÍAS ESPECIALES ---
+
+      // 27. Día del Padre (19 de marzo)
       _buildTrophy(
-        id: 'ee_dedicated',
-        title: hasDedicatedWorker ? '🔥 Dedicado' : '???',
-        description: hasDedicatedWorker
-            ? 'Superaste tu objetivo de $targetHours horas mensuales de trabajo. ¡Dedicación absoluta!'
-            : 'Logro secreto. Las horas de trabajo y el esfuerzo constante dan sus frutos.',
-        progress: targetHours > 0 ? (maxHoursWorked / targetHours).clamp(0.0, 1.0) : 0.0,
-        progressText: hasDedicatedWorker
-            ? '¡${maxHoursWorked.toStringAsFixed(0)}h completadas!'
-            : '${maxHoursWorked.toStringAsFixed(0)} / ${targetHours}h',
-        isUnlocked: hasDedicatedWorker,
-        color: 0xFFFFB74D, // Oro/Ámbar
+        id: 'fathers_day',
+        title: 'Yo soy tu padre',
+        description: 'Completa una tarea el Día del Padre (19 de marzo).',
+        progress: hasFathersDay ? 1.0 : 0.0,
+        progressText: hasFathersDay ? '1 / 1' : '0 / 1',
+        isUnlocked: hasFathersDay,
+        color: 0xFF64B5F6,
+      ),
+      // 28. Día de la Madre (primer domingo de mayo o 3 de mayo)
+      _buildTrophy(
+        id: 'mothers_day',
+        title: 'Amor de Madre',
+        description: 'Completa una tarea el primer domingo de mayo (o 3 de mayo).',
+        progress: hasMothersDay ? 1.0 : 0.0,
+        progressText: hasMothersDay ? '1 / 1' : '0 / 1',
+        isUnlocked: hasMothersDay,
+        color: 0xFFF4978E,
+      ),
+      // 29. Día del Trabajador (1 de mayo)
+      _buildTrophy(
+        id: 'workers_day',
+        title: 'Primero de Mayo',
+        description: 'Registra una actividad en el Día del Trabajador (1 de mayo).',
+        progress: hasWorkersDay ? 1.0 : 0.0,
+        progressText: hasWorkersDay ? '1 / 1' : '0 / 1',
+        isUnlocked: hasWorkersDay,
+        color: 0xFFE5989B,
+      ),
+      // 30. Día de Reyes (6 de enero)
+      _buildTrophy(
+        id: 'epiphany_day',
+        title: 'Regalo de Reyes',
+        description: 'Completa una tarea el Día de Reyes (6 de enero).',
+        progress: hasEpiphany ? 1.0 : 0.0,
+        progressText: hasEpiphany ? '1 / 1' : '0 / 1',
+        isUnlocked: hasEpiphany,
+        color: 0xFFFFD166,
+      ),
+      // 31. Día de Pi (14 de marzo)
+      _buildTrophy(
+        id: 'pi_day',
+        title: 'Precisión 3.14',
+        description: 'Completa una tarea en el Día de Pi (14 de marzo).',
+        progress: hasPiDay ? 1.0 : 0.0,
+        progressText: hasPiDay ? '1 / 1' : '0 / 1',
+        isUnlocked: hasPiDay,
+        color: 0xFF84DCC6,
+      ),
+      // 32. Día del Libro (23 de abril)
+      _buildTrophy(
+        id: 'book_day',
+        title: 'Rosa y Dragón',
+        description: 'Completa una tarea en el Día del Libro (23 de abril).',
+        progress: hasBookDay ? 1.0 : 0.0,
+        progressText: hasBookDay ? '1 / 1' : '0 / 1',
+        isUnlocked: hasBookDay,
+        color: 0xFFE5989B,
+      ),
+      // 33. San Juan (24 de junio)
+      _buildTrophy(
+        id: 'san_juan',
+        title: 'Noche de Fuego',
+        description: 'Completa una tarea en el solsticio de San Juan (24 de junio).',
+        progress: hasSanJuan ? 1.0 : 0.0,
+        progressText: hasSanJuan ? '1 / 1' : '0 / 1',
+        isUnlocked: hasSanJuan,
+        color: 0xFFFF8A65,
+      ),
+      // 34. Nuevo Curso (1 de septiembre)
+      _buildTrophy(
+        id: 'back_to_school',
+        title: 'Nuevo Curso',
+        description: 'Arranca septiembre cumpliendo el día 1 (1 de septiembre).',
+        progress: hasBackToSchool ? 1.0 : 0.0,
+        progressText: hasBackToSchool ? '1 / 1' : '0 / 1',
+        isUnlocked: hasBackToSchool,
+        color: 0xFF84A59D,
+      ),
+      // 35. Día Capicúa (11 de noviembre)
+      _buildTrophy(
+        id: 'leap_or_palindrome',
+        title: 'Día Capicúa',
+        description: 'Completa una tarea un día 11 del 11 (11 de noviembre).',
+        progress: hasPalindrome11 ? 1.0 : 0.0,
+        progressText: hasPalindrome11 ? '1 / 1' : '0 / 1',
+        isUnlocked: hasPalindrome11,
+        color: 0xFF9EA1D4,
+      ),
+      // 36. Última Órbita (31 de diciembre)
+      _buildTrophy(
+        id: 'new_years_eve',
+        title: 'Última Órbita',
+        description: 'Despide el año completando una tarea en Nochevieja (31 de diciembre).',
+        progress: hasNewYearsEve ? 1.0 : 0.0,
+        progressText: hasNewYearsEve ? '1 / 1' : '0 / 1',
+        isUnlocked: hasNewYearsEve,
+        color: 0xFFB5A6C9,
       ),
     ];
   }

@@ -40,7 +40,8 @@ class ScheduleBlockCard extends ConsumerWidget {
 
     final cardColor = linkedHabit?.color ?? block.color;
     final todayIso = now.toIso8601String().split('T').first;
-    final isHabitDone = linkedHabit?.completedDates.contains(todayIso) ?? false;
+    final isHabitDone = (linkedHabit?.completedDates.contains(todayIso) ?? false) ||
+        block.completedDates.contains(todayIso);
 
     final theme = Theme.of(context);
     final textColor = theme.textTheme.bodyLarge?.color;
@@ -51,127 +52,182 @@ class ScheduleBlockCard extends ConsumerWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: AppTheme.bentoCard(
           isLight: !isDark,
           borderRadius: AppTheme.radiusMd,
-          borderColor: isActive ? cardColor.withValues(alpha: 0.6) : null,
+          borderColor: isActive
+              ? cardColor.withValues(alpha: 0.6)
+              : (isHabitDone ? cardColor.withValues(alpha: 0.35) : null),
+        ).copyWith(
+          color: isHabitDone ? cardColor.withValues(alpha: 0.08) : null,
         ),
-        child: Row(
-          children: [
-            // Indicador LED de bloque
-            Container(
-              width: 9,
-              height: 9,
-              decoration: BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(2.5),
-                boxShadow: isActive
-                    ? [
-                        BoxShadow(
-                          color: cardColor.withValues(alpha: 0.5),
-                          blurRadius: 6,
-                        )
-                      ]
-                    : null,
-              ),
-            ),
-            const SizedBox(width: 14),
-
-            // Middle: Title + Badges
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          block.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.outfit(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: textColor?.withOpacity(0.9),
-                          ),
-                        ),
+        child: ClipRRect(
+          borderRadius: AppTheme.radiusMd,
+          child: Stack(
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(isHabitDone ? 18 : 16, 12, 16, 12),
+                child: Row(
+                  children: [
+                    // Indicador LED de bloque
+                    Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(2.5),
+                        boxShadow: isActive
+                            ? [
+                                BoxShadow(
+                                  color: cardColor.withValues(alpha: 0.5),
+                                  blurRadius: 6,
+                                )
+                              ]
+                            : null,
                       ),
-                      if (isActive) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: cardColor.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'AHORA',
-                            style: GoogleFonts.outfit(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w800,
-                              color: cardColor,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 4),
+                    ),
+                    const SizedBox(width: 14),
 
-                  // Linked habit chip or duration info
-                  Row(
-                    children: [
-                      if (block.isOvernight) ...[
-                        Icon(Icons.nights_stay,
-                            size: 13, color: textColor?.withOpacity(0.4)),
-                        const SizedBox(width: 4),
-                      ],
-                      Text(
-                        block.formattedDuration,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: textColor?.withOpacity(0.5),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      if (linkedHabit != null) ...[
+                    // Middle: Title + Badges
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  block.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: textColor?.withValues(
+                                      alpha: isHabitDone ? 0.78 : 0.9,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (isHabitDone) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: cardColor.withValues(alpha: 0.16),
+                                    borderRadius: BorderRadius.circular(5),
+                                    border: Border.all(
+                                      color: cardColor.withValues(alpha: 0.45),
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '[ ✓ COMPLETADO ]',
+                                    style: AppTheme.monoStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                      color: cardColor,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              if (isActive) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: cardColor.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'AHORA',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: cardColor,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+
+                          // Linked habit chip or duration info
+                          Row(
+                            children: [
+                              if (block.isOvernight) ...[
+                                Icon(
+                                  Icons.nights_stay,
+                                  size: 13,
+                                  color: textColor?.withValues(
+                                    alpha: isHabitDone ? 0.28 : 0.4,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                block.formattedDuration,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: textColor?.withValues(
+                                    alpha: isHabitDone ? 0.38 : 0.5,
+                                  ),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                      if (linkedHabit != null || !block.hasMonthlyHourTarget) ...[
                         Text(' · ',
                             style:
                                 TextStyle(color: textColor?.withOpacity(0.3))),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: isHabitDone
-                                ? cardColor.withOpacity(0.15)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                                color: cardColor.withOpacity(0.3), width: 0.8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                isHabitDone
-                                    ? Icons.check
-                                    : Icons.radio_button_unchecked,
-                                size: 10,
-                                color: cardColor,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                isHabitDone ? 'Hecho' : linkedHabit.name,
-                                style: TextStyle(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w600,
+                        GestureDetector(
+                          onTap: () {
+                            HapticFeedback.mediumImpact();
+                            if (!isHabitDone) {
+                              SoundService().playCheck();
+                            }
+                            ref.read(scheduleProvider.notifier).toggleDateForBlock(block.id, todayIso);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isHabitDone
+                                  ? cardColor.withOpacity(0.18)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                  color: cardColor.withOpacity(isHabitDone ? 0.65 : 0.35),
+                                  width: 0.9),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  isHabitDone
+                                      ? Icons.check_circle_rounded
+                                      : Icons.radio_button_unchecked,
+                                  size: 11,
                                   color: cardColor,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 4),
+                                Text(
+                                  isHabitDone
+                                      ? 'Hecho hoy'
+                                      : (linkedHabit?.name ?? 'Marcar hoy'),
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: cardColor,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -212,11 +268,10 @@ class ScheduleBlockCard extends ConsumerWidget {
                                 GestureDetector(
                                   onTap: () {
                                     HapticFeedback.mediumImpact();
-                                    SoundService().playCheck();
-                                    ref.read(scheduleProvider.notifier).toggleDateForBlock(block.id, todayIso);
-                                    if (block.habitId != null) {
-                                      ref.read(habitsProvider.notifier).toggleDay(block.habitId!, todayIso);
+                                    if (!isShiftDoneToday) {
+                                      SoundService().playCheck();
                                     }
+                                    ref.read(scheduleProvider.notifier).toggleDateForBlock(block.id, todayIso);
                                   },
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -286,11 +341,27 @@ class ScheduleBlockCard extends ConsumerWidget {
                 style: GoogleFonts.outfit(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: textColor?.withOpacity(0.75),
+                  color: textColor?.withValues(
+                    alpha: isHabitDone ? 0.50 : 0.75,
+                  ),
                 ),
               ),
             ),
-          ],
+                  ],
+                ),
+              ),
+              if (isHabitDone)
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 3.5,
+                    color: cardColor,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

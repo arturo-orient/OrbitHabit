@@ -197,10 +197,12 @@ class _GuidedTourOverlayState extends State<GuidedTourOverlay>
           cardBottom = 24.0;
         } else if (placeCardAbove) {
           final desiredBottom = (screenHeight - rect.top) + 14.0;
-          cardBottom = desiredBottom.clamp(16.0, screenHeight * 0.62);
+          final maxAllowedOffset = (screenHeight - 290.0).clamp(16.0, screenHeight);
+          cardBottom = desiredBottom.clamp(16.0, maxAllowedOffset);
         } else {
           final desiredTop = rect.bottom + 14.0;
-          cardTop = desiredTop.clamp(16.0, screenHeight * 0.58);
+          final maxAllowedOffset = (screenHeight - 290.0).clamp(16.0, screenHeight);
+          cardTop = desiredTop.clamp(16.0, maxAllowedOffset);
         }
 
         return Stack(
@@ -303,10 +305,12 @@ class _GuidedTourOverlayState extends State<GuidedTourOverlay>
                             width: 1.0,
                           ),
                         ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                        child: SingleChildScrollView(
+                          physics: const ClampingScrollPhysics(),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                             // Cabecera: [ PASO 0X / 07 ] + [ SALTAR ]
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -571,9 +575,10 @@ class _GuidedTourOverlayState extends State<GuidedTourOverlay>
             ),
           ),
         ),
-      ],
-    );
-  },
+      ),
+    ],
+  );
+},
 );
   }
 }

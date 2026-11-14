@@ -455,10 +455,18 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
                   GestureDetector(
                     onTap: () {
                       HapticFeedback.mediumImpact();
-                      SoundService().playCheck();
-                      ref
-                          .read(scheduleProvider.notifier)
-                          .toggleDateForBlock(todayShift!.id, todayIso);
+                      if (isTodayDone) {
+                        ref.read(scheduleProvider.notifier).clearCompletedDateForBlocks(
+                              shifts.map((s) => s.id).toList(),
+                              todayIso,
+                              linkedHabitId: linkedHabit?.id,
+                            );
+                      } else {
+                        SoundService().playCheck();
+                        ref
+                            .read(scheduleProvider.notifier)
+                            .toggleDateForBlock(todayShift!.id, todayIso);
+                      }
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(

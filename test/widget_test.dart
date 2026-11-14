@@ -21,7 +21,13 @@ import 'package:orbithabit/services/backup_service.dart';
 import 'package:orbithabit/services/schedule_poster_service.dart';
 import 'package:orbithabit/utils/poster_saver.dart';
 import 'package:orbithabit/ui/widgets/orbit_clock_24.dart';
+import 'package:orbithabit/ui/widgets/schedule_block_card.dart';
 import 'package:orbithabit/ui/widgets/guided_tour_overlay.dart';
+import 'package:orbithabit/ui/widgets/release_notes_sheet.dart';
+import 'package:orbithabit/ui/screens/settings_screen.dart';
+import 'package:orbithabit/ui/screens/statistics_screen.dart';
+import 'package:orbithabit/services/notification_service.dart';
+import 'package:orbithabit/core/app_version.dart';
 import 'package:flutter/material.dart';
 
 class FakeDatabaseService extends DatabaseService {
@@ -207,11 +213,12 @@ void main() {
       expect(completedWorkBlock.isTargetReached(workMonth), isTrue);
       expect(completedWorkBlock.getOvertimeHours(workMonth), 8.0); // 8h extra!
 
-      // Test Achievement 'ee_dedicated'
+      // Verifica que el antiguo logro 'ee_dedicated' / 'dedicated' fue eliminado
       final achievementsWithWork = Achievement.calculate([], [], [completedWorkBlock]);
-      final dedicatedTrophy = achievementsWithWork.firstWhere((a) => a.id == 'ee_dedicated');
-      expect(dedicatedTrophy.isUnlocked, isTrue);
-      expect(dedicatedTrophy.title, '🔥 Dedicado');
+      expect(
+        achievementsWithWork.any((a) => a.id == 'ee_dedicated' || a.id == 'dedicated'),
+        isFalse,
+      );
     });
 
     test('Past days filled in habit (days 1 to 4) are counted in schedule block monthly hours', () {
@@ -919,6 +926,736 @@ void main() {
       await tester.tap(find.text('Toca el botón iluminado para continuar'));
       await tester.pump(const Duration(milliseconds: 400));
       expect(interactiveTapped, isTrue);
+    });
+
+    testWidgets('ReleaseNotesSheet renders current version, feature blocks, and persists seen version', (WidgetTester tester) async {
+      final fakeDb = FakeDatabaseService();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            databaseProvider.overrideWithValue(fakeDb),
+          ],
+          child: MaterialApp(
+            theme: ThemeData.dark(),
+            home: const Scaffold(
+              body: ReleaseNotesSheet(),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+
+      // Verifica versión actual y cabecera
+      expect(find.text('[ NOVEDADES // v$kCurrentAppVersion ]'), findsOneWidget);
+      expect(find.text('NUEVA VERSIÓN · $kCurrentReleaseDate'), findsOneWidget);
+      expect(find.text('Qué hay de nuevo en OrbitHabit'), findsOneWidget);
+
+      // Verifica los bloques de novedades destacados
+      expect(find.text('Nuevo Tutorial Guiado Paso a Paso'), findsOneWidget);
+      expect(find.text('Subtareas Micro-Segmentadas y Duplicación'), findsOneWidget);
+      expect(find.text('Calendario Multi-Tarea, Ciclos y Póster PNG'), findsOneWidget);
+      expect(find.text('Escudo de Guardia Pesada (+12h) y Nuevo Icono'), findsOneWidget);
+
+      // Verifica que el botón inferior persiste la versión vista
+      expect(fakeDb.getLastSeenAppVersion(), isNull);
+      await tester.tap(find.text('[ ¡ENTENDIDO, A PROBARLO! ]'));
+      await tester.pumpAndSettle();
+      expect(fakeDb.getLastSeenAppVersion(), kCurrentAppVersion);
+    });
+
+    test('WorkShiftGroup deduplicates legacy cloned dates across Nocturno and Mañanas shifts in past months', () {
+      final october = DateTime(2026, 10, 1);
+      final octoberDates = List.generate(
+        18,
+        (i) => '2026-10-${(i + 1).toString().padLeft(2, '0')}',
+      );
+
+      final workHabit = Habit(
+        id: 'habit_trabajar',
+        name: 'Trabajar',
+        colorValue: 0xFFEAB308,
+        targetDays: 20,
+        orderIndex: 0,
+        completedDates: octoberDates.toSet(),
+      );
+
+      final nocturno = ScheduleBlock(
+        id: 'shift_nocturno',
+        title: 'Nocturno',
+        startHour: 23,
+        startMinute: 0,
+        endHour: 7,
+        endMinute: 0,
+        colorValue: 0xFFEAB308,
+        habitId: 'habit_trabajar',
+        daysOfWeek: const [1, 2, 3, 4, 5],
+        hasMonthlyHourTarget: true,
+        monthlyTargetHours: 120,
+        completedDates: octoberDates,
+        assignedDates: octoberDates,
+      );
+
+      // Cloned secondary shift from legacy version with the same 18 October dates
+      final mananas = ScheduleBlock(
+        id: 'shift_mananas',
+        title: 'Mañanas',
+        startHour: 7,
+        startMinute: 30,
+        endHour: 14,
+        endMinute: 30,
+        colorValue: 0xFFEAB308,
+        habitId: 'habit_trabajar',
+        daysOfWeek: const [1, 2, 3, 4, 5],
+        hasMonthlyHourTarget: true,
+        monthlyTargetHours: 120,
+        completedDates: octoberDates,
+        assignedDates: octoberDates,
+      );
+
+      final group = WorkShiftGroup(
+        title: 'Trabajar',
+        habitId: 'habit_trabajar',
+        habit: workHabit,
+        shifts: [nocturno, mananas],
+        monthlyTargetHours: 120,
+      );
+
+      expect(group.getMonthlyShiftsCount(october), 18);
+      expect(group.getMonthlyWorkedHours(october), 144.0);
+
+      final breakdown = group.getBreakdown(october);
+      expect(breakdown.first.shiftsCount, 18);
+      expect(breakdown.first.totalHours, 144.0);
+      expect(breakdown.last.shiftsCount, 0);
+      expect(breakdown.last.totalHours, 0.0);
+    });
+
+    test('Habit and ScheduleBlock serialize and deserialize reminder fields accurately', () {
+      final habit = Habit(
+        id: 'rem_habit_1',
+        name: 'Leer 20 min',
+        colorValue: 0xFF84A59D,
+        targetDays: 20,
+        orderIndex: 0,
+        hasReminder: true,
+        reminderHour: 21,
+        reminderMinute: 30,
+      );
+
+      expect(habit.formattedReminderTime, '21:30');
+      final habitMap = habit.toMap();
+      final restoredHabit = Habit.fromMap(habitMap);
+      expect(restoredHabit.hasReminder, isTrue);
+      expect(restoredHabit.reminderHour, 21);
+      expect(restoredHabit.reminderMinute, 30);
+      expect(restoredHabit.formattedReminderTime, '21:30');
+
+      final clearedHabit = restoredHabit.copyWith(hasReminder: false, clearReminderTime: true);
+      expect(clearedHabit.hasReminder, isFalse);
+      expect(clearedHabit.reminderHour, isNull);
+      expect(clearedHabit.formattedReminderTime, isNull);
+
+      final block = const ScheduleBlock(
+        id: 'rem_block_1',
+        title: 'Turno Mañana',
+        startHour: 7,
+        startMinute: 0,
+        endHour: 15,
+        endMinute: 0,
+        colorValue: 0xFFEAB308,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        hasReminder: true,
+        reminderOffsetMinutes: 30,
+      );
+
+      final blockMap = block.toMap();
+      final restoredBlock = ScheduleBlock.fromMap(blockMap);
+      expect(restoredBlock.hasReminder, isTrue);
+      expect(restoredBlock.reminderOffsetMinutes, 30);
+    });
+
+    testWidgets('SettingsScreen hides Datos, Backup y Laboratorio and shows Probar aviso button', (WidgetTester tester) async {
+      final fakeDb = FakeDatabaseService();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            databaseProvider.overrideWithValue(fakeDb),
+          ],
+          child: MaterialApp(
+            theme: ThemeData.dark(),
+            home: const SettingsScreen(),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Verifica que la sección "Datos, Backup y Laboratorio" ya no existe en Ajustes
+      expect(find.text('Datos, Backup y Laboratorio'), findsNothing);
+      expect(find.text('Exportar Copia de Seguridad'), findsNothing);
+      expect(find.text('Purgar Todos los Datos'), findsNothing);
+
+      // Verifica que Probar aviso ya no existe y Novedades no tiene emojis
+      expect(find.text('[ 🔔 Probar aviso ]'), findsNothing);
+      expect(find.text('Novedades de la versión (v$kCurrentAppVersion)'), findsOneWidget);
+    });
+
+    test('ScheduleNotifier keeps unplanned extra days out of assignedDates and syncs 24H -> Habit bidirectionally', () async {
+      final fakeDb = FakeDatabaseService();
+      final container = ProviderContainer(
+        overrides: [
+          databaseProvider.overrideWithValue(fakeDb),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final habit = Habit(
+        id: 'h_work',
+        name: 'Trabajar',
+        colorValue: 0xFFEAB308,
+        targetDays: 20,
+        orderIndex: 0,
+      );
+      final block = const ScheduleBlock(
+        id: 'b_night',
+        title: 'Nocturno',
+        startHour: 23,
+        startMinute: 0,
+        endHour: 7,
+        endMinute: 0,
+        colorValue: 0xFFEAB308,
+        habitId: 'h_work',
+        daysOfWeek: [1, 2, 3, 4, 5],
+        assignedDates: ['2026-11-09'],
+      );
+
+      await container.read(habitsProvider.notifier).addHabit(habit);
+      await container.read(scheduleProvider.notifier).addBlock(block);
+
+      const extraDay = '2026-11-14'; // No estaba asignado en Calendario
+
+      // 1. Marcar desde 24H (toggleDateForBlock): debe sincronizar Habit y NO ensuciar assignedDates
+      await container.read(scheduleProvider.notifier).toggleDateForBlock('b_night', extraDay);
+
+      var currentBlock = container.read(scheduleProvider).firstWhere((b) => b.id == 'b_night');
+      var currentHabit = container.read(habitsProvider).firstWhere((h) => h.id == 'h_work');
+      expect(currentBlock.completedDates, contains(extraDay));
+      expect(currentHabit.completedDates, contains(extraDay));
+      expect(currentBlock.assignedDates, isNot(contains(extraDay)));
+      expect(currentBlock.assignedDates, equals(['2026-11-09']));
+
+      // 2. Desmarcar día extra: no debe quedar silueta fantasma en assignedDates ni completedDates
+      await container.read(scheduleProvider.notifier).toggleDateForBlock('b_night', extraDay);
+
+      currentBlock = container.read(scheduleProvider).firstWhere((b) => b.id == 'b_night');
+      currentHabit = container.read(habitsProvider).firstWhere((h) => h.id == 'h_work');
+      expect(currentBlock.completedDates, isNot(contains(extraDay)));
+      expect(currentHabit.completedDates, isNot(contains(extraDay)));
+      expect(currentBlock.assignedDates, isNot(contains(extraDay)));
+      expect(currentBlock.assignedDates, equals(['2026-11-09']));
+
+      // 3. Marcar desde Órbita (toggleDay) -> syncDateWithHabit tampoco debe ensuciar assignedDates
+      await container.read(habitsProvider.notifier).toggleDay('h_work', extraDay);
+      currentBlock = container.read(scheduleProvider).firstWhere((b) => b.id == 'b_night');
+      expect(currentBlock.completedDates, contains(extraDay));
+      expect(currentBlock.assignedDates, isNot(contains(extraDay)));
+
+      // 4. Desmarcar desde Órbita
+      await container.read(habitsProvider.notifier).toggleDay('h_work', extraDay);
+      currentBlock = container.read(scheduleProvider).firstWhere((b) => b.id == 'b_night');
+      expect(currentBlock.completedDates, isNot(contains(extraDay)));
+      expect(currentBlock.assignedDates, isNot(contains(extraDay)));
+    });
+
+    test('Achievements revoke in real time and unlock all 10 special day achievements', () {
+      const specialDates = <String, String>{
+        'epiphany_day': '2026-01-06',
+        'pi_day': '2026-03-14',
+        'fathers_day': '2026-03-19',
+        'book_day': '2026-04-23',
+        'workers_day': '2026-05-01',
+        'mothers_day': '2026-05-03', // primer domingo de mayo de 2026
+        'san_juan': '2026-06-24',
+        'back_to_school': '2026-09-01',
+        'leap_or_palindrome': '2026-11-11',
+        'new_years_eve': '2026-12-31',
+      };
+
+      final habitWithSpecialDays = Habit(
+        id: 'h_special',
+        name: 'Constancia Anual',
+        colorValue: 0xFF84A59D,
+        targetDays: 30,
+        orderIndex: 0,
+        completedDates: specialDates.values.toSet(),
+      );
+
+      final unlockedList = Achievement.calculate([habitWithSpecialDays]);
+      for (final id in specialDates.keys) {
+        final trophy = unlockedList.firstWhere((a) => a.id == id);
+        expect(trophy.isUnlocked, isTrue, reason: 'Expected $id to be unlocked');
+      }
+      expect(unlockedList.firstWhere((a) => a.id == 'fathers_day').title, 'Yo soy tu padre');
+      expect(unlockedList.firstWhere((a) => a.id == 'mothers_day').title, 'Amor de Madre');
+      expect(unlockedList.firstWhere((a) => a.id == 'new_years_eve').title, 'Última Órbita');
+
+      // Revocación inmediata cuando el usuario desmarca o borra sus fechas
+      final habitRevoked = habitWithSpecialDays.copyWith(completedDates: const {});
+      final revokedList = Achievement.calculate([habitRevoked]);
+      for (final id in specialDates.keys) {
+        final trophy = revokedList.firstWhere((a) => a.id == id);
+        expect(trophy.isUnlocked, isFalse, reason: 'Expected $id to be revoked');
+      }
+      expect(revokedList.firstWhere((a) => a.id == 'first_steps').isUnlocked, isFalse);
+
+      // También se desbloquea/revoca desde un ScheduleBlock en vista 24H
+      const blockOnPiDay = ScheduleBlock(
+        id: 'b_pi',
+        title: 'Estudio',
+        startHour: 9,
+        startMinute: 0,
+        endHour: 10,
+        endMinute: 0,
+        colorValue: 0xFF84DCC6,
+        daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
+        completedDates: ['2026-03-14'],
+      );
+      final viaBlock = Achievement.calculate([], [], [blockOnPiDay]);
+      expect(viaBlock.firstWhere((a) => a.id == 'pi_day').isUnlocked, isTrue);
+
+      final revokedViaBlock = Achievement.calculate([], [], [blockOnPiDay.copyWith(completedDates: [])]);
+      expect(revokedViaBlock.firstWhere((a) => a.id == 'pi_day').isUnlocked, isFalse);
+    });
+
+    testWidgets('SettingsScreen shows unsaved changes dialog on back and 3-step Vacation tutorial', (WidgetTester tester) async {
+      final fakeDb = FakeDatabaseService();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            databaseProvider.overrideWithValue(fakeDb),
+          ],
+          child: MaterialApp(
+            theme: ThemeData.dark(),
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                      );
+                    },
+                    child: const Text('Abrir Ajustes'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Abrir Ajustes'));
+      await tester.pumpAndSettle();
+
+      // 1. Probar el mini-tutorial de Modo Vacaciones desde [ ? ]
+      expect(fakeDb.getHasSeenVacationTutorial(), isFalse);
+      await tester.tap(find.text('[ ? ]'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Escudo de Rachas'), findsOneWidget);
+      await tester.tap(find.text('Siguiente'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Silencio Inteligente'), findsOneWidget);
+      await tester.tap(find.text('Siguiente'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Selección Flexible'), findsOneWidget);
+      await tester.tap(find.text('Entendido'));
+      await tester.pumpAndSettle();
+      expect(fakeDb.getHasSeenVacationTutorial(), isTrue);
+
+      // 2. Probar detección de cambios sin guardar al volver atrás
+      await tester.enterText(find.byType(TextField), 'Nuevo Alias');
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cambios sin guardar'), findsOneWidget);
+      expect(find.text('Descartar'), findsOneWidget);
+      expect(find.text('Guardar cambios'), findsOneWidget);
+
+      await tester.tap(find.text('Descartar'));
+      await tester.pumpAndSettle();
+
+      // Debe haber cerrado SettingsScreen sin guardar el alias
+      expect(find.text('Abrir Ajustes'), findsOneWidget);
+    });
+
+    test('NotificationService builds active task reminders and reads permission status safely', () async {
+      final service = NotificationService();
+      final habitWithReminder = Habit(
+        id: 'h_rem',
+        name: 'Leer 20m',
+        colorValue: 0xFF84A59D,
+        targetDays: 20,
+        orderIndex: 0,
+        activeWeekdays: [1, 3, 5],
+        hasReminder: true,
+        reminderHour: 21,
+        reminderMinute: 30,
+      );
+      final habitWithoutReminder = Habit(
+        id: 'h_norem',
+        name: 'Agua',
+        colorValue: 0xFF84DCC6,
+        targetDays: 25,
+        orderIndex: 1,
+        hasReminder: false,
+      );
+      const blockWithReminder = ScheduleBlock(
+        id: 'b_rem',
+        title: 'Turno Mañana',
+        startHour: 8,
+        startMinute: 0,
+        endHour: 15,
+        endMinute: 0,
+        colorValue: 0xFFFBBF24,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        hasReminder: true,
+        reminderOffsetMinutes: 15,
+      );
+      const blockWithoutReminder = ScheduleBlock(
+        id: 'b_norem',
+        title: 'Turno Noche',
+        startHour: 23,
+        startMinute: 0,
+        endHour: 7,
+        endMinute: 0,
+        colorValue: 0xFF84A59D,
+        daysOfWeek: [1, 2],
+        hasReminder: false,
+      );
+
+      final reminders = service.buildActiveRemindersList(
+        habits: [habitWithReminder, habitWithoutReminder],
+        blocks: [blockWithReminder, blockWithoutReminder],
+      );
+
+      expect(reminders.length, 2);
+      expect(reminders[0].title, 'Leer 20m');
+      expect(reminders[0].category, 'HÁBITO');
+      expect(reminders[0].scheduleLabel, contains('21:30'));
+      expect(reminders[1].title, 'Turno Mañana');
+      expect(reminders[1].category, 'TURNO / 24H');
+      expect(reminders[1].scheduleLabel, contains('Al finalizar +10m (15:10)'));
+
+      final status = await service.getPermissionStatus();
+      expect(status.notificationsEnabled, isTrue);
+    });
+
+    testWidgets('SettingsScreen displays simplified notification controls and deletes individual reminders', (WidgetTester tester) async {
+      final fakeDb = FakeDatabaseService();
+      final container = ProviderContainer(
+        overrides: [
+          databaseProvider.overrideWithValue(fakeDb),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(habitsProvider.notifier).addHabit(
+        Habit(
+          id: 'h_med',
+          name: 'Meditar',
+          colorValue: 0xFF84DCC6,
+          targetDays: 20,
+          orderIndex: 0,
+          hasReminder: true,
+          reminderHour: 19,
+          reminderMinute: 45,
+        ),
+      );
+      await container.read(scheduleProvider.notifier).addBlock(
+        const ScheduleBlock(
+          id: 'b_shift',
+          title: 'Turno Mañana',
+          startHour: 8,
+          startMinute: 0,
+          endHour: 16,
+          endMinute: 0,
+          colorValue: 0xFFFBBF24,
+          daysOfWeek: [1, 2, 3, 4, 5],
+          hasReminder: true,
+          reminderOffsetMinutes: 30,
+        ),
+      );
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: ThemeData.dark(),
+            home: const SettingsScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Notificaciones activas'), findsOneWidget);
+      expect(find.text('Recordatorio post-actividad'), findsOneWidget);
+      expect(find.text('Hora del Recordatorio'), findsNothing);
+      expect(find.text('Cambiar Hora'), findsNothing);
+      expect(find.text('[ 🔔 Probar aviso ]'), findsNothing);
+
+      final headerFinder = find.text('RECORDATORIOS CONFIGURADOS');
+      await tester.ensureVisible(headerFinder);
+      expect(headerFinder, findsOneWidget);
+
+      expect(find.text('Meditar'), findsOneWidget);
+      expect(find.text('Turno Mañana'), findsOneWidget);
+      expect(find.text('HÁBITO'), findsOneWidget);
+      expect(find.text('TURNO / 24H'), findsOneWidget);
+      expect(find.text('Al finalizar +10m (16:10)'), findsOneWidget);
+
+      // Eliminar el recordatorio del hábito Meditar
+      final deleteHabitFinder = find.byKey(const Key('delete_reminder_habit_h_med'));
+      await tester.ensureVisible(deleteHabitFinder);
+      await tester.tap(deleteHabitFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Meditar'), findsNothing);
+      expect(find.text('Recordatorio eliminado'), findsOneWidget);
+      expect(
+        container.read(habitsProvider).firstWhere((h) => h.id == 'h_med').hasReminder,
+        isFalse,
+      );
+
+      // Eliminar también el del bloque horario 24H
+      final deleteBlockFinder = find.byKey(const Key('delete_reminder_block_b_shift'));
+      await tester.ensureVisible(deleteBlockFinder);
+      await tester.tap(deleteBlockFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Turno Mañana'), findsNothing);
+      expect(find.text('No hay recordatorios individuales activos'), findsOneWidget);
+    });
+
+    testWidgets('StatisticsScreen renders 3 CustomPainter charts, toggles range, and shows protected days', (WidgetTester tester) async {
+      final fakeDb = FakeDatabaseService();
+      final container = ProviderContainer(
+        overrides: [
+          databaseProvider.overrideWithValue(fakeDb),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final now = DateTime.now();
+      final prevMonth = DateTime(now.year, now.month - 1, 1);
+      String iso(DateTime d) =>
+          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+      final todayIso = iso(now);
+      final prevDay1 = iso(DateTime(prevMonth.year, prevMonth.month, 2));
+      final prevDay2Vac = iso(DateTime(prevMonth.year, prevMonth.month, 3));
+      final prevDay3Heavy = iso(DateTime(prevMonth.year, prevMonth.month, 4));
+      final prevDay4 = iso(DateTime(prevMonth.year, prevMonth.month, 5));
+
+      await fakeDb.saveSetting(
+        'user_settings',
+        UserSettings(
+          userName: 'Tester',
+          avatarEmoji: '',
+          avatarColorValue: 0,
+          notificationHour: 21,
+          notificationMinute: 0,
+          themeMode: 'dark',
+          isFirstTime: false,
+          vacationDates: [prevDay2Vac],
+        ).toMap(),
+      );
+      await container.read(habitsProvider.notifier).addHabit(
+        Habit(
+          id: 'h_read',
+          name: 'Lectura Nocturna',
+          colorValue: 0xFF84A59D,
+          targetDays: 20,
+          orderIndex: 0,
+          activeWeekdays: [1, 2, 3, 4, 5, 6, 7],
+          completedDates: {prevDay1, prevDay4, todayIso},
+        ),
+      );
+      await container.read(scheduleProvider.notifier).addBlock(
+        ScheduleBlock(
+          id: 'b_morning',
+          title: 'Turno Mañana',
+          startHour: 8,
+          startMinute: 0,
+          endHour: 15,
+          endMinute: 0,
+          colorValue: 0xFFFBBF24,
+          daysOfWeek: [1, 2, 3, 4, 5],
+          hasMonthlyHourTarget: true,
+          monthlyTargetHours: 120,
+          assignedDates: [prevDay1, prevDay3Heavy, todayIso],
+          completedDates: [prevDay1, prevDay3Heavy, todayIso],
+          monthlyExtraHours: {
+            '${now.year}-${now.month.toString().padLeft(2, '0')}': 2.0,
+          },
+        ),
+      );
+      await container.read(scheduleProvider.notifier).addBlock(
+        ScheduleBlock(
+          id: 'b_night',
+          title: 'Turno Nocturno',
+          startHour: 23,
+          startMinute: 0,
+          endHour: 7,
+          endMinute: 0,
+          colorValue: 0xFF84DCC6,
+          daysOfWeek: [1, 2, 3, 4, 5],
+          hasMonthlyHourTarget: true,
+          monthlyTargetHours: 120,
+          assignedDates: [prevDay3Heavy],
+          completedDates: [prevDay3Heavy],
+        ),
+      );
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: ThemeData.dark(),
+            home: const StatisticsScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Verifica los 3 bloques de gráficas vectoriales y el ranking
+      expect(find.text('EVOLUCIÓN DE CUMPLIMIENTO'), findsOneWidget);
+      expect(find.text('[ 14 DÍAS ]'), findsOneWidget);
+      expect(find.text('[ MES COMPLETO ]'), findsOneWidget);
+      expect(find.textContaining('RENDIMIENTO SEMANAL'), findsOneWidget);
+      expect(find.textContaining('TELEMETRÍA DE HORAS'), findsOneWidget);
+      expect(find.text('REALES'), findsOneWidget);
+      expect(find.text('PLANIFICADAS'), findsOneWidget);
+      expect(find.text('EXTRAS'), findsOneWidget);
+      expect(find.text('Mañana'), findsOneWidget);
+      expect(find.text('DESGLOSE // RANKING DE CONSTANCIA'), findsOneWidget);
+      expect(find.text('Lectura Nocturna'), findsOneWidget);
+
+      // Alternar a MES COMPLETO e inspeccionar barra
+      await tester.tap(find.text('[ MES COMPLETO ]'));
+      await tester.pumpAndSettle();
+      expect(find.text('TOCA O DESLIZA UNA BARRA PARA INSPECCIONAR EL DÍA'), findsOneWidget);
+
+      final evoPaint = find.byKey(const ValueKey('evolution_chart_touch_area'));
+      await tester.tap(evoPaint);
+      await tester.pump();
+      expect(find.textContaining('HÁBITOS'), findsWidgets);
+
+      // Navegar al mes anterior donde están Vacaciones + Escudo +12h y Turno Nocturno
+      await tester.ensureVisible(find.byIcon(Icons.chevron_left_rounded));
+      await tester.tap(find.byIcon(Icons.chevron_left_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('Noche'), findsOneWidget);
+      expect(find.textContaining('ESCUDO RACHA //'), findsOneWidget);
+    });
+
+    test('OrbitClock24.getContinuousArcsForDay emits single continuous arc for overnight shift and preserves UserSettings backwards compat', () {
+      final today = DateTime(2026, 11, 14, 14, 0);
+      final todayIso = today.toIso8601String().split('T').first;
+      final nightShift = ScheduleBlock(
+        id: 'night_continuous',
+        title: 'Turno Noche',
+        startHour: 23,
+        startMinute: 0,
+        endHour: 7,
+        endMinute: 0,
+        colorValue: 0xFF9EA1D4,
+        daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
+        assignedDates: [todayIso],
+      );
+
+      final continuousArcs = OrbitClock24.getContinuousArcsForDay([nightShift], today);
+      expect(continuousArcs.length, 1);
+      expect(continuousArcs.first.startMinutes, 1380); // 23:00
+      expect(continuousArcs.first.sweepMinutes, 480);  // 8 horas continuas
+
+      // Backwards compatibility para UserSettings antiguos sin campos de notificaciones
+      final legacy = UserSettings.fromMap({
+        'userName': 'Arturo',
+        'avatarEmoji': '',
+        'avatarColorValue': 0,
+        'notificationHour': 21,
+        'notificationMinute': 0,
+        'themeMode': 'dark',
+        'isFirstTime': false,
+        'vacationDates': <String>[],
+      });
+      expect(legacy.notificationsEnabled, isTrue);
+      expect(legacy.postActivityReminderEnabled, isTrue);
+
+      final modified = legacy.copyWith(
+        notificationsEnabled: false,
+        postActivityReminderEnabled: false,
+      );
+      final roundtrip = UserSettings.fromMap(modified.toMap());
+      expect(roundtrip.notificationsEnabled, isFalse);
+      expect(roundtrip.postActivityReminderEnabled, isFalse);
+    });
+
+    testWidgets('ScheduleBlockCard visually differentiates pending and completed states', (WidgetTester tester) async {
+      final fakeDb = FakeDatabaseService();
+      final container = ProviderContainer(
+        overrides: [
+          databaseProvider.overrideWithValue(fakeDb),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final todayIso = DateTime.now().toIso8601String().split('T').first;
+      const pendingBlock = ScheduleBlock(
+        id: 'b_pending',
+        title: 'Estudio Deep Work',
+        startHour: 9,
+        startMinute: 0,
+        endHour: 11,
+        endMinute: 0,
+        colorValue: 0xFF22C55E,
+        daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
+      );
+      final completedBlock = pendingBlock.copyWith(
+        id: 'b_done',
+        completedDates: [todayIso],
+      );
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: ThemeData.dark(),
+            home: Scaffold(
+              body: Column(
+                children: [
+                  ScheduleBlockCard(block: pendingBlock, onTap: () {}),
+                  ScheduleBlockCard(block: completedBlock, onTap: () {}),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('[ ✓ COMPLETADO ]'), findsOneWidget);
+      expect(find.text('Hecho hoy'), findsOneWidget);
+      expect(find.text('Marcar hoy'), findsOneWidget);
     });
   });
 }

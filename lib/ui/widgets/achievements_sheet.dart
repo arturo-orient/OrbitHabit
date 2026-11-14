@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../domain/models/achievement.dart';
 import '../../providers/habit_provider.dart';
 import '../../providers/schedule_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../services/sound_service.dart';
 import 'achievement_art_painter.dart';
 
@@ -15,7 +16,8 @@ class AchievementsSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final habits = ref.watch(habitsProvider);
     final scheduleBlocks = ref.watch(scheduleProvider);
-    final achievements = Achievement.calculate(habits, const [], scheduleBlocks);
+    final settings = ref.watch(settingsProvider);
+    final achievements = Achievement.calculate(habits, settings.vacationDates, scheduleBlocks);
 
     final int unlockedCount = achievements.where((a) => a.isUnlocked).length;
     final double overallProgress = achievements.isEmpty ? 0.0 : unlockedCount / achievements.length;

@@ -1,9 +1,11 @@
 import 'package:hive_flutter/hive_flutter.dart';
+import '../core/app_version.dart';
 import '../domain/models/habit.dart';
 
 class DatabaseService {
   static const String _habitsBoxName = 'habits_box';
   static const String _settingsBoxName = 'settings_box';
+  static const String kHasSeenVacationTutorialKey = 'has_seen_vacation_tutorial';
   
   late Box<Habit> _habitsBox;
   late Box _settingsBox;
@@ -51,6 +53,24 @@ class DatabaseService {
 
   dynamic getSetting(String key, {dynamic defaultValue}) {
     return _settingsBox.get(key, defaultValue: defaultValue);
+  }
+
+  String? getLastSeenAppVersion() {
+    final val = getSetting(kLastSeenAppVersionKey);
+    return val is String ? val : null;
+  }
+
+  Future<void> setLastSeenAppVersion(String version) async {
+    await saveSetting(kLastSeenAppVersionKey, version);
+  }
+
+  bool getHasSeenVacationTutorial() {
+    final val = getSetting(kHasSeenVacationTutorialKey);
+    return val is bool ? val : false;
+  }
+
+  Future<void> setHasSeenVacationTutorial(bool seen) async {
+    await saveSetting(kHasSeenVacationTutorialKey, seen);
   }
 
   Future<void> wipeAllData() async {

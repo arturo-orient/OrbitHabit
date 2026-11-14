@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v1.2.6-C8FF00?labelColor=0D0E12" alt="Version v1.2.6"/>
+  <img src="https://img.shields.io/badge/Version-v1.2.7-C8FF00?labelColor=0D0E12" alt="Version v1.2.7"/>
   <img src="https://img.shields.io/badge/Flutter-3.12+-02569B?logo=flutter" alt="Flutter"/>
   <img src="https://img.shields.io/badge/Dart-3.12+-0175C2?logo=dart" alt="Dart"/>
   <img src="https://img.shields.io/badge/Riverpod-3.x-00B0FF" alt="Riverpod"/>
@@ -21,13 +21,13 @@
 
 <p align="center">
   <a href="https://github.com/arturo-orient/OrbitHabit/releases/latest/download/OrbitHabit.apk">
-    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.2.6-52968C?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="46"/>
+    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.2.7-52968C?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="46"/>
   </a>
 </p>
 
 ---
 
-## 📸 Interface Gallery (v1.2.6)
+## 📸 Interface Gallery (v1.2.7)
 
 ### 1. Core Orbital Views & Multi-Task Shift Calendar
 <p align="center">
@@ -65,7 +65,36 @@
 
 ---
 
-## 🚀 What's New in v1.2.6
+## 🚀 What's New in v1.2.7
+
+OrbitHabit **v1.2.7** upgrades daily reliability, 24-hour visual clarity, and quantitative self-tracking with a complete dual-mode notification engine, directional 24H clock arcs, a 3-chart vector telemetry suite, and bidirectional 24H ⇄ Orbital synchronization:
+
+* 🔔 **Dual-Mode Smart Notification Engine (`NotificationService` & `SettingsScreen`)**:
+  * **Type A — Fixed-Time Habit Reminders**: Configure exact alert times per habit (`DateTimeComponents.time` or active weekdays via `DateTimeComponents.dayOfWeekAndTime`), automatically muted on vacation shield days or once already completed.
+  * **Type B — Post-Activity Reminder (`+10 min`)**: Automatically checks your 24H schedule blocks (`ScheduleBlock`, including overnight shifts crossing midnight) and notifies you **10 minutes after finishing** (`endTime + 10m`) only if you forgot to mark it as completed.
+  * **Android 12/13/14+ Permission & Exact-Alarm Resilience**: Safely verifies `SCHEDULE_EXACT_ALARM` availability and automatically falls back to `AndroidScheduleMode.inexactAllowWhileIdle` instead of silently failing, backed by ProGuard keep rules and `@drawable/ic_stat_orbit`.
+  * **Ultra-Simple Notification Manager (`SettingsScreen`)**: Streamlined settings panel featuring global & post-activity toggles, automatic lock-down when Android notification permissions are revoked (with a direct **`[ Conceder permisos ]`** action and lifecycle auto-refresh), and an integrated **`RECORDATORIOS CONFIGURADOS`** manager with 1-tap `[ ✕ ]` deletion per reminder.
+* ⏰ **Directional 24H Polar Clock (`OrbitClock24`) & Pending vs Completed Contrast (`ScheduleBlockCard`)**:
+  * **Continuous Overnight Arcs**: Midnight-crossing shifts (`23:00 → 07:00`) now render as a single continuous orbital arc without artificial round-cap splits at `00:00`, with modulo-1440 concentric lane routing and polar hit-testing.
+  * **Unambiguous Start (`●`) ➔ Clockwise Flow (`›`) ➔ Terminal Finish (`▸|`)**: Every arc distinguishes its origin anchor (`●`), clockwise progression chevrons (`›`), terminal arrowhead stop bar (`▸|`), inner edge hour labels (`▶23:00` / `07:00■`), and active live range in the dial core.
+  * **Instant State Contrast**: Pending blocks render as clean translucent tracks (`0.42` opacity) with a crisp central guide line (`0.90`); completed blocks illuminate 100% solid with a midpoint `✓` medallion on the dial, paired with a `3.5px` chromatic left bar, tinted fill, and `[ ✓ COMPLETADO ]` badge on `ScheduleBlockCard`.
+* 📊 **Vector Telemetry Suite (`StatisticsScreen`)**:
+  * **3 Custom `CustomPainter` Charts (Zero External Chart Packages)**:
+    1. **Completion Evolution**: Interactive `14 DÍAS` / `MES COMPLETO` bar & spline telemetry with tap-and-scrub day inspection.
+    2. **Work Hours Telemetry**: Real vs. Planned vs. Overtime breakdown across shifts.
+    3. **Weekly Consistency (`L–D`) & Streak Ranking**: Per-weekday performance distribution and habit consistency leaderboard.
+* 🔄 **Bidirectional 24H ⇄ Orbital Wheel Sync & Clean Unplanned Days**:
+  * Toggling completion on any schedule block in 24H mode synchronizes immediately with its linked habit so the Orbital Wheel illuminates at full color even on days not previously planned in the calendar.
+  * Unchecking an unplanned extra day removes it cleanly from `completedDates` without leaving phantom outlines in `assignedDates`.
+* 🏆 **Real-Time Achievement Revocation, 10 Special Day Medals & Vacation Tutorial**:
+  * Achievements dynamically lock/unlock as progress changes, adding 10 new geometric vector medals and a 3-step Vacation Mode tutorial in `SettingsScreen`.
+
+---
+
+<details>
+<summary>📜 <strong>Previous Changelog: v1.2.0 – v1.2.6 Highlights</strong></summary>
+
+#### 🚀 What's New in v1.2.6 (Nordic Sage Brand, Subtasks Checklist & Multi-Task Shift Calendar)
 
 OrbitHabit **v1.2.6** delivers a major visual and ergonomic leap combining the new **"Nordic Sage & Dual-Ring Minimal"** brand identity, Swiss Grid UI refinements, a complete interactive Subtasks Checklist ecosystem, and a Multi-Task Shift Calendar:
 
@@ -95,11 +124,6 @@ OrbitHabit **v1.2.6** delivers a major visual and ergonomic leap combining the n
   * Days with demanding marathon work shifts ($\ge 12\text{h}$ total, e.g., hospital or emergency guards) automatically shield secondary habit streaks from breaking.
 * 🖼️ **Refined 1080p Monthly Poster Layout (`SchedulePosterService`)**:
   * Selective block filtering (`includedBlockIds`), toggleable telemetry footer, balanced header spacing, and a 2-column shift breakdown grid that prevents long shift names from colliding.
-
----
-
-<details>
-<summary>📜 <strong>Previous Changelog: v1.2.0 – v1.2.5 Highlights</strong></summary>
 
 #### 🚀 What's New in v1.2.5 (Smart Overnight 24H Clock Dial & Zero-False-Hours Precision)
 * 🌙 **Smart Overnight 24H Clock Dial Splitting (`OrbitClock24`)**:
@@ -161,11 +185,13 @@ OrbitHabit **v1.2.6** delivers a major visual and ergonomic leap combining the n
 Most habit trackers rely on monotonous checkboxes or rigid spreadsheets. **OrbitHabit visualizes your month as a horseshoe-shaped orbital ring and your day as a 24-hour astronomical clock** — engineered for both daily habits and complex rotating work shifts.
 
 - 🪐 **Monthly Orbital Wheel (`OrbitTracker`)** — Hand-painted with Flutter's `CustomPaint` API at 120Hz. Days `1..31` are radial segments, habits are concentric rings, and unscheduled rest days display clean negative space.
-- ⏰ **24-Hour Polar Clock (`OrbitClock24`)** — Live orbiting satellite indicator, color-coded time blocks, smart midnight splitting for overnight shifts, and 1-tap polar touch editing.
+- ⏰ **24-Hour Polar Clock (`OrbitClock24`)** — Live orbiting satellite indicator, continuous overnight arcs with start (`●`) ➔ finish (`▸|`) directionality, pending vs completed contrast, and 1-tap polar touch editing.
 - 🗓️ **Multi-Task Shift Calendar (`ShiftCalendarScreen`)** — Plan rotating shifts (*Mañana*, *Tarde*, *Guardia Noche*) and routines with continuous drag-to-paint, multi-task cells, and real-time monthly hour projections.
+- 📊 **Vector Telemetry Suite (`StatisticsScreen`)** — 3 interactive custom-painted charts: completion evolution (`14D` / `Full Month`), work hours telemetry, and weekly `L–D` consistency breakdown.
+- 🔔 **Smart Dual-Mode Reminders (`NotificationService`)** — Fixed-time habit alerts and post-activity `+10 min` reminders for unfinished 24H schedule blocks, managed from an intuitive Settings panel.
 - 📝 **Interactive Subtasks & Micro-Meters (`HabitProgressCard`)** — Break complex habits into actionable checklists with segmented visual progress bars.
 - 🖼️ **1080p Quadrant Poster Generator (`SchedulePosterService`)** — Export your monthly schedule and shift telemetry as a high-contrast Swiss poster ready to share or print.
-- 🏆 **27 Vector Achievements & Heavy Duty Shield** — Hand-drawn geometric trophies (`CustomPainter`), PlayStation-style unlock popups, Zen confetti physics, and automatic streak protection on $\ge 12\text{h}$ marathon shift days.
+- 🏆 **Vector Achievements & Heavy Duty Shield** — Hand-drawn geometric trophies (`CustomPainter`), real-time revocation, 10 special day medals, Zen confetti physics, and automatic streak protection on $\ge 12\text{h}$ marathon shift days.
 - 🌓 **Dual High-Craft Themes** — **Obsidiana** (`#0A0A0A` pure dark grid) and **Hueso Editorial** (`#F6F5F2` warm bone paper), with automatic night dimming.
 - 🔒 **100% Offline & Private** — Local Hive persistence with zero-permission JSON backup/restore via clipboard. No accounts, no cloud tracking, no ads.
 
@@ -176,23 +202,25 @@ Most habit trackers rely on monotonous checkboxes or rigid spreadsheets. **Orbit
 ```text
 lib/
 ├── main.dart                                 # App entry point, Hive bootstrap & TextScaler lock
+├── core/
+│   └── app_version.dart                      # Canonical app version & release date constants
 ├── data/
 │   └── database_service.dart                 # Local Hive persistence layer (habits, schedule, settings)
 ├── domain/models/
-│   ├── habit.dart                            # Core Habit & SubTask models + Hive TypeAdapters
-│   ├── schedule_block.dart                   # ScheduleBlock model (multi-date & overnight shift support)
+│   ├── habit.dart                            # Core Habit & SubTask models + reminder fields + TypeAdapters
+│   ├── schedule_block.dart                   # ScheduleBlock model (multi-date, overnight & reminders)
 │   ├── work_shift_group.dart                 # Consolidated 1:N rotating work shift aggregator
-│   ├── user_settings.dart                    # User preferences, themes & vacation dates
-│   └── achievement.dart                      # 27 dynamically computed vector achievements
+│   ├── user_settings.dart                    # User preferences, notification toggles & vacation dates
+│   └── achievement.dart                      # Vector achievements with special day & real-time eval
 ├── providers/
 │   ├── habit_provider.dart                   # Riverpod Notifier — habit/subtask CRUD & sync
-│   ├── schedule_provider.dart                # Riverpod Notifier — daily blocks & calendar assignments
+│   ├── schedule_provider.dart                # Riverpod Notifier — daily blocks & bidirectional sync
 │   └── settings_provider.dart                # Riverpod Notifier — settings, themes & trophy triggers
 ├── services/
-│   ├── backup_service.dart                   # Zero-permission JSON export/import
+│   ├── backup_service.dart                   # Zero-permission JSON export/import (Tour & Demo recovery)
 │   ├── demo_seeder_service.dart              # 1-click realistic demo orbit with auto-backup/restore
 │   ├── schedule_poster_service.dart          # 1080×1440 PNG monthly quadrant poster renderer
-│   ├── notification_service.dart             # Local scheduled reminders (flutter_local_notifications)
+│   ├── notification_service.dart             # Dual-mode habit & +10m post-activity reminders
 │   ├── sound_service.dart                    # Precached audio feedback (audioplayers)
 │   └── widget_service.dart                   # Native Android Home Widget sync (home_widget)
 ├── ui/
@@ -201,19 +229,22 @@ lib/
 │   ├── screens/
 │   │   ├── home_screen.dart                  # Dual view (Orbit / 24H), guided tour & reorder modals
 │   │   ├── shift_calendar_screen.dart        # Multi-task calendar, drag-to-paint & poster preview
-│   │   ├── statistics_screen.dart            # Telemetry, consistency heatmaps & streak metrics
-│   │   ├── settings_screen.dart              # Theme switch, vacation shield, achievements & JSON backup
+│   │   ├── statistics_screen.dart            # Telemetry charts, hours breakdown & streak metrics
+│   │   ├── settings_screen.dart              # Theme switch, notification manager, vacation shield & medals
 │   │   ├── manage_habits_screen.dart         # Habit archive & management
 │   │   └── onboarding_screen.dart            # Swiss onboarding flow
 │   └── widgets/
 │       ├── orbit_tracker.dart                # ⭐ 120Hz horseshoe orbital chart with polar touch detection
-│       ├── orbit_clock_24.dart               # ⏰ 24h polar clock dial with smart overnight splitting
-│       ├── habit_progress_card.dart          # 📝 Habit card with inline SubTask checklist & micro-meter
+│       ├── orbit_clock_24.dart               # ⏰ 24h polar clock dial with continuous directional arcs
+│       ├── schedule_block_card.dart          # 🟦 Shift card with completed badge & chromatic left bar
+│       ├── habit_progress_card.dart          # 📝 Habit card with inline SubTask checklist & reminder chip
 │       ├── monthly_work_target_card.dart     # 💼 Work target card with collapsible shift breakdown & extra hours
-│       ├── unified_task_sheet.dart           # 🎛️ Unified task/shift creator, subtask editor & duplicator
+│       ├── unified_task_sheet.dart           # 🎛️ Unified task/shift creator, reminders & duplicator
+│       ├── guided_tour_overlay.dart          # 🧭 Interactive spotlight guided tour overlay
+│       ├── release_notes_sheet.dart          # 📰 Editorial Swiss What's New modal sheet
 │       ├── custom_color_picker_dialog.dart   # 🎨 Full-spectrum HSV/HEX chromatic dialog
 │       ├── orbit_guide_sheet.dart            # 📖 Interactive Swiss manual
-│       ├── achievement_art_painter.dart      # 🏆 CustomPainter vector art for all 27 trophies
+│       ├── achievement_art_painter.dart      # 🏆 CustomPainter vector art for trophies
 │       ├── confetti_overlay.dart             # 🎉 65-particle custom physics overlay
 │       └── trophy_overlay.dart               # 🔔 PlayStation-style achievement unlock banner
 └── utils/

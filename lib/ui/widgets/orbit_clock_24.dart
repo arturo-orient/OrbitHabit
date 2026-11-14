@@ -9,6 +9,7 @@ import '../../domain/models/habit.dart';
 import '../../providers/habit_provider.dart';
 import '../../providers/schedule_provider.dart';
 import '../../services/sound_service.dart';
+import '../theme/app_theme.dart';
 
 class OrbitClock24 extends ConsumerStatefulWidget {
   final List<ScheduleBlock> blocks;
@@ -26,6 +27,13 @@ class OrbitClock24 extends ConsumerStatefulWidget {
   /// - Tramo nocturno (23:00 -> 24:00): Solo se pinta si el turno inicia hoy noche (`appliesToDate(now)`).
   static List<ClockArcSegment> getSegmentsForDay(List<ScheduleBlock> blocks, DateTime now) {
     return _OrbitClockPainter.getSegmentsForDay(blocks, now);
+  }
+
+  /// Devuelve los arcos continuos para dibujar e interactuar en el reloj 24H.
+  /// Los turnos nocturnos que inician hoy (ej. 23:00 -> 07:00) se devuelven como
+  /// un único arco continuo (`sweepMinutes = durationInMinutes`) que cruza las 00:00.
+  static List<ClockArcSegment> getContinuousArcsForDay(List<ScheduleBlock> blocks, DateTime now) {
+    return _OrbitClockPainter.getContinuousArcsForDay(blocks, now);
   }
 
   @override
@@ -134,9 +142,9 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
     // Convierte el ángulo a minutos del día (0..1439)
     final tappedMinutes = ((angle / (2 * math.pi)) * 1440).floor() % 1440;
 
-    final segments = _OrbitClockPainter.getSegmentsForDay(widget.blocks, _now);
+    final segments = _OrbitClockPainter.getContinuousArcsForDay(widget.blocks, _now);
     for (final seg in segments) {
-      if (tappedMinutes >= seg.startMinutes && tappedMinutes < seg.endMinutes) {
+      if (_OrbitClockPainter.minuteInSegment(tappedMinutes, seg)) {
         return seg.block;
       }
     }
@@ -149,15 +157,29 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
     final activeBlock = _findActiveBlock(widget.blocks, _now);
 
     Habit? linkedHabit;
-    if (activeBlock?.habitId != null) {
-      linkedHabit = habits.cast<Habit?>().firstWhere(
-            (h) => h?.id == activeBlock!.habitId,
-            orElse: () => null,
-          );
+    if (activeBlock != null) {
+      if (activeBlock.habitId != null) {
+        linkedHabit = habits.cast<Habit?>().firstWhere(
+              (h) => h?.id == activeBlock.habitId,
+              orElse: () => null,
+            );
+      }
+      if (linkedHabit == null) {
+        final bTitle = activeBlock.title.trim().toLowerCase();
+        linkedHabit = habits.cast<Habit?>().firstWhere(
+              (h) =>
+                  h != null &&
+                  (h.name.trim().toLowerCase() == bTitle ||
+                      (h.name.toLowerCase().contains('trabaj') && bTitle.contains('trabaj')) ||
+                      (h.name.toLowerCase().contains('turno') && bTitle.contains('turno'))),
+              orElse: () => null,
+            );
+      }
     }
 
     final effectiveDateIso = _getEffectiveDateIso(activeBlock, _now);
-    final isHabitDoneToday = linkedHabit?.completedDates.contains(effectiveDateIso) ?? false;
+    final isHabitDoneToday = (linkedHabit?.completedDates.contains(effectiveDateIso) ?? false) ||
+        (activeBlock?.completedDates.contains(effectiveDateIso) ?? false);
 
     final theme = Theme.of(context);
     final textColor = theme.textTheme.bodyLarge?.color ?? Colors.white;
@@ -218,16 +240,33 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
                   ),
 
                   if (activeBlock != null) ...[
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Text(
+                        '${activeBlock.title} · ${activeBlock.formattedTimeRange.replaceAll(' - ', ' ➔ ')}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: AppTheme.monoStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: (linkedHabit?.color ?? activeBlock.color),
+                        ),
+                      ),
+                    ),
                     // Quick Habit Toggle Action Button if linked to a Habit!
                     if (linkedHabit != null) ...[
                       const SizedBox(height: 8),
                       GestureDetector(
                         onTap: () {
                           HapticFeedback.mediumImpact();
-                          SoundService().playCheck();
+                          if (!isHabitDoneToday) {
+                            SoundService().playCheck();
+                          }
                           ref
-                              .read(habitsProvider.notifier)
-                              .toggleDay(linkedHabit!.id, effectiveDateIso);
+                              .read(scheduleProvider.notifier)
+                              .toggleDateForBlock(activeBlock.id, effectiveDateIso);
                         },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 250),
@@ -284,8 +323,8 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
                       ),
                     ],
 
-                    // Quick Shift Completion Button if it has a monthly hour target (like night shift work!)
-                    if (linkedHabit == null && activeBlock.hasMonthlyHourTarget) ...[
+                    // Quick Block/Shift Completion Button when not linked to a Habit
+                    if (linkedHabit == null) ...[
                       const SizedBox(height: 8),
                       Builder(
                         builder: (context) {
@@ -295,7 +334,9 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
                           return GestureDetector(
                             onTap: () {
                               HapticFeedback.mediumImpact();
-                              SoundService().playCheck();
+                              if (!isShiftDoneToday) {
+                                SoundService().playCheck();
+                              }
                               ref.read(scheduleProvider.notifier).toggleDateForBlock(activeBlock.id, effectiveDateIso);
                             },
                             child: AnimatedContainer(
@@ -321,13 +362,17 @@ class _OrbitClock24State extends ConsumerState<OrbitClock24>
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    isShiftDoneToday ? Icons.check_circle : Icons.work_outline,
+                                    isShiftDoneToday
+                                        ? Icons.check_circle
+                                        : (activeBlock.hasMonthlyHourTarget ? Icons.work_outline : Icons.check),
                                     size: 14,
                                     color: isShiftDoneToday ? shiftColor : Colors.white,
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
-                                    isShiftDoneToday ? 'Turno Registrado' : 'Registrar Turno',
+                                    isShiftDoneToday
+                                        ? (activeBlock.hasMonthlyHourTarget ? 'Turno Registrado' : 'Completado')
+                                        : (activeBlock.hasMonthlyHourTarget ? 'Registrar Turno' : 'Marcar Hecho'),
                                     style: GoogleFonts.outfit(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
@@ -443,10 +488,10 @@ class _OrbitClockPainter extends CustomPainter {
       }
     }
 
-    // 3. Draw Scheduled Time Blocks as Coloured Arc Segments (with Concentric Lanes for Overlaps)
-    final segments = getSegmentsForDay(blocks, now);
+    // 3. Draw Scheduled Time Blocks as Continuous Coloured Arc Segments (with Concentric Lanes for Overlaps)
+    final segments = getContinuousArcsForDay(blocks, now);
 
-    // Calculamos carriles concéntricos para evitar que tareas o tramos solapados se pisen
+    // Calculamos carriles concéntricos (soportando arcos que cruzan las 24:00)
     final Map<ClockArcSegment, int> segmentLanes = {};
     final Map<ClockArcSegment, int> segmentMaxLanes = {};
 
@@ -457,9 +502,7 @@ class _OrbitClockPainter extends CustomPainter {
       for (int j = 0; j < segments.length; j++) {
         if (i == j) continue;
         final other = segments[j];
-        final startMax = math.max(current.startMinutes, other.startMinutes);
-        final endMin = math.min(current.endMinutes, other.endMinutes);
-        if (startMax < endMin) {
+        if (_segmentsOverlap(current, other)) {
           if (segmentLanes.containsKey(other)) {
             usedLanes.add(segmentLanes[other]!);
           }
@@ -477,9 +520,7 @@ class _OrbitClockPainter extends CustomPainter {
       int localMaxLane = segmentLanes[current]!;
       for (final other in segments) {
         if (current == other) continue;
-        final startMax = math.max(current.startMinutes, other.startMinutes);
-        final endMin = math.min(current.endMinutes, other.endMinutes);
-        if (startMax < endMin) {
+        if (_segmentsOverlap(current, other)) {
           localMaxLane = math.max(localMaxLane, segmentLanes[other]!);
         }
       }
@@ -487,26 +528,32 @@ class _OrbitClockPainter extends CustomPainter {
     }
 
     final currentMinutes = now.hour * 60 + now.minute;
+    final todayIso = _isoDate(now);
+    final isDarkTheme = textColor.computeLuminance() > 0.5;
+    final List<Offset> placedLabelCenters = [];
 
     for (final seg in segments) {
       final block = seg.block;
-      // Check if linked to a habit to inherit its official color
-      Color blockColor = block.color;
+      // Check if linked to a habit to inherit its official color and completion status
+      Habit? linked;
       if (block.habitId != null) {
-        final linked = habits.cast<Habit?>().firstWhere(
+        linked = habits.cast<Habit?>().firstWhere(
               (h) => h?.id == block.habitId,
               orElse: () => null,
             );
-        if (linked != null) {
-          blockColor = linked.color;
-        }
       }
+      final blockColor = linked?.color ?? block.color;
+      final isLightBlockColor = blockColor.computeLuminance() > 0.55;
+      final contrastFg = isLightBlockColor ? const Color(0xFF141414) : Colors.white;
+      final effectiveIso = seg.effectiveDateIso ?? todayIso;
+      final isSegmentCompleted = block.completedDates.contains(effectiveIso) ||
+          (linked?.completedDates.contains(effectiveIso) ?? false);
 
       final startAngle = -math.pi / 2 + (seg.startMinutes / 1440.0) * 2 * math.pi;
       final sweepAngle = (seg.sweepMinutes / 1440.0) * 2 * math.pi;
 
       final isSegmentActive = (block == activeBlock) &&
-          (currentMinutes >= seg.startMinutes && currentMinutes < seg.endMinutes);
+          minuteInSegment(currentMinutes, seg);
 
       final numLanes = segmentMaxLanes[seg] ?? 1;
       final laneIndex = segmentLanes[seg] ?? 0;
@@ -529,37 +576,249 @@ class _OrbitClockPainter extends CustomPainter {
         currentTrackRadius = trackRadius + offset;
       }
 
-      final blockPaint = Paint()
-        ..color = isSegmentActive ? blockColor : blockColor.withOpacity(0.85)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = currentStrokeWidth
-        ..strokeCap = StrokeCap.round;
+      final arcStartAngle = startAngle + 0.015;
+      final safeSweep = (sweepAngle - 0.03).clamp(0.01, math.pi * 2);
+      final arcEndAngle = arcStartAngle + safeSweep;
+      final arcRect = Rect.fromCircle(center: center, radius: currentTrackRadius);
 
-      final safeSweep = (sweepAngle - 0.04).clamp(0.01, math.pi * 2);
-
-      // Glow effect if this segment is active right now!
-      if (isSegmentActive) {
+      if (isSegmentCompleted) {
+        // Completado: halo sutil + arco sólido 100% + marcadores de dirección + insignia de check
         final glowPaint = Paint()
-          ..color = blockColor.withOpacity(0.40 * pulseValue)
+          ..color = blockColor.withValues(alpha: isSegmentActive ? 0.45 * pulseValue : 0.24)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = currentStrokeWidth * 1.5
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-        canvas.drawArc(
-          Rect.fromCircle(center: center, radius: currentTrackRadius),
-          startAngle + 0.02,
-          safeSweep,
-          false,
-          glowPaint,
+          ..strokeWidth = currentStrokeWidth * 1.45
+          ..strokeCap = StrokeCap.butt
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
+        canvas.drawArc(arcRect, arcStartAngle, safeSweep, false, glowPaint);
+
+        final completedPaint = Paint()
+          ..color = blockColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = currentStrokeWidth
+          ..strokeCap = StrokeCap.butt;
+        canvas.drawArc(arcRect, arcStartAngle, safeSweep, false, completedPaint);
+      } else {
+        // Pendiente: cuerpo translúcido legible + guía central definida (sin redondeo simétrico)
+        if (isSegmentActive) {
+          final glowPaint = Paint()
+            ..color = blockColor.withValues(alpha: 0.28 * pulseValue)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = currentStrokeWidth * 1.35
+            ..strokeCap = StrokeCap.butt
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
+          canvas.drawArc(arcRect, arcStartAngle, safeSweep, false, glowPaint);
+        }
+
+        final pendingPaint = Paint()
+          ..color = blockColor.withValues(alpha: 0.42)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = currentStrokeWidth
+          ..strokeCap = StrokeCap.butt;
+        canvas.drawArc(arcRect, arcStartAngle, safeSweep, false, pendingPaint);
+
+        final guidePaint = Paint()
+          ..color = blockColor.withValues(alpha: 0.90)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (currentStrokeWidth * 0.18).clamp(1.8, 3.2)
+          ..strokeCap = StrokeCap.butt;
+        canvas.drawArc(arcRect, arcStartAngle, safeSweep, false, guidePaint);
+      }
+
+      // Chevrons direccionales horarios (›) indicando flujo Inicio ➔ Fin
+      final chevronFractions = isSegmentCompleted
+          ? (safeSweep >= 0.65 ? const [0.22, 0.78] : const <double>[])
+          : (safeSweep >= 0.55
+              ? const [0.24, 0.50, 0.76]
+              : (safeSweep >= 0.22 ? const [0.50] : const <double>[]));
+      final chevronArm = (currentStrokeWidth * 0.23).clamp(2.8, 4.6);
+      final chevronPaint = Paint()
+        ..color = isSegmentCompleted
+            ? contrastFg.withValues(alpha: 0.78)
+            : contrastFg.withValues(alpha: 0.92)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (chevronArm * 0.40).clamp(1.3, 2.0)
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+
+      for (final f in chevronFractions) {
+        final theta = arcStartAngle + safeSweep * f;
+        final ur = Offset(math.cos(theta), math.sin(theta));
+        final ut = Offset(-math.sin(theta), math.cos(theta));
+        final pt = Offset(
+          center.dx + currentTrackRadius * ur.dx,
+          center.dy + currentTrackRadius * ur.dy,
+        );
+        final path = Path()
+          ..moveTo(
+            pt.dx - ut.dx * chevronArm * 0.45 + ur.dx * chevronArm * 0.65,
+            pt.dy - ut.dy * chevronArm * 0.45 + ur.dy * chevronArm * 0.65,
+          )
+          ..lineTo(
+            pt.dx + ut.dx * chevronArm * 0.55,
+            pt.dy + ut.dy * chevronArm * 0.55,
+          )
+          ..lineTo(
+            pt.dx - ut.dx * chevronArm * 0.45 - ur.dx * chevronArm * 0.65,
+            pt.dy - ut.dy * chevronArm * 0.45 - ur.dy * chevronArm * 0.65,
+          );
+        canvas.drawPath(path, chevronPaint);
+      }
+
+      // Nodo de INICIO (●) en arcStartAngle para distinguir inequívocamente dónde arranca
+      if (safeSweep >= 0.08) {
+        final startUr = Offset(math.cos(arcStartAngle), math.sin(arcStartAngle));
+        final startPt = Offset(
+          center.dx + currentTrackRadius * startUr.dx,
+          center.dy + currentTrackRadius * startUr.dy,
+        );
+        final startRadius = (currentStrokeWidth * 0.38).clamp(4.0, 7.0);
+        canvas.drawCircle(
+          startPt,
+          startRadius,
+          Paint()
+            ..color = blockColor
+            ..style = PaintingStyle.fill,
+        );
+        canvas.drawCircle(
+          startPt,
+          startRadius * 0.55,
+          Paint()
+            ..color = contrastFg
+            ..style = PaintingStyle.fill,
         );
       }
 
-      canvas.drawArc(
-        Rect.fromCircle(center: center, radius: currentTrackRadius),
-        startAngle + 0.02,
-        safeSweep,
-        false,
-        blockPaint,
-      );
+      // Punta de flecha + barra terminal de FIN (▸|) en arcEndAngle
+      if (safeSweep >= 0.08) {
+        final endUr = Offset(math.cos(arcEndAngle), math.sin(arcEndAngle));
+        final endUt = Offset(-math.sin(arcEndAngle), math.cos(arcEndAngle));
+        final endPt = Offset(
+          center.dx + currentTrackRadius * endUr.dx,
+          center.dy + currentTrackRadius * endUr.dy,
+        );
+        final barHalf = (currentStrokeWidth * 0.46).clamp(5.0, 9.2);
+        final tipSize = (currentStrokeWidth * 0.30).clamp(3.2, 5.6);
+
+        // Barra radial de cierre perpendicular al anillo
+        canvas.drawLine(
+          endPt - endUr * barHalf,
+          endPt + endUr * barHalf,
+          Paint()
+            ..color = isSegmentCompleted ? contrastFg : blockColor
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.2
+            ..strokeCap = StrokeCap.round,
+        );
+
+        // Punta de flecha apuntando en sentido horario hacia la barra final
+        final arrowPath = Path()
+          ..moveTo(
+            endPt.dx - endUt.dx * (tipSize * 1.15) + endUr.dx * (tipSize * 0.72),
+            endPt.dy - endUt.dy * (tipSize * 1.15) + endUr.dy * (tipSize * 0.72),
+          )
+          ..lineTo(
+            endPt.dx - endUt.dx * 1.4,
+            endPt.dy - endUt.dy * 1.4,
+          )
+          ..lineTo(
+            endPt.dx - endUt.dx * (tipSize * 1.15) - endUr.dx * (tipSize * 0.72),
+            endPt.dy - endUt.dy * (tipSize * 1.15) - endUr.dy * (tipSize * 0.72),
+          )
+          ..close();
+        canvas.drawPath(
+          arrowPath,
+          Paint()
+            ..color = isSegmentCompleted ? contrastFg : blockColor
+            ..style = PaintingStyle.fill,
+        );
+      }
+
+      // Insignia circular de check (✓) en el punto medio para tramos completados
+      if (isSegmentCompleted && safeSweep >= 0.14) {
+        final midAngle = arcStartAngle + safeSweep * 0.5;
+        final badgeCenter = Offset(
+          center.dx + currentTrackRadius * math.cos(midAngle),
+          center.dy + currentTrackRadius * math.sin(midAngle),
+        );
+        final badgeRadius = (currentStrokeWidth * 0.46).clamp(5.2, 8.8);
+
+        canvas.drawCircle(
+          badgeCenter,
+          badgeRadius + 1.1,
+          Paint()
+            ..color = blockColor
+            ..style = PaintingStyle.fill,
+        );
+        canvas.drawCircle(
+          badgeCenter,
+          badgeRadius,
+          Paint()
+            ..color = contrastFg
+            ..style = PaintingStyle.fill,
+        );
+
+        final checkPath = Path()
+          ..moveTo(
+            badgeCenter.dx - badgeRadius * 0.42,
+            badgeCenter.dy + badgeRadius * 0.02,
+          )
+          ..lineTo(
+            badgeCenter.dx - badgeRadius * 0.10,
+            badgeCenter.dy + badgeRadius * 0.36,
+          )
+          ..lineTo(
+            badgeCenter.dx + badgeRadius * 0.45,
+            badgeCenter.dy - badgeRadius * 0.32,
+          );
+        canvas.drawPath(
+          checkPath,
+          Paint()
+            ..color = blockColor
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = (badgeRadius * 0.30).clamp(1.4, 2.2)
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round,
+        );
+      }
+
+      // Etiquetas interiores con la hora exacta de inicio (ej. 23:00) y fin (ej. 07:00)
+      if (sweepAngle >= 0.35) {
+        final startLabel = seg.isFromYesterday
+            ? '00:00'
+            : '${block.startHour.toString().padLeft(2, '0')}:${block.startMinute.toString().padLeft(2, '0')}';
+        final endLabel =
+            '${block.endHour.toString().padLeft(2, '0')}:${block.endMinute.toString().padLeft(2, '0')}';
+
+        _drawEdgeTimeLabel(
+          canvas: canvas,
+          textPainter: textPainter,
+          center: center,
+          angle: startAngle + 0.09,
+          ringInnerRadius: maxRadius - trackWidth,
+          labelRadius: (maxRadius - trackWidth - 15.0).clamp(24.0, maxRadius),
+          text: startLabel,
+          accentColor: blockColor,
+          isStart: true,
+          isDarkTheme: isDarkTheme,
+          textColor: textColor,
+          placedCenters: placedLabelCenters,
+        );
+
+        _drawEdgeTimeLabel(
+          canvas: canvas,
+          textPainter: textPainter,
+          center: center,
+          angle: startAngle + sweepAngle - 0.09,
+          ringInnerRadius: maxRadius - trackWidth,
+          labelRadius: (maxRadius - trackWidth - 15.0).clamp(24.0, maxRadius),
+          text: endLabel,
+          accentColor: blockColor,
+          isStart: false,
+          isDarkTheme: isDarkTheme,
+          textColor: textColor,
+          placedCenters: placedLabelCenters,
+        );
+      }
     }
 
     // 4. Current Time Satellite Node (Orbiting Indicator)
@@ -587,6 +846,179 @@ class _OrbitClockPainter extends CustomPainter {
       ..color = Colors.white
       ..style = PaintingStyle.fill;
     canvas.drawCircle(satelliteCenter, 2.0, satelliteInnerDot);
+  }
+
+  void _drawEdgeTimeLabel({
+    required Canvas canvas,
+    required TextPainter textPainter,
+    required Offset center,
+    required double angle,
+    required double ringInnerRadius,
+    required double labelRadius,
+    required String text,
+    required Color accentColor,
+    required bool isStart,
+    required bool isDarkTheme,
+    required Color textColor,
+    required List<Offset> placedCenters,
+  }) {
+    final pos = Offset(
+      center.dx + labelRadius * math.cos(angle),
+      center.dy + labelRadius * math.sin(angle),
+    );
+    for (final prev in placedCenters) {
+      if ((pos - prev).distance < 26.0) return;
+    }
+    placedCenters.add(pos);
+
+    textPainter.text = TextSpan(
+      text: isStart ? '▶$text' : '$text■',
+      style: AppTheme.monoStyle(
+        fontSize: 8.5,
+        fontWeight: isStart ? FontWeight.w800 : FontWeight.w700,
+        color: isStart ? accentColor : textColor.withValues(alpha: 0.78),
+      ),
+    );
+    textPainter.layout();
+
+    final pillRect = Rect.fromCenter(
+      center: pos,
+      width: textPainter.width + 7,
+      height: textPainter.height + 4,
+    );
+    final pillRRect = RRect.fromRectAndRadius(pillRect, const Radius.circular(4));
+
+    final tickOuter = Offset(
+      center.dx + (ringInnerRadius - 1.5) * math.cos(angle),
+      center.dy + (ringInnerRadius - 1.5) * math.sin(angle),
+    );
+    final tickInner = Offset(
+      center.dx + (ringInnerRadius - 5.5) * math.cos(angle),
+      center.dy + (ringInnerRadius - 5.5) * math.sin(angle),
+    );
+    canvas.drawLine(
+      tickOuter,
+      tickInner,
+      Paint()
+        ..color = accentColor.withValues(alpha: isStart ? 0.70 : 0.45)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0
+        ..strokeCap = StrokeCap.round,
+    );
+
+    canvas.drawRRect(
+      pillRRect,
+      Paint()
+        ..color = (isDarkTheme ? const Color(0xEB141414) : const Color(0xF2F6F5F2))
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawRRect(
+      pillRRect,
+      Paint()
+        ..color = accentColor.withValues(alpha: isStart ? 0.55 : 0.30)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8,
+    );
+
+    textPainter.paint(
+      canvas,
+      Offset(pos.dx - textPainter.width / 2, pos.dy - textPainter.height / 2),
+    );
+  }
+
+  static String _isoDate(DateTime dt) {
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  static List<(int, int)> _normalizedDayRanges(ClockArcSegment seg) {
+    if (seg.sweepMinutes <= 0) return const [];
+    final end = seg.startMinutes + seg.sweepMinutes;
+    if (end <= 1440) {
+      return [(seg.startMinutes, end)];
+    }
+    return [
+      (seg.startMinutes, 1440),
+      (0, (end - 1440).clamp(1, 1440)),
+    ];
+  }
+
+  static bool _segmentsOverlap(ClockArcSegment a, ClockArcSegment b) {
+    for (final ra in _normalizedDayRanges(a)) {
+      for (final rb in _normalizedDayRanges(b)) {
+        if (math.max(ra.$1, rb.$1) < math.min(ra.$2, rb.$2)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  static bool minuteInSegment(int minuteOfDay, ClockArcSegment seg) {
+    for (final r in _normalizedDayRanges(seg)) {
+      if (minuteOfDay >= r.$1 && minuteOfDay < r.$2) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Devuelve los arcos continuos para dibujar e interactuar en el reloj 24H.
+  /// Para turnos nocturnos (ej. 23:00 -> 07:00) que aplican hoy, devuelve un único
+  /// arco continuo que cruza las 00:00 sin partición artificial.
+  static List<ClockArcSegment> getContinuousArcsForDay(
+    List<ScheduleBlock> blocks,
+    DateTime now,
+  ) {
+    final yesterday = now.subtract(const Duration(days: 1));
+    final todayIso = _isoDate(now);
+    final yesterdayIso = _isoDate(yesterday);
+    final currentMinutes = now.hour * 60 + now.minute;
+    final segments = <ClockArcSegment>[];
+
+    for (final block in blocks) {
+      if (!block.isOvernight) {
+        if (block.appliesToDate(now)) {
+          segments.add(
+            ClockArcSegment(
+              block: block,
+              startMinutes: block.startInMinutes,
+              sweepMinutes: block.durationInMinutes,
+              effectiveDateIso: todayIso,
+            ),
+          );
+        }
+      } else {
+        final appliesToday = block.appliesToDate(now);
+        final appliesYesterday = block.appliesToDate(yesterday);
+        if (appliesToday) {
+          final isMorningTailActive =
+              appliesYesterday && currentMinutes < block.endInMinutes;
+          segments.add(
+            ClockArcSegment(
+              block: block,
+              startMinutes: block.startInMinutes,
+              sweepMinutes: block.durationInMinutes,
+              isForTonight: true,
+              effectiveDateIso: isMorningTailActive ? yesterdayIso : todayIso,
+            ),
+          );
+        } else if (appliesYesterday) {
+          segments.add(
+            ClockArcSegment(
+              block: block,
+              startMinutes: 0,
+              sweepMinutes: block.endInMinutes,
+              isFromYesterday: true,
+              effectiveDateIso: yesterdayIso,
+            ),
+          );
+        }
+      }
+    }
+    return segments;
   }
 
   /// Descompone los turnos en los arcos estrictos que deben ser visualizados en el día `now` (00:00 - 24:00).
@@ -647,6 +1079,7 @@ class ClockArcSegment {
   final int sweepMinutes;
   final bool isFromYesterday;
   final bool isForTonight;
+  final String? effectiveDateIso;
 
   const ClockArcSegment({
     required this.block,
@@ -654,6 +1087,7 @@ class ClockArcSegment {
     required this.sweepMinutes,
     this.isFromYesterday = false,
     this.isForTonight = false,
+    this.effectiveDateIso,
   });
 
   int get endMinutes => startMinutes + sweepMinutes;

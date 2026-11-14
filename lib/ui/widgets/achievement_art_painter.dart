@@ -349,22 +349,219 @@ class AchievementArtPainter extends CustomPainter {
         canvas.drawLine(vTopR, vMidL, facetPaint);
         break;
 
-      case 'ee_dedicated':
-        // ⏱️ RELOJ & ESTRELLA DE DEDICACIÓN Y HORAS EXTRA
+      case 'fathers_day':
+        // Escudo geométrico + insignia de corbata minimalista (19 de marzo)
         artPaint.style = PaintingStyle.stroke;
         artPaint.strokeWidth = 2.0;
-        // Outer gear / circular dial
-        canvas.drawCircle(center, radius * 0.45, artPaint);
-        // Ticks at 12, 3, 6, 9
-        canvas.drawLine(Offset(center.dx, center.dy - radius * 0.45), Offset(center.dx, center.dy - radius * 0.35), artPaint);
-        canvas.drawLine(Offset(center.dx + radius * 0.45, center.dy), Offset(center.dx + radius * 0.35, center.dy), artPaint);
-        canvas.drawLine(Offset(center.dx, center.dy + radius * 0.45), Offset(center.dx, center.dy + radius * 0.35), artPaint);
-        canvas.drawLine(Offset(center.dx - radius * 0.45, center.dy), Offset(center.dx - radius * 0.35, center.dy), artPaint);
-        // Clock hands showing dedication
-        canvas.drawLine(center, Offset(center.dx, center.dy - radius * 0.28), artPaint);
-        canvas.drawLine(center, Offset(center.dx + radius * 0.22, center.dy - radius * 0.1), artPaint);
-        // Center pin
-        canvas.drawCircle(center, 2.5, Paint()..color = artPaint.color..style = PaintingStyle.fill);
+        final shield = Path()
+          ..moveTo(center.dx - radius * 0.36, center.dy - radius * 0.36)
+          ..lineTo(center.dx + radius * 0.36, center.dy - radius * 0.36)
+          ..lineTo(center.dx + radius * 0.36, center.dy + radius * 0.04)
+          ..quadraticBezierTo(
+            center.dx,
+            center.dy + radius * 0.52,
+            center.dx,
+            center.dy + radius * 0.52,
+          )
+          ..quadraticBezierTo(
+            center.dx,
+            center.dy + radius * 0.52,
+            center.dx - radius * 0.36,
+            center.dy + radius * 0.04,
+          )
+          ..close();
+        canvas.drawPath(shield, artPaint);
+        final tie = Path()
+          ..moveTo(center.dx - radius * 0.08, center.dy - radius * 0.24)
+          ..lineTo(center.dx + radius * 0.08, center.dy - radius * 0.24)
+          ..lineTo(center.dx + radius * 0.11, center.dy + radius * 0.10)
+          ..lineTo(center.dx, center.dy + radius * 0.28)
+          ..lineTo(center.dx - radius * 0.11, center.dy + radius * 0.10)
+          ..close();
+        canvas.drawPath(tie, fillPaint);
+        break;
+
+      case 'mothers_day':
+        // Corazón floral geométrico orbital (Día de la Madre)
+        artPaint.style = PaintingStyle.stroke;
+        artPaint.strokeWidth = 2.0;
+        final heart = Path()
+          ..moveTo(center.dx, center.dy + radius * 0.38)
+          ..cubicTo(
+            center.dx - radius * 0.58,
+            center.dy + radius * 0.06,
+            center.dx - radius * 0.44,
+            center.dy - radius * 0.46,
+            center.dx,
+            center.dy - radius * 0.14,
+          )
+          ..cubicTo(
+            center.dx + radius * 0.44,
+            center.dy - radius * 0.46,
+            center.dx + radius * 0.58,
+            center.dy + radius * 0.06,
+            center.dx,
+            center.dy + radius * 0.38,
+          );
+        canvas.drawPath(heart, artPaint);
+        canvas.drawCircle(center.translate(0, radius * 0.04), radius * 0.10, fillPaint);
+        break;
+
+      case 'workers_day':
+        // Engranaje industrial suizo (1 de mayo)
+        artPaint.style = PaintingStyle.stroke;
+        artPaint.strokeWidth = 2.0;
+        const teeth = 8;
+        final gearOuter = radius * 0.48;
+        final gearInner = radius * 0.34;
+        for (int i = 0; i < teeth; i++) {
+          final a = i * 2 * math.pi / teeth;
+          final p1 = Offset(center.dx + gearInner * math.cos(a), center.dy + gearInner * math.sin(a));
+          final p2 = Offset(center.dx + gearOuter * math.cos(a), center.dy + gearOuter * math.sin(a));
+          canvas.drawLine(p1, p2, artPaint);
+        }
+        canvas.drawCircle(center, gearInner, artPaint);
+        canvas.drawCircle(center, radius * 0.14, fillPaint);
+        break;
+
+      case 'epiphany_day':
+        // Corona real geométrica + estrella polar (6 de enero)
+        artPaint.style = PaintingStyle.stroke;
+        artPaint.strokeWidth = 2.0;
+        final crown = Path()
+          ..moveTo(center.dx - radius * 0.42, center.dy + radius * 0.28)
+          ..lineTo(center.dx + radius * 0.42, center.dy + radius * 0.28)
+          ..lineTo(center.dx + radius * 0.48, center.dy - radius * 0.08)
+          ..lineTo(center.dx + radius * 0.18, center.dy + radius * 0.08)
+          ..lineTo(center.dx, center.dy - radius * 0.22)
+          ..lineTo(center.dx - radius * 0.18, center.dy + radius * 0.08)
+          ..lineTo(center.dx - radius * 0.48, center.dy - radius * 0.08)
+          ..close();
+        canvas.drawPath(crown, artPaint);
+        // Estrella polar superior
+        final starCenter = center.translate(0, -radius * 0.42);
+        canvas.drawLine(starCenter.translate(-5, 0), starCenter.translate(5, 0), artPaint);
+        canvas.drawLine(starCenter.translate(0, -5), starCenter.translate(0, 5), artPaint);
+        canvas.drawCircle(starCenter, 2.2, fillPaint);
+        break;
+
+      case 'pi_day':
+        // Símbolo técnico Pi dentro de órbita graduada (14 de marzo)
+        artPaint.style = PaintingStyle.stroke;
+        artPaint.strokeWidth = 2.0;
+        canvas.drawCircle(center, radius * 0.50, Paint()..color = artPaint.color.withOpacity(0.35)..style = PaintingStyle.stroke..strokeWidth = 1.2);
+        // Barra horizontal de Pi
+        canvas.drawLine(
+          center.translate(-radius * 0.30, -radius * 0.18),
+          center.translate(radius * 0.30, -radius * 0.18),
+          artPaint,
+        );
+        // Pata izquierda
+        canvas.drawLine(
+          center.translate(-radius * 0.13, -radius * 0.18),
+          center.translate(-radius * 0.16, radius * 0.24),
+          artPaint,
+        );
+        // Pata derecha con remate curvo
+        final piRight = Path()
+          ..moveTo(center.dx + radius * 0.13, center.dy - radius * 0.18)
+          ..lineTo(center.dx + radius * 0.13, center.dy + radius * 0.16)
+          ..quadraticBezierTo(
+            center.dx + radius * 0.13,
+            center.dy + radius * 0.26,
+            center.dx + radius * 0.24,
+            center.dy + radius * 0.24,
+          );
+        canvas.drawPath(piRight, artPaint);
+        break;
+
+      case 'book_day':
+        // Libro abierto isométrico + punto de rosa geométrica (23 de abril)
+        artPaint.style = PaintingStyle.stroke;
+        artPaint.strokeWidth = 2.0;
+        final book = Path()
+          ..moveTo(center.dx, center.dy - radius * 0.16)
+          ..lineTo(center.dx - radius * 0.44, center.dy - radius * 0.28)
+          ..lineTo(center.dx - radius * 0.44, center.dy + radius * 0.24)
+          ..lineTo(center.dx, center.dy + radius * 0.34)
+          ..lineTo(center.dx + radius * 0.44, center.dy + radius * 0.24)
+          ..lineTo(center.dx + radius * 0.44, center.dy - radius * 0.28)
+          ..close();
+        canvas.drawPath(book, artPaint);
+        canvas.drawLine(
+          center.translate(0, -radius * 0.16),
+          center.translate(0, radius * 0.34),
+          artPaint,
+        );
+        canvas.drawCircle(center.translate(0, -radius * 0.36), radius * 0.09, fillPaint);
+        break;
+
+      case 'san_juan':
+        // Llama piramidal sobre ondas de solsticio (24 de junio)
+        artPaint.style = PaintingStyle.stroke;
+        artPaint.strokeWidth = 2.0;
+        final flame = Path()
+          ..moveTo(center.dx, center.dy - radius * 0.48)
+          ..quadraticBezierTo(
+            center.dx + radius * 0.38,
+            center.dy - radius * 0.04,
+            center.dx + radius * 0.22,
+            center.dy + radius * 0.24,
+          )
+          ..lineTo(center.dx - radius * 0.22, center.dy + radius * 0.24)
+          ..quadraticBezierTo(
+            center.dx - radius * 0.38,
+            center.dy - radius * 0.04,
+            center.dx,
+            center.dy - radius * 0.48,
+          );
+        canvas.drawPath(flame, artPaint);
+        canvas.drawCircle(center.translate(0, radius * 0.04), radius * 0.10, fillPaint);
+        canvas.drawLine(
+          center.translate(-radius * 0.38, radius * 0.36),
+          center.translate(radius * 0.38, radius * 0.36),
+          artPaint,
+        );
+        break;
+
+      case 'back_to_school':
+        // Escuadra técnica + lápiz diagonal (1 de septiembre)
+        artPaint.style = PaintingStyle.stroke;
+        artPaint.strokeWidth = 2.0;
+        final ruler = Path()
+          ..moveTo(center.dx - radius * 0.38, center.dy + radius * 0.36)
+          ..lineTo(center.dx - radius * 0.38, center.dy - radius * 0.38)
+          ..lineTo(center.dx + radius * 0.36, center.dy + radius * 0.36)
+          ..close();
+        canvas.drawPath(ruler, artPaint);
+        canvas.drawCircle(center.translate(-radius * 0.16, radius * 0.14), radius * 0.07, fillPaint);
+        break;
+
+      case 'leap_or_palindrome':
+        // Pilares simétricos en espejo axial 11:11 (11 de noviembre)
+        artPaint.style = PaintingStyle.stroke;
+        artPaint.strokeWidth = 2.4;
+        for (final dx in [-0.34, -0.14, 0.14, 0.34]) {
+          canvas.drawLine(
+            center.translate(radius * dx, -radius * 0.30),
+            center.translate(radius * dx, radius * 0.30),
+            artPaint,
+          );
+        }
+        canvas.drawCircle(center.translate(0, -radius * 0.10), 2.5, fillPaint);
+        canvas.drawCircle(center.translate(0, radius * 0.10), 2.5, fillPaint);
+        break;
+
+      case 'new_years_eve':
+        // Reloj de medianoche 12:00 + destellos orbitales (31 de diciembre)
+        artPaint.style = PaintingStyle.stroke;
+        artPaint.strokeWidth = 2.0;
+        canvas.drawCircle(center, radius * 0.44, artPaint);
+        canvas.drawLine(center, center.translate(0, -radius * 0.30), artPaint);
+        canvas.drawLine(center, center.translate(radius * 0.04, -radius * 0.20), artPaint);
+        canvas.drawCircle(center, 3.0, fillPaint);
+        canvas.drawCircle(center.translate(-radius * 0.50, -radius * 0.34), 2.2, fillPaint);
+        canvas.drawCircle(center.translate(radius * 0.50, -radius * 0.34), 2.2, fillPaint);
         break;
 
       default:

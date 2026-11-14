@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hive/hive.dart';
 import 'habit.dart';
 
 class ScheduleBlock {
@@ -17,6 +18,8 @@ class ScheduleBlock {
   final List<String> assignedDates; // Specific YYYY-MM-DD dates assigned on the shift calendar
   final Map<String, double> monthlyExtraHours; // 'YYYY-MM' -> extra hours
   final double extraHours; // Legacy extra overtime hours logged
+  final bool hasReminder; // Whether reminder is enabled before shift starts
+  final int reminderOffsetMinutes; // Minutes before startHour:startMinute (e.g. 0, 15, 30, 60)
 
   const ScheduleBlock({
     required this.id,
@@ -34,6 +37,8 @@ class ScheduleBlock {
     this.assignedDates = const [],
     this.monthlyExtraHours = const {},
     this.extraHours = 0.0,
+    this.hasReminder = false,
+    this.reminderOffsetMinutes = 15,
   });
 
   Color get color => Color(colorValue);
@@ -220,6 +225,8 @@ class ScheduleBlock {
     List<String>? assignedDates,
     Map<String, double>? monthlyExtraHours,
     double? extraHours,
+    bool? hasReminder,
+    int? reminderOffsetMinutes,
   }) {
     return ScheduleBlock(
       id: id ?? this.id,
@@ -237,6 +244,8 @@ class ScheduleBlock {
       assignedDates: assignedDates ?? this.assignedDates,
       monthlyExtraHours: monthlyExtraHours ?? this.monthlyExtraHours,
       extraHours: extraHours ?? this.extraHours,
+      hasReminder: hasReminder ?? this.hasReminder,
+      reminderOffsetMinutes: reminderOffsetMinutes ?? this.reminderOffsetMinutes,
     );
   }
 
@@ -257,6 +266,8 @@ class ScheduleBlock {
       'assignedDates': assignedDates,
       'monthlyExtraHours': monthlyExtraHours,
       'extraHours': extraHours,
+      'hasReminder': hasReminder,
+      'reminderOffsetMinutes': reminderOffsetMinutes,
     };
   }
 
@@ -287,7 +298,25 @@ class ScheduleBlock {
       assignedDates: (map['assignedDates'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       monthlyExtraHours: parsedMonthlyExtraHours,
       extraHours: (map['extraHours'] as num?)?.toDouble() ?? 0.0,
+      hasReminder: map['hasReminder'] as bool? ?? false,
+      reminderOffsetMinutes: (map['reminderOffsetMinutes'] as num?)?.toInt() ?? 15,
     );
+  }
+}
+
+class ScheduleBlockAdapter extends TypeAdapter<ScheduleBlock> {
+  @override
+  final int typeId = 1;
+
+  @override
+  ScheduleBlock read(BinaryReader reader) {
+    final map = reader.readMap();
+    return ScheduleBlock.fromMap(map);
+  }
+
+  @override
+  void write(BinaryWriter writer, ScheduleBlock obj) {
+    writer.writeMap(obj.toMap());
   }
 }
 
@@ -318,18 +347,31 @@ class WorkShiftGroup {
 
     if (isFutureMonth) return {};
 
+    final isPrimaryShift = shifts.isEmpty || s.id == shifts.first.id;
+    final primaryDates = (!isPrimaryShift && shifts.isNotEmpty)
+        ? <String>{
+            ...shifts.first.completedDates,
+            ...shifts.first.assignedDates,
+          }
+        : const <String>{};
+
     final Set<String> dates = {};
     // 1. Fechas explícitas en completedDates de este turno
+    // (evitando contar dos veces fechas históricas clonadas en turnos secundarios)
     for (final d in s.completedDates) {
-      if (d.startsWith(prefix)) dates.add(d);
+      if (d.startsWith(prefix)) {
+        if (isPrimaryShift || !primaryDates.contains(d)) {
+          dates.add(d);
+        }
+      }
     }
 
     // 2. Fechas en habit vinculado (si aplica a este turno)
     if (habit != null) {
       for (final d in habit!.completedDates) {
         if (d.startsWith(prefix)) {
-          if (s.assignedDates.contains(d) ||
-              (!shifts.any((other) => other.assignedDates.contains(d)) && s.id == shifts.first.id)) {
+          if ((s.assignedDates.contains(d) && (isPrimaryShift || !primaryDates.contains(d))) ||
+              (!shifts.any((other) => other.assignedDates.contains(d)) && isPrimaryShift)) {
             dates.add(d);
           }
         }
@@ -339,7 +381,9 @@ class WorkShiftGroup {
     // 3. Fechas asignadas en cuadrante que ya han transcurrido estrictamente (días pasados)
     for (final d in s.assignedDates) {
       if (d.startsWith(prefix) && d.compareTo(todayIso) < 0) {
-        dates.add(d);
+        if (isPrimaryShift || !primaryDates.contains(d)) {
+          dates.add(d);
+        }
       }
     }
 

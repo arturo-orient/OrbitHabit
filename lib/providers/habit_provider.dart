@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../domain/models/habit.dart';
 import '../data/database_service.dart';
+import '../services/notification_service.dart';
 import '../services/widget_service.dart';
 
 import 'schedule_provider.dart';
+import 'settings_provider.dart';
 
 final databaseProvider = Provider<DatabaseService>((ref) {
   throw UnimplementedError('DatabaseService should be overridden in main');
@@ -17,7 +19,27 @@ class HabitNotifier extends Notifier<List<Habit>> {
     habits.sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
     // Notificamos al widget al iniciar por si algo cambió en background o reseteo
     Future.microtask(() => WidgetService.updateWidget(habits));
+    // Re-sincroniza los recordatorios al arrancar (la ventana de 7/14 días se renueva cada apertura)
+    _syncNotifications();
     return habits;
+  }
+
+  void _syncNotifications() {
+    Future.microtask(() async {
+      try {
+        final blocks = ref.read(scheduleProvider);
+        final settings = ref.read(settingsProvider);
+        await NotificationService().syncAllTaskReminders(
+          habits: state,
+          blocks: blocks,
+          globalEnabled: settings.notificationsEnabled,
+          postActivityReminderEnabled: settings.postActivityReminderEnabled,
+          vacationDates: settings.vacationDates.toSet(),
+          dailyHour: settings.notificationHour,
+          dailyMinute: settings.notificationMinute,
+        );
+      } catch (_) {}
+    });
   }
 
   Future<void> replaceAllHabits(List<Habit> habits) async {
@@ -25,6 +47,7 @@ class HabitNotifier extends Notifier<List<Habit>> {
     await ref.read(databaseProvider).replaceAllHabits(sorted);
     state = sorted;
     WidgetService.updateWidget(state);
+    _syncNotifications();
   }
 
   Future<void> addHabit(Habit habit) async {
@@ -33,6 +56,7 @@ class HabitNotifier extends Notifier<List<Habit>> {
     await ref.read(databaseProvider).saveHabit(newHabit);
     state = [...state, newHabit];
     WidgetService.updateWidget(state);
+    _syncNotifications();
   }
 
   Future<void> updateHabit(Habit habit) async {
@@ -44,6 +68,7 @@ class HabitNotifier extends Notifier<List<Habit>> {
     newState.sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
     state = newState;
     WidgetService.updateWidget(state);
+    _syncNotifications();
   }
 
   Future<void> reorderHabits(int oldIndex, int newIndex) async {
@@ -74,6 +99,7 @@ class HabitNotifier extends Notifier<List<Habit>> {
     try {
       await ref.read(scheduleProvider.notifier).unlinkHabitFromBlocks(id);
     } catch (_) {}
+    _syncNotifications();
   }
 
   Future<void> toggleDay(String habitId, String dateIso) async {

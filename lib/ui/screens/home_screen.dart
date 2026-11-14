@@ -26,6 +26,7 @@ import 'settings_screen.dart';
 import 'statistics_screen.dart';
 import '../widgets/orbit_guide_sheet.dart';
 import '../widgets/guided_tour_overlay.dart';
+import '../widgets/release_notes_sheet.dart';
 import 'shift_calendar_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -40,6 +41,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   int _selectedView = 0; // 0 = Órbita Mensual, 1 = Reloj Horario 24h
   int? _tourStep; // null = inactivo, 0..6 = tour guiado interactivo de 7 pasos
   bool _loadedTemporaryTourDemo = false;
+  Set<String>? _knownUnlockedAchievementIds;
   late AnimationController _entranceController;
 
   // GlobalKeys para medición quirúrgica del Spotlight en el Tutorial Guiado
@@ -152,11 +154,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     // Esperar a que el lienzo esté completamente pintado antes de iniciar la cascada
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(habitsProvider.notifier).consolidateWorkHabits(ref.read(scheduleProvider));
+      ref.read(scheduleProvider.notifier).deduplicateClonedShiftDates();
       Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) {
           _entranceController.forward(from: 0.0);
         }
       });
+
+      // Mostrar automáticamente Novedades de la Versión si el usuario ya completó
+      // el Onboarding, no está en el tutorial guiado y ha actualizado a una nueva versión.
+      final settingsNotifier = ref.read(settingsProvider.notifier);
+      if (_tourStep == null && settingsNotifier.shouldShowReleaseNotes()) {
+        settingsNotifier.markReleaseNotesSeen();
+        ReleaseNotesSheet.show(context);
+      }
+
+      // Inicializar el estado actual de logros desbloqueados para detectar cambios en tiempo real.
+      final initialAchievements = Achievement.calculate(
+        ref.read(habitsProvider),
+        ref.read(settingsProvider).vacationDates,
+        ref.read(scheduleProvider),
+      );
+      _knownUnlockedAchievementIds = initialAchievements
+          .where((a) => a.isUnlocked)
+          .map((a) => a.id)
+          .toSet();
     });
   }
 
@@ -678,84 +700,75 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     // Dynamic reactive listener to trigger the vector Confetti Celebration on "Perfect Days"
     // and slide in the premium PlayStation-style Achievement Unlocked Popup!
     ref.listen<List<Habit>>(habitsProvider, (previous, next) {
-      if (previous == null || previous.isEmpty || next.isEmpty) return;
+      if (previous == null) return;
 
       // 1. Check for Perfect Day Confetti Celebration
-      final todayStr = DateTime.now().toIso8601String().split('T').first;
-      final prevAllCompleted = previous.every((h) => h.completedDates.contains(todayStr));
-      final nextAllCompleted = next.every((h) => h.completedDates.contains(todayStr));
+      if (previous.isNotEmpty && next.isNotEmpty) {
+        final todayStr = DateTime.now().toIso8601String().split('T').first;
+        final prevAllCompleted = previous.every((h) => h.completedDates.contains(todayStr));
+        final nextAllCompleted = next.every((h) => h.completedDates.contains(todayStr));
 
-      if (!prevAllCompleted && nextAllCompleted) {
-        // Play peaceful celebration, trigger vector confetti and sound
-        ref.read(confettiStateProvider.notifier).show();
-        SoundService().playPerfectDay(); // Play deep Tibetan Bowl chime!
-        HapticFeedback.heavyImpact();
+        if (!prevAllCompleted && nextAllCompleted) {
+          // Play peaceful celebration, trigger vector confetti and sound
+          ref.read(confettiStateProvider.notifier).show();
+          SoundService().playPerfectDay(); // Play deep Tibetan Bowl chime!
+          HapticFeedback.heavyImpact();
+        }
       }
 
-      // 2. Check for Newly Unlocked Achievements
+      // 2. Reactively synchronize unlocked achievements (supports real-time revocation)
       try {
-        final prevAchievements = Achievement.calculate(previous, settings.vacationDates, scheduleBlocks);
-        final nextAchievements = Achievement.calculate(next, settings.vacationDates, scheduleBlocks);
+        final currentBlocks = ref.read(scheduleProvider);
+        final prevKnown = _knownUnlockedAchievementIds ??
+            Achievement.calculate(previous, settings.vacationDates, currentBlocks)
+                .where((a) => a.isUnlocked)
+                .map((a) => a.id)
+                .toSet();
+
+        final nextAchievements = Achievement.calculate(next, settings.vacationDates, currentBlocks);
+        final nextUnlockedIds = nextAchievements
+            .where((a) => a.isUnlocked)
+            .map((a) => a.id)
+            .toSet();
 
         for (final nextAch in nextAchievements) {
-          if (nextAch.isUnlocked) {
-            final prevAch = prevAchievements.firstWhere(
-              (a) => a.id == nextAch.id,
-              orElse: () => Achievement(
-                id: nextAch.id,
-                title: nextAch.title,
-                description: nextAch.description,
-                progress: 0.0,
-                progressText: '',
-                isUnlocked: false,
-                colorValue: nextAch.colorValue,
-              ),
-            );
-
-            if (!prevAch.isUnlocked) {
-              // Play high quality PlayStation-style chime sound
-              SoundService().playTrophy();
-              HapticFeedback.heavyImpact();
-              // Spawn the premium overlay notification
-              TrophyOverlay.show(context, nextAch);
-            }
+          if (nextAch.isUnlocked && !prevKnown.contains(nextAch.id)) {
+            SoundService().playTrophy();
+            HapticFeedback.heavyImpact();
+            TrophyOverlay.show(context, nextAch);
           }
         }
+        _knownUnlockedAchievementIds = nextUnlockedIds;
       } catch (e) {
         // Silent robust catch
       }
     });
 
-    // Reactive listener for Schedule changes (e.g. unlocking "Dedicado" when reaching 120h of work!)
+    // Reactive listener for Schedule changes (unlocks and revokes achievements in real time)
     ref.listen<List<ScheduleBlock>>(scheduleProvider, (previous, next) {
-      if (previous == null || previous.isEmpty || next.isEmpty) return;
+      if (previous == null) return;
       try {
         final currentHabits = ref.read(habitsProvider);
-        final prevAchievements = Achievement.calculate(currentHabits, settings.vacationDates, previous);
+        final prevKnown = _knownUnlockedAchievementIds ??
+            Achievement.calculate(currentHabits, settings.vacationDates, previous)
+                .where((a) => a.isUnlocked)
+                .map((a) => a.id)
+                .toSet();
+
         final nextAchievements = Achievement.calculate(currentHabits, settings.vacationDates, next);
+        final nextUnlockedIds = nextAchievements
+            .where((a) => a.isUnlocked)
+            .map((a) => a.id)
+            .toSet();
 
         for (final nextAch in nextAchievements) {
-          if (nextAch.isUnlocked) {
-            final prevAch = prevAchievements.firstWhere(
-              (a) => a.id == nextAch.id,
-              orElse: () => Achievement(
-                id: nextAch.id,
-                title: nextAch.title,
-                description: nextAch.description,
-                progress: 0.0,
-                progressText: '',
-                isUnlocked: false,
-                colorValue: nextAch.colorValue,
-              ),
-            );
-
-            if (!prevAch.isUnlocked) {
-              SoundService().playTrophy();
-              HapticFeedback.heavyImpact();
-              TrophyOverlay.show(context, nextAch);
-            }
+          if (nextAch.isUnlocked && !prevKnown.contains(nextAch.id)) {
+            SoundService().playTrophy();
+            HapticFeedback.heavyImpact();
+            TrophyOverlay.show(context, nextAch);
           }
         }
+        _knownUnlockedAchievementIds = nextUnlockedIds;
       } catch (_) {}
     });
 
@@ -1246,6 +1259,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                                       onTap: () => _editHabit(habit),
                                       subTasks: habit.subTasks,
                                       todayIso: todayIso,
+                                      reminderTime: habit.formattedReminderTime,
                                       onToggleSubTask: (st) {
                                         HapticFeedback.selectionClick();
                                         SoundService().playCheck();
@@ -2123,7 +2137,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
         hasMonthlyTarget: true,
       ));
     }
-    orbitHabits.addAll(regularHabits);
+    for (final h in regularHabits) {
+      final hName = h.name.trim().toLowerCase();
+      final linkedCompleted = scheduleBlocks
+          .where((b) =>
+              b.habitId == h.id ||
+              b.title.trim().toLowerCase() == hName)
+          .expand((b) => b.completedDates)
+          .where((d) => d.compareTo(todayStr) <= 0);
+      if (linkedCompleted.isEmpty) {
+        orbitHabits.add(h);
+      } else {
+        orbitHabits.add(
+          h.copyWith(completedDates: {...h.completedDates, ...linkedCompleted}),
+        );
+      }
+    }
 
     return (
       workShiftGroups: workShiftGroups,

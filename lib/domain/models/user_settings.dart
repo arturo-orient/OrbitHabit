@@ -9,6 +9,8 @@ class UserSettings {
   final String themeMode; // 'light' (Crema), 'dark' (Pizarra), 'sage' (Bosque Salvia)
   final bool isFirstTime; // Onboarding guard
   final List<String> vacationDates; // Fechas en formato YYYY-MM-DD donde las rachas se congelan
+  final bool notificationsEnabled; // Toggle global de notificaciones
+  final bool postActivityReminderEnabled; // Recordatorio +10 min post-actividad en Modo 24H
 
   UserSettings({
     required this.userName,
@@ -19,6 +21,8 @@ class UserSettings {
     required this.themeMode,
     required this.isFirstTime,
     required this.vacationDates,
+    this.notificationsEnabled = true,
+    this.postActivityReminderEnabled = true,
   });
 
   Color get avatarColor => Color(avatarColorValue);
@@ -32,6 +36,8 @@ class UserSettings {
     String? themeMode,
     bool? isFirstTime,
     List<String>? vacationDates,
+    bool? notificationsEnabled,
+    bool? postActivityReminderEnabled,
   }) {
     return UserSettings(
       userName: userName ?? this.userName,
@@ -42,6 +48,9 @@ class UserSettings {
       themeMode: themeMode ?? this.themeMode,
       isFirstTime: isFirstTime ?? this.isFirstTime,
       vacationDates: vacationDates ?? this.vacationDates,
+      notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
+      postActivityReminderEnabled:
+          postActivityReminderEnabled ?? this.postActivityReminderEnabled,
     );
   }
 
@@ -56,6 +65,8 @@ class UserSettings {
       'themeMode': themeMode,
       'isFirstTime': isFirstTime,
       'vacationDates': vacationDates,
+      'notificationsEnabled': notificationsEnabled,
+      'postActivityReminderEnabled': postActivityReminderEnabled,
     };
   }
 
@@ -72,6 +83,9 @@ class UserSettings {
       themeMode: map['themeMode'] as String? ?? 'system',
       isFirstTime: map['isFirstTime'] as bool? ?? true,
       vacationDates: (map['vacationDates'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      notificationsEnabled: map['notificationsEnabled'] as bool? ?? true,
+      postActivityReminderEnabled:
+          map['postActivityReminderEnabled'] as bool? ?? true,
     );
   }
 
@@ -85,6 +99,8 @@ class UserSettings {
       themeMode: 'system',
       isFirstTime: true,
       vacationDates: [],
+      notificationsEnabled: true,
+      postActivityReminderEnabled: true,
     );
   }
 }

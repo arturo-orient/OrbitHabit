@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/app_version.dart';
 import '../domain/models/user_settings.dart';
 import '../services/notification_service.dart';
 import 'habit_provider.dart';
+import 'schedule_provider.dart';
 
 class SettingsNotifier extends Notifier<UserSettings> {
   @override
@@ -19,19 +21,45 @@ class SettingsNotifier extends Notifier<UserSettings> {
   }
 
   Future<void> updateSettings(UserSettings newSettings) async {
+    final wasFirstTime = state.isFirstTime;
     state = newSettings;
     final db = ref.read(databaseProvider);
     await db.saveSetting('user_settings', newSettings.toMap());
+
+    // Si acaba de completar el Onboarding por primera vez (instalación limpia),
+    // registramos la versión actual como vista para no solapar el modal de novedades.
+    if (wasFirstTime && !newSettings.isFirstTime) {
+      await db.setLastSeenAppVersion(kCurrentAppVersion);
+    }
     
-    // Sincronizar alarma diaria con NotificationService
+    // Sincronizar alarmas y recordatorios con NotificationService
     try {
-      await NotificationService().scheduleDailyReminder(
-        hour: newSettings.notificationHour,
-        minute: newSettings.notificationMinute,
+      final habits = ref.read(habitsProvider);
+      final blocks = ref.read(scheduleProvider);
+      await NotificationService().syncAllTaskReminders(
+        habits: habits,
+        blocks: blocks,
+        globalEnabled: newSettings.notificationsEnabled,
+        postActivityReminderEnabled: newSettings.postActivityReminderEnabled,
+        vacationDates: newSettings.vacationDates.toSet(),
+        dailyHour: newSettings.notificationHour,
+        dailyMinute: newSettings.notificationMinute,
       );
     } catch (e) {
       // Evitamos que falle si se corre en entornos no soportados
     }
+  }
+
+  bool shouldShowReleaseNotes() {
+    if (state.isFirstTime) return false;
+    final db = ref.read(databaseProvider);
+    final lastSeen = db.getLastSeenAppVersion();
+    return lastSeen != kCurrentAppVersion;
+  }
+
+  Future<void> markReleaseNotesSeen([String version = kCurrentAppVersion]) async {
+    final db = ref.read(databaseProvider);
+    await db.setLastSeenAppVersion(version);
   }
 
   Future<void> resetAppToFactoryDefaults() async {

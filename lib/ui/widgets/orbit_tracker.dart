@@ -469,7 +469,9 @@ class OrbitPainter extends CustomPainter {
         final date = DateTime(currentMonth.year, currentMonth.month, d);
         final dateIso = date.toIso8601String().split('T').first;
         final isFutureDay = date.isAfter(DateTime(now.year, now.month, now.day));
-        final isCompleted = !isFutureDay && habit.completedDates.contains(dateIso);
+        final isCompleted = !isFutureDay &&
+            (habit.completedDates.contains(dateIso) ||
+                relatedBlocks.any((b) => b.completedDates.contains(dateIso)));
 
         // Determinamos si el hábito está programado para este día
         final isScheduled = _isHabitScheduledOnDate(
@@ -538,15 +540,17 @@ class OrbitPainter extends CustomPainter {
         final relatedBlocks = _getRelatedBlocks(habit);
         final hasAssigned = _hasAssignedCalendarDates(relatedBlocks, currentMonth);
         final isDueToday = _isHabitScheduledOnDate(habit, date, dateIso, relatedBlocks, hasAssigned);
+        final isDoneOnDate = habit.completedDates.contains(dateIso) ||
+            relatedBlocks.any((b) => b.completedDates.contains(dateIso));
 
         if (isDueToday) {
           hasAnyDue = true;
-          if (!habit.completedDates.contains(dateIso)) {
+          if (!isDoneOnDate) {
             allCompleted = false;
             break;
           }
         } else {
-           if (habit.completedDates.contains(dateIso)) {
+           if (isDoneOnDate) {
              hasAnyDue = true;
            }
         }
@@ -589,24 +593,26 @@ class OrbitPainter extends CustomPainter {
       final relatedBlocks = _getRelatedBlocks(h);
       final hasAssigned = _hasAssignedCalendarDates(relatedBlocks, todayDate);
       final isScheduledToday = _isHabitScheduledOnDate(h, todayDate, todayIsoStr, relatedBlocks, hasAssigned);
+      final isDoneToday = h.completedDates.contains(todayIsoStr) ||
+          relatedBlocks.any((b) => b.completedDates.contains(todayIsoStr));
 
       if (relatedBlocks.isNotEmpty) {
         // En días libres según el cuadrante de turnos, no computa como pendiente (0/1 HOY)
         if (isScheduledToday) {
           totalToday++;
-          if (h.completedDates.contains(todayIsoStr)) completedToday++;
-        } else if (h.completedDates.contains(todayIsoStr)) {
+          if (isDoneToday) completedToday++;
+        } else if (isDoneToday) {
           totalToday++;
           completedToday++;
         }
       } else if (h.frequencyType == 0) {
         if (h.activeWeekdays.contains(todayDate.weekday)) {
           totalToday++;
-          if (h.completedDates.contains(todayIsoStr)) completedToday++;
+          if (isDoneToday) completedToday++;
         }
       } else {
         totalToday++;
-        if (h.completedDates.contains(todayIsoStr)) completedToday++;
+        if (isDoneToday) completedToday++;
       }
     }
 

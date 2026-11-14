@@ -19,15 +19,14 @@ void main() async {
   // Precache Zen sounds in RAM on startup (sin bloquear la carga)
   SoundService().init();
 
-  // Inicializamos notificaciones solo en plataformas soportadas (móvil)
+  // Inicializamos notificaciones solo en plataformas soportadas (móvil).
+  // La programación real (aviso diario + recordatorios por tarea) la realiza
+  // HabitNotifier al arrancar, con la hora configurada por el usuario.
   if (!kIsWeb) {
     final notifService = NotificationService();
-    notifService.init().then((_) {
-      notifService.requestPermissions().then((_) {
-        notifService.scheduleDailyReminder(hour: 21, minute: 0);
-      });
-    }).catchError((error) {
-      print("Error inicializando notificaciones: $error");
+    notifService.init().then((_) => notifService.requestPermissions()).catchError((error) {
+      debugPrint("Error inicializando notificaciones: $error");
+      return false;
     });
   }
 

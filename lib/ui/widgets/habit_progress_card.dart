@@ -17,6 +17,7 @@ class HabitProgressCard extends StatefulWidget {
   final List<SubTask>? subTasks;
   final String? todayIso;
   final Function(SubTask subTask)? onToggleSubTask;
+  final String? reminderTime;
 
   const HabitProgressCard({
     Key? key,
@@ -31,6 +32,7 @@ class HabitProgressCard extends StatefulWidget {
     this.subTasks,
     this.todayIso,
     this.onToggleSubTask,
+    this.reminderTime,
   }) : super(key: key);
 
   @override
@@ -242,6 +244,34 @@ class _HabitProgressCardState extends State<HabitProgressCard> with SingleTicker
                                   ),
                                 ),
                               ],
+                            ),
+                          ),
+                        ],
+                        if (widget.reminderTime != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.05)
+                                  : Colors.black.withValues(alpha: 0.04),
+                              borderRadius: AppTheme.radiusXs,
+                              border: Border.all(
+                                color: isDark
+                                    ? AppTheme.obsidianBorder
+                                    : AppTheme.boneBorder,
+                                width: AppTheme.borderPrecision,
+                              ),
+                            ),
+                            child: Text(
+                              '🔔 ${widget.reminderTime}',
+                              style: AppTheme.monoStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w600,
+                                color: isDark
+                                    ? AppTheme.obsidianTextSecondary
+                                    : AppTheme.boneTextSecondary,
+                              ),
                             ),
                           ),
                         ],
