@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v1.2.7-C8FF00?labelColor=0D0E12" alt="Version v1.2.7"/>
+  <img src="https://img.shields.io/badge/Version-v1.2.7.2-C8FF00?labelColor=0D0E12" alt="Version v1.2.7.2"/>
   <img src="https://img.shields.io/badge/Flutter-3.12+-02569B?logo=flutter" alt="Flutter"/>
   <img src="https://img.shields.io/badge/Dart-3.12+-0175C2?logo=dart" alt="Dart"/>
   <img src="https://img.shields.io/badge/Riverpod-3.x-00B0FF" alt="Riverpod"/>
@@ -21,13 +21,13 @@
 
 <p align="center">
   <a href="https://github.com/arturo-orient/OrbitHabit/releases/latest/download/OrbitHabit.apk">
-    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.2.7-52968C?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="46"/>
+    <img src="https://img.shields.io/badge/⬇_Download_APK-OrbitHabit_v1.2.7.2-52968C?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" height="46"/>
   </a>
 </p>
 
 ---
 
-## 📸 Interface Gallery (v1.2.7)
+## 📸 Interface Gallery (v1.2.7.2)
 
 ### 1. Core Orbital Views & Multi-Task Shift Calendar
 <p align="center">
@@ -65,29 +65,24 @@
 
 ---
 
-## 🚀 What's New in v1.2.7
+## 🚀 What's New in v1.2.7.2
 
-OrbitHabit **v1.2.7** upgrades daily reliability, 24-hour visual clarity, and quantitative self-tracking with a complete dual-mode notification engine, directional 24H clock arcs, a 3-chart vector telemetry suite, and bidirectional 24H ⇄ Orbital synchronization:
+OrbitHabit **v1.2.7.2** refines the orbital ring renderer, 24H block cards, and dual-alert scheduling for 24-hour tasks:
 
-* 🔔 **Dual-Mode Smart Notification Engine (`NotificationService` & `SettingsScreen`)**:
-  * **Type A — Fixed-Time Habit Reminders**: Configure exact alert times per habit (`DateTimeComponents.time` or active weekdays via `DateTimeComponents.dayOfWeekAndTime`), automatically muted on vacation shield days or once already completed.
-  * **Type B — Post-Activity Reminder (`+10 min`)**: Automatically checks your 24H schedule blocks (`ScheduleBlock`, including overnight shifts crossing midnight) and notifies you **10 minutes after finishing** (`endTime + 10m`) only if you forgot to mark it as completed.
-  * **Android 12/13/14+ Permission & Exact-Alarm Resilience**: Safely verifies `SCHEDULE_EXACT_ALARM` availability and automatically falls back to `AndroidScheduleMode.inexactAllowWhileIdle` instead of silently failing, backed by ProGuard keep rules and `@drawable/ic_stat_orbit`.
-  * **Ultra-Simple Notification Manager (`SettingsScreen`)**: Streamlined settings panel featuring global & post-activity toggles, automatic lock-down when Android notification permissions are revoked (with a direct **`[ Conceder permisos ]`** action and lifecycle auto-refresh), and an integrated **`RECORDATORIOS CONFIGURADOS`** manager with 1-tap `[ ✕ ]` deletion per reminder.
-* ⏰ **Directional 24H Polar Clock (`OrbitClock24`) & Pending vs Completed Contrast (`ScheduleBlockCard`)**:
-  * **Continuous Overnight Arcs**: Midnight-crossing shifts (`23:00 → 07:00`) now render as a single continuous orbital arc without artificial round-cap splits at `00:00`, with modulo-1440 concentric lane routing and polar hit-testing.
-  * **Unambiguous Start (`●`) ➔ Clockwise Flow (`›`) ➔ Terminal Finish (`▸|`)**: Every arc distinguishes its origin anchor (`●`), clockwise progression chevrons (`›`), terminal arrowhead stop bar (`▸|`), inner edge hour labels (`▶23:00` / `07:00■`), and active live range in the dial core.
-  * **Instant State Contrast**: Pending blocks render as clean translucent tracks (`0.42` opacity) with a crisp central guide line (`0.90`); completed blocks illuminate 100% solid with a midpoint `✓` medallion on the dial, paired with a `3.5px` chromatic left bar, tinted fill, and `[ ✓ COMPLETADO ]` badge on `ScheduleBlockCard`.
-* 📊 **Vector Telemetry Suite (`StatisticsScreen`)**:
-  * **3 Custom `CustomPainter` Charts (Zero External Chart Packages)**:
-    1. **Completion Evolution**: Interactive `14 DÍAS` / `MES COMPLETO` bar & spline telemetry with tap-and-scrub day inspection.
-    2. **Work Hours Telemetry**: Real vs. Planned vs. Overtime breakdown across shifts.
-    3. **Weekly Consistency (`L–D`) & Streak Ranking**: Per-weekday performance distribution and habit consistency leaderboard.
-* 🔄 **Bidirectional 24H ⇄ Orbital Wheel Sync & Clean Unplanned Days**:
-  * Toggling completion on any schedule block in 24H mode synchronizes immediately with its linked habit so the Orbital Wheel illuminates at full color even on days not previously planned in the calendar.
-  * Unchecking an unplanned extra day removes it cleanly from `completedDates` without leaving phantom outlines in `assignedDates`.
-* 🏆 **Real-Time Achievement Revocation, 10 Special Day Medals & Vacation Tutorial**:
-  * Achievements dynamically lock/unlock as progress changes, adding 10 new geometric vector medals and a 3-step Vacation Mode tutorial in `SettingsScreen`.
+* 🔔 **Dual Pre-Start (`-10 min`) & Post-Finish (`+10 min`) 24H Task Notifications (`NotificationService` & `UnifiedTaskSheet`)**:
+  * **Guaranteed Dual Alerts with Disjoint IDs**: Every 24H schedule block with reminders enabled schedules two independent alerts per active day over a 14-day rolling window:
+    1. **Pre-Task Alert (`10 min before start`)**: `'En 10 min empieza: [Tarea]'` (with automatic same-day fallback to `startTime` if scheduled less than 10 minutes before start).
+    2. **Post-Task Alert (`10 min after finish`)**: `'¿Completaste [Tarea]?'` (respecting overnight shifts crossing midnight and automatically skipped once completed).
+  * **24H-Gated Reminder Switch**: Reminders in `UnifiedTaskSheet` are cleanly locked with an informative notice until 24H Mode (`Reloj 24h` or `Por Horas`) is enabled, preventing orphan reminders without a schedule.
+  * **Ultra-Simple Notification Manager (`SettingsScreen`)**: Displays `'Aviso: 10m antes y 10m después'` for active 24H reminders with 1-tap `[ ✕ ]` deletion and automatic permission lock-down (`[ Conceder permisos ]`) when OS notifications are disabled.
+* 🪐 **Orbital Wheel Active-Weekday Pattern & Full-Day Completion Highlight (`OrbitTracker`)**:
+  * **Active Weekday Translucent Pattern**: Habits with specific weekdays (e.g., Monday–Friday excluding weekends) render active pending days in translucent habit color (`0.16–0.18` alpha) with a subtle cell border (`0.28` alpha) across all `frequencyType` modes, while excluded rest days remain in pure negative space.
+  * **True Full-Day Highlight**: When **all tasks in the wheel** are completed on the same day, both the full radial column and the exterior day-number badge (`01..31`) illuminate with a precision highlight—never drawing ghost borders over partially completed weekend columns.
+* ⏰ **Clean, Non-Redundant 24H Block Cards (`ScheduleBlockCard`) & Directional Polar Clock (`OrbitClock24`)**:
+  * **Single Completion Indicator**: Removed redundant `[ ✓ COMPLETADO ]` and `Turno Hecho` pills from `ScheduleBlockCard`, keeping a single interactive **`✓ Hecho hoy` / `Marcar hoy`** chip alongside a clean percentage readout (`73%`) on the monthly target bar.
+  * **Continuous Directional Overnight Arcs**: Midnight-crossing shifts (`23:00 → 07:00`) render as a single continuous arc with start (`●`), clockwise flow (`›`), and finish (`▸|`) markers.
+* 📊 **Vector Telemetry Suite (`StatisticsScreen`) & Real-Time Achievement Sync**:
+  * 3 custom `CustomPainter` charts (Completion Evolution, Work Hours Telemetry, Weekly Consistency & Streak Ranking), 10 special-day geometric medals, and real-time achievement unlock/revocation.
 
 ---
 

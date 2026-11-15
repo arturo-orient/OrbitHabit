@@ -24,6 +24,8 @@ import 'package:orbithabit/ui/widgets/orbit_clock_24.dart';
 import 'package:orbithabit/ui/widgets/schedule_block_card.dart';
 import 'package:orbithabit/ui/widgets/guided_tour_overlay.dart';
 import 'package:orbithabit/ui/widgets/release_notes_sheet.dart';
+import 'package:orbithabit/ui/widgets/unified_task_sheet.dart';
+import 'package:orbithabit/ui/widgets/orbit_tracker.dart';
 import 'package:orbithabit/ui/screens/settings_screen.dart';
 import 'package:orbithabit/ui/screens/statistics_screen.dart';
 import 'package:orbithabit/services/notification_service.dart';
@@ -1353,7 +1355,7 @@ void main() {
       expect(reminders[0].scheduleLabel, contains('21:30'));
       expect(reminders[1].title, 'Turno Mañana');
       expect(reminders[1].category, 'TURNO / 24H');
-      expect(reminders[1].scheduleLabel, contains('Al finalizar +10m (15:10)'));
+      expect(reminders[1].scheduleLabel, 'Aviso: 10m antes y 10m después');
 
       final status = await service.getPermissionStatus();
       expect(status.notificationsEnabled, isTrue);
@@ -1420,7 +1422,7 @@ void main() {
       expect(find.text('Turno Mañana'), findsOneWidget);
       expect(find.text('HÁBITO'), findsOneWidget);
       expect(find.text('TURNO / 24H'), findsOneWidget);
-      expect(find.text('Al finalizar +10m (16:10)'), findsOneWidget);
+      expect(find.text('Aviso: 10m antes y 10m después'), findsOneWidget);
 
       // Eliminar el recordatorio del hábito Meditar
       final deleteHabitFinder = find.byKey(const Key('delete_reminder_habit_h_med'));
@@ -1633,6 +1635,8 @@ void main() {
       final completedBlock = pendingBlock.copyWith(
         id: 'b_done',
         completedDates: [todayIso],
+        hasMonthlyHourTarget: true,
+        monthlyTargetHours: 120,
       );
 
       await tester.pumpWidget(
@@ -1653,9 +1657,213 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('[ ✓ COMPLETADO ]'), findsOneWidget);
+      // Solo muestra un indicador único ('Hecho hoy') sin duplicar '[ ✓ COMPLETADO ]' ni 'Turno Hecho'
+      expect(find.text('[ ✓ COMPLETADO ]'), findsNothing);
+      expect(find.text('Turno Hecho'), findsNothing);
       expect(find.text('Hecho hoy'), findsOneWidget);
       expect(find.text('Marcar hoy'), findsOneWidget);
+    });
+
+    test('NotificationService.planBlockNotifications schedules pre (-10m / <10m fallback) and post (+10m) with disjoint IDs', () {
+      final service = NotificationService();
+      // Lunes 2026-11-16 12:00
+      final mondayNoon = DateTime(2026, 11, 16, 12, 0);
+
+      const afternoonBlock = ScheduleBlock(
+        id: 'block_walk',
+        title: 'Caminar',
+        startHour: 14,
+        startMinute: 0,
+        endHour: 15,
+        endMinute: 0,
+        colorValue: 0xFF22C55E,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        hasReminder: true,
+      );
+
+      final planned = service.planBlockNotifications(
+        block: afternoonBlock,
+        now: mondayNoon,
+      );
+
+      // L-V durante 14 días = 10 días activos * 2 notificaciones = 20
+      expect(planned.length, 20);
+      expect(planned.where((n) => n.isPre).length, 10);
+      expect(planned.where((n) => !n.isPre).length, 10);
+
+      final firstPre = planned.firstWhere((n) => n.isPre);
+      final firstPost = planned.firstWhere((n) => !n.isPre);
+      expect(firstPre.title, 'En 10 min empieza: Caminar');
+      expect(firstPre.triggerAt, DateTime(2026, 11, 16, 13, 50));
+      expect(firstPost.title, '¿Completaste Caminar?');
+      expect(firstPost.triggerAt, DateTime(2026, 11, 16, 15, 10));
+
+      // Ningún ID debe colisionar
+      final uniqueIds = planned.map((n) => n.id).toSet();
+      expect(uniqueIds.length, planned.length);
+
+      // Fallback en el mismo día cuando faltan <10 min para iniciar
+      final soonBlock = afternoonBlock.copyWith(
+        id: 'block_soon',
+        startHour: 12,
+        startMinute: 5,
+        endHour: 12,
+        endMinute: 30,
+      );
+      final soonPlanned = service.planBlockNotifications(
+        block: soonBlock,
+        now: mondayNoon,
+      );
+      final todayPreSoon = soonPlanned.firstWhere(
+        (n) => n.isPre && n.triggerAt.day == 16,
+      );
+      expect(todayPreSoon.triggerAt, DateTime(2026, 11, 16, 12, 5));
+
+      // Turno nocturno iniciado ayer (23:00 - 07:00) + omisión de día completado hoy
+      final tuesday6am = DateTime(2026, 11, 17, 6, 0);
+      const nightBlock = ScheduleBlock(
+        id: 'block_night',
+        title: 'Turno Noche',
+        startHour: 23,
+        startMinute: 0,
+        endHour: 7,
+        endMinute: 0,
+        colorValue: 0xFF9EA1D4,
+        daysOfWeek: [1, 2], // Lunes y Martes
+        completedDates: ['2026-11-17'], // Martes ya marcado
+        hasReminder: true,
+      );
+      final nightPlanned = service.planBlockNotifications(
+        block: nightBlock,
+        now: tuesday6am,
+      );
+      // El post-aviso de ayer lunes (termina martes 07:10) SÍ se programa
+      expect(
+        nightPlanned.any(
+          (n) => !n.isPre && n.triggerAt == DateTime(2026, 11, 17, 7, 10),
+        ),
+        isTrue,
+      );
+      // Las notificaciones del martes 17 (ya completado) se omiten
+      expect(
+        nightPlanned.any(
+          (n) => n.isPre && n.triggerAt.day == 17,
+        ),
+        isFalse,
+      );
+    });
+
+    test('OrbitPainter marks active weekdays and leaves excluded weekend days clean regardless of frequencyType', () {
+      final weekdayHabitFreq0 = Habit(
+        id: 'h_walk0',
+        name: 'Caminar',
+        colorValue: 0xFF22C55E,
+        targetDays: 20,
+        orderIndex: 0,
+        activeWeekdays: [1, 2, 3, 4, 5],
+        frequencyType: 0,
+      );
+      final weekdayHabitFreq1 = Habit(
+        id: 'h_walk1',
+        name: 'Leer',
+        colorValue: 0xFFFBBF24,
+        targetDays: 15,
+        orderIndex: 1,
+        activeWeekdays: [1, 2, 3, 4, 5],
+        frequencyType: 1,
+      );
+
+      final friday = DateTime(2026, 11, 13); // weekday 5
+      final saturday = DateTime(2026, 11, 14); // weekday 6
+      final sunday = DateTime(2026, 11, 15); // weekday 7
+
+      expect(
+        OrbitPainter.isHabitScheduledForDate(
+          weekdayHabitFreq0,
+          friday,
+          '2026-11-13',
+          const [],
+          false,
+        ),
+        isTrue,
+      );
+      expect(
+        OrbitPainter.isHabitScheduledForDate(
+          weekdayHabitFreq1,
+          friday,
+          '2026-11-13',
+          const [],
+          false,
+        ),
+        isTrue,
+      );
+      expect(
+        OrbitPainter.isHabitScheduledForDate(
+          weekdayHabitFreq1,
+          saturday,
+          '2026-11-14',
+          const [],
+          false,
+        ),
+        isFalse,
+      );
+      expect(
+        OrbitPainter.isHabitScheduledForDate(
+          weekdayHabitFreq0,
+          sunday,
+          '2026-11-15',
+          const [],
+          false,
+        ),
+        isFalse,
+      );
+    });
+
+    testWidgets('UnifiedTaskSheet locks reminder when 24H mode is off and unlocks double alerts when enabled', (WidgetTester tester) async {
+      final fakeDb = FakeDatabaseService();
+      final container = ProviderContainer(
+        overrides: [
+          databaseProvider.overrideWithValue(fakeDb),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: ThemeData.dark(),
+            home: const Scaffold(
+              body: UnifiedTaskSheet(defaultEnableSchedule: false),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      const lockedMsg =
+          'Activa el modo 24H y asigna un horario para recibir notificaciones de esta tarea';
+      expect(find.text(lockedMsg), findsOneWidget);
+
+      // Verificamos que el switch de recordatorio esté deshabilitado sin Modo 24H
+      final switchesWithout24H = tester.widgetList<Switch>(find.byType(Switch)).toList();
+      expect(switchesWithout24H.last.onChanged, isNull);
+      expect(switchesWithout24H.last.value, isFalse);
+
+      // Activamos el switch de "Reloj 24h (Rutina diaria)"
+      final clockSwitchFinder = find.byWidgetPredicate(
+        (w) => w is SwitchListTile && w.title is Row,
+      ).first;
+      await tester.ensureVisible(clockSwitchFinder);
+      await tester.tap(clockSwitchFinder);
+      await tester.pumpAndSettle();
+
+      const unlockedMsg =
+          'Aviso 10 min antes de empezar y 10 min después de finalizar';
+      expect(find.text(unlockedMsg), findsOneWidget);
+      expect(find.text('DOBLE AVISO MODO 24H'), findsNothing);
+      final switchesWith24H = tester.widgetList<Switch>(find.byType(Switch)).toList();
+      expect(switchesWith24H.last.onChanged, isNotNull);
     });
   });
 }

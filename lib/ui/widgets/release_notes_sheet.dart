@@ -57,18 +57,18 @@ class _ReleaseNotesSheetState extends ConsumerState<ReleaseNotesSheet> {
     ReleaseHighlightItem(
       icon: Icons.notifications_active_rounded,
       accentColor: Color(0xFF84A59D),
-      badge: 'RECORDATORIOS',
-      title: 'Avisos Inteligentes y Post-Actividad (+10 min)',
+      badge: 'RECORDATORIOS 24H',
+      title: 'Doble Aviso Inteligente (-10 min y +10 min)',
       description:
-          'Recibe recordatorios a hora fija para tus hábitos y avisos automáticos 10 min después de terminar un horario si olvidaste marcarlo, con gestor y borrado individual en Ajustes.',
+          'Las tareas con horario 24H te avisan 10 min antes de empezar y 10 min después de finalizar si olvidaste marcarlas, con gestor y borrado individual en Ajustes.',
     ),
     ReleaseHighlightItem(
       icon: Icons.timelapse_rounded,
       accentColor: Color(0xFFFBBF24),
-      badge: 'MODO 24H & MÉTRICAS',
-      title: 'Reloj 24H Direccional y Telemetría Vectorial',
+      badge: 'ÓRBITA & MODO 24H',
+      title: 'Días Activos en Opaco, Día Completo y Reloj 24H',
       description:
-          'Arcos continuos sin cortes en medianoche con marcadores claros de inicio (●) ➔ fin (▸|), contraste visual entre pendiente y completado y 3 gráficas interactivas en Estadísticas.',
+          'Visualiza tu pauta semanal en opaco excluyendo descansos, remarcado luminoso al completar todas las tareas del día, tarjetas 24H sin textos redundantes y 3 gráficas en Estadísticas.',
     ),
     ReleaseHighlightItem(
       icon: Icons.explore_rounded,

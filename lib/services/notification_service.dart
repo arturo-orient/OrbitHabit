@@ -305,9 +305,9 @@ class NotificationService {
   String _isoDate(DateTime dt) =>
       '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
 
-  /// Sincronizador determinista de 2 tipos:
-  /// Tipo A) Por hábito (`DateTimeComponents.time` o `DateTimeComponents.dayOfWeekAndTime`)
-  /// Tipo B) Post-actividad +10 min en modo 24H para los próximos 14 días.
+  /// Sincronizador determinista:
+  /// - Por hábito (`DateTimeComponents.time` o `DateTimeComponents.dayOfWeekAndTime`)
+  /// - Tareas 24H: 10 min antes de empezar + 10 min después de finalizar durante 14 días.
   Future<void> syncAllTaskReminders({
     required List<Habit> habits,
     required List<ScheduleBlock> blocks,
@@ -404,63 +404,138 @@ class NotificationService {
         }
       }
 
-      // Nivel 3: Recordatorio Post-Actividad (+10 min tras finalizar en Modo 24H)
-      if (postActivityReminderEnabled) {
-        final habitById = <String, Habit>{for (final h in habits) h.id: h};
+      // Nivel 3: Doble Notificación en Tareas 24H (10 min ANTES de empezar + 10 min DESPUÉS de finalizar)
+      final habitById = <String, Habit>{for (final h in habits) h.id: h};
 
-        for (final block in blocks) {
-          if (!block.hasReminder) continue;
+      for (final block in blocks) {
+        if (!block.hasReminder) continue;
 
-          final baseId = (block.id.hashCode.abs() % 80000) * 20 + 1000000;
-          final linkedHabit =
-              block.habitId != null ? habitById[block.habitId!] : null;
+        final linkedHabit =
+            block.habitId != null ? habitById[block.habitId!] : null;
+        final planned = planBlockNotifications(
+          block: block,
+          linkedHabit: linkedHabit,
+          now: now,
+          postActivityReminderEnabled: postActivityReminderEnabled,
+          vacationDates: vacationDates,
+        );
 
-          // Empezamos desde ayer (-1) para cubrir turnos nocturnos iniciados ayer que acaban hoy.
-          for (int dayOffset = -1; dayOffset < 14; dayOffset++) {
-            final targetDay = DateTime(now.year, now.month, now.day + dayOffset);
-            final dateIso = _isoDate(targetDay);
-
-            final bool isAlreadyCompleted = block.completedDates.contains(dateIso) ||
-                (linkedHabit != null && linkedHabit.completedDates.contains(dateIso));
-            if (isAlreadyCompleted || vacationDates.contains(dateIso)) {
-              continue;
-            }
-
-            final bool appliesOnDay = block.assignedDates.isNotEmpty
-                ? block.assignedDates.contains(dateIso)
-                : block.daysOfWeek.contains(targetDay.weekday);
-
-            if (!appliesOnDay) continue;
-
-            final endDay = block.isOvernight
-                ? DateTime(targetDay.year, targetDay.month, targetDay.day + 1)
-                : targetDay;
-            final shiftEnd = tz.TZDateTime(
+        for (final item in planned) {
+          await _safeZonedSchedule(
+            id: item.id,
+            title: item.title,
+            body: item.body,
+            scheduledDate: tz.TZDateTime(
               tz.local,
-              endDay.year,
-              endDay.month,
-              endDay.day,
-              block.endHour,
-              block.endMinute,
-            );
-            final notifyAt = shiftEnd.add(const Duration(minutes: 10));
-
-            if (!notifyAt.isAfter(now)) continue;
-
-            await _safeZonedSchedule(
-              id: baseId + dayOffset + 1,
-              title: '✓ ¿Completaste "${block.title}"?',
-              body:
-                  'Ha terminado tu horario (${block.formattedTimeRange}). Toca para registrarlo en tu órbita.',
-              scheduledDate: notifyAt,
-              notificationDetails: shiftDetails,
-            );
-          }
+              item.triggerAt.year,
+              item.triggerAt.month,
+              item.triggerAt.day,
+              item.triggerAt.hour,
+              item.triggerAt.minute,
+              item.triggerAt.second,
+            ),
+            notificationDetails: shiftDetails,
+          );
         }
       }
     } catch (e) {
       _lastError = 'Sincronización: $e';
     }
+  }
+
+  /// Calcula la lista determinista de notificaciones (pre-aviso -10m y post-aviso +10m)
+  /// para un bloque 24H respecto a [now], evitando colisiones de ID.
+  @visibleForTesting
+  List<({int id, String title, String body, DateTime triggerAt, bool isPre})>
+      planBlockNotifications({
+    required ScheduleBlock block,
+    Habit? linkedHabit,
+    required DateTime now,
+    bool postActivityReminderEnabled = true,
+    Set<String> vacationDates = const {},
+  }) {
+    if (!block.hasReminder) return const [];
+
+    final blockSeed = (block.id.hashCode.abs() % 10000) * 100 + 1000000;
+    final items =
+        <({int id, String title, String body, DateTime triggerAt, bool isPre})>[];
+
+    // Empezamos desde ayer (-1) para cubrir turnos nocturnos iniciados ayer que acaban hoy.
+    for (int dayOffset = -1; dayOffset < 14; dayOffset++) {
+      final targetDay = DateTime(now.year, now.month, now.day + dayOffset);
+      final dateIso = _isoDate(targetDay);
+
+      final bool isAlreadyCompleted = block.completedDates.contains(dateIso) ||
+          (linkedHabit != null && linkedHabit.completedDates.contains(dateIso));
+      if (isAlreadyCompleted || vacationDates.contains(dateIso)) {
+        continue;
+      }
+
+      final bool appliesOnDay = block.hasMonthlyHourTarget
+          ? block.assignedDates.contains(dateIso)
+          : (block.assignedDates.isNotEmpty
+              ? block.assignedDates.contains(dateIso)
+              : (block.daysOfWeek.isEmpty ||
+                  block.daysOfWeek.contains(targetDay.weekday)));
+
+      if (!appliesOnDay) continue;
+
+      final preNotifId = blockSeed + ((dayOffset + 1) * 2) + 1;
+      final postNotifId = blockSeed + ((dayOffset + 1) * 2) + 2;
+
+      // A) PRE-TAREA: 10 minutos ANTES de la hora de inicio (con fallback si empieza en <10 min)
+      if (dayOffset >= 0) {
+        final startDateTime = DateTime(
+          targetDay.year,
+          targetDay.month,
+          targetDay.day,
+          block.startHour,
+          block.startMinute,
+        );
+        var preTriggerTime =
+            startDateTime.subtract(const Duration(minutes: 10));
+        if (!preTriggerTime.isAfter(now) && startDateTime.isAfter(now)) {
+          preTriggerTime = startDateTime;
+        }
+        if (preTriggerTime.isAfter(now)) {
+          items.add((
+            id: preNotifId,
+            title: 'En 10 min empieza: ${block.title}',
+            body: 'Horario programado de ${block.formattedTimeRange}.',
+            triggerAt: preTriggerTime,
+            isPre: true,
+          ));
+        }
+      }
+
+      // B) POST-TAREA: 10 minutos DESPUÉS de finalizar (respetando turnos nocturnos)
+      if (postActivityReminderEnabled) {
+        final endDay = block.isOvernight
+            ? DateTime(targetDay.year, targetDay.month, targetDay.day + 1)
+            : targetDay;
+        final endDateTime = DateTime(
+          endDay.year,
+          endDay.month,
+          endDay.day,
+          block.endHour,
+          block.endMinute,
+        );
+        final postTriggerTime = endDateTime.add(const Duration(minutes: 10));
+
+        if (postTriggerTime.isAfter(now)) {
+          items.add((
+            id: postNotifId,
+            title: '¿Completaste ${block.title}?',
+            body:
+                'Ha finalizado tu horario (${block.formattedTimeRange}). Toca para registrarlo.',
+            triggerAt: postTriggerTime,
+            isPre: false,
+          ));
+        }
+      }
+    }
+
+    return items;
   }
 
   /// Devuelve la hora formateada HH:MM del aviso post-actividad (+10 min tras finalizar).
@@ -508,7 +583,7 @@ class NotificationService {
           id: 'block_${block.id}',
           title: block.title,
           category: 'TURNO / 24H',
-          scheduleLabel: 'Al finalizar +10m (${formatPostActivityTime(block)})',
+          scheduleLabel: 'Aviso: 10m antes y 10m después',
           colorValue: block.colorValue,
           blockId: block.id,
         ),

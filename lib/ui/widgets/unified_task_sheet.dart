@@ -115,7 +115,6 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
   // 4. Recordatorios personalizados por tarea / turno
   bool _hasReminder = false;
-  TimeOfDay _reminderTime = const TimeOfDay(hour: 20, minute: 0);
   int _reminderOffsetMinutes = 15;
 
   // Estado del sub-tour guiado paso a paso dentro del creador de tareas (3-B, 3-C, 3-D, 3-E)
@@ -322,16 +321,12 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       _targetDaysPerWeek = habit?.targetDaysPerWeek ?? 3;
       _targetDays = habit?.targetDays ?? 20;
 
-      // Inicializar Recordatorio desde el hábito o el bloque
-      _hasReminder = (habit?.hasReminder ?? false) || (block?.hasReminder ?? false);
-      if (habit != null && habit.reminderHour != null) {
-        _reminderTime = TimeOfDay(
-          hour: habit.reminderHour!,
-          minute: habit.reminderMinute ?? 0,
-        );
-      } else {
-        _reminderTime = const TimeOfDay(hour: 20, minute: 0);
-      }
+      // Inicializar Recordatorio solo si el Modo 24H (horario) está activo
+      final bool canUseReminder = _hasSchedule || _targetMode == TaskTargetMode.hours;
+      final bool hasBlockReminder = (block?.hasReminder ?? false) ||
+          blocks.any((b) => _schedules.any((s) => s.id == b.id) && b.hasReminder);
+      _hasReminder =
+          canUseReminder && ((habit?.hasReminder ?? false) || hasBlockReminder);
       _reminderOffsetMinutes = block?.reminderOffsetMinutes ?? 15;
     } else {
       // Nueva tarea desde cero
@@ -352,7 +347,6 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       _completedDates = [];
       _assignedDates = [];
       _hasReminder = false;
-      _reminderTime = const TimeOfDay(hour: 20, minute: 0);
       _reminderOffsetMinutes = 15;
     }
   }
@@ -1162,9 +1156,6 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
             orElse: () => null,
           );
 
-      final habitReminderEnabled =
-          _hasReminder && !_hasSchedule && _targetMode != TaskTargetMode.hours;
-
       if (existingHabit != null) {
         final updatedHabit = existingHabit.copyWith(
           name: title,
@@ -1176,10 +1167,8 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           targetDaysPerWeek: _targetDaysPerWeek,
           completedDates: Set<String>.from(_completedDates),
           subTasks: _subTasks,
-          hasReminder: habitReminderEnabled,
-          reminderHour: habitReminderEnabled ? _reminderTime.hour : null,
-          reminderMinute: habitReminderEnabled ? _reminderTime.minute : null,
-          clearReminderTime: !habitReminderEnabled,
+          hasReminder: false,
+          clearReminderTime: true,
         );
         ref.read(habitsProvider.notifier).updateHabit(updatedHabit);
       } else if (_showInOrbit || _subTasks.isNotEmpty) {
@@ -1198,9 +1187,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           targetDaysPerWeek: _targetDaysPerWeek,
           completedDates: Set<String>.from(_completedDates),
           subTasks: _subTasks,
-          hasReminder: habitReminderEnabled,
-          reminderHour: habitReminderEnabled ? _reminderTime.hour : null,
-          reminderMinute: habitReminderEnabled ? _reminderTime.minute : null,
+          hasReminder: false,
         );
         ref.read(habitsProvider.notifier).addHabit(habit);
       }
@@ -1272,14 +1259,18 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
 
         if (effectiveSchedules.length == 1) {
           blockCompletedDates = List<String>.from(_completedDates);
-          blockAssignedDates = List<String>.from(_assignedDates);
+          blockAssignedDates = hasHourTarget
+              ? List<String>.from(_assignedDates)
+              : (existingBlock?.assignedDates ?? const <String>[]);
         } else if (idx == 0) {
           blockCompletedDates = _completedDates
               .where((d) => (existingBlock?.completedDates.contains(d) ?? false) || !allOtherBlocksCompleted.contains(d))
               .toList();
-          blockAssignedDates = _assignedDates
-              .where((d) => (existingBlock?.assignedDates.contains(d) ?? false) || !allOtherBlocksAssigned.contains(d))
-              .toList();
+          blockAssignedDates = hasHourTarget
+              ? _assignedDates
+                  .where((d) => (existingBlock?.assignedDates.contains(d) ?? false) || !allOtherBlocksAssigned.contains(d))
+                  .toList()
+              : (existingBlock?.assignedDates ?? const <String>[]);
         } else {
           final firstBlock = blocks.cast<ScheduleBlock?>().firstWhere(
                 (b) => b?.id == effectiveSchedules.first.id,
@@ -1314,7 +1305,7 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           assignedDates: blockAssignedDates,
           monthlyExtraHours: existingBlock?.monthlyExtraHours ?? const {},
           extraHours: existingBlock?.extraHours ?? _extraHours,
-          hasReminder: _hasReminder,
+          hasReminder: (_hasSchedule || _targetMode == TaskTargetMode.hours) && _hasReminder,
           reminderOffsetMinutes: _reminderOffsetMinutes,
         );
 
@@ -2320,6 +2311,9 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                       HapticFeedback.selectionClick();
                       setState(() {
                         _hasSchedule = val;
+                        if (!val && _targetMode != TaskTargetMode.hours) {
+                          _hasReminder = false;
+                        }
                         if (val && _startTime == null && _endTime == null && _schedules.isEmpty) {
                           _startTime = const TimeOfDay(hour: 8, minute: 0);
                           _endTime = const TimeOfDay(hour: 16, minute: 0);
@@ -2852,22 +2846,27 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
             const SizedBox(height: 24),
 
             // SECCIÓN 4: RECORDATORIO PERSONALIZADO (SWISS BENTO)
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: isDark ? Colors.white.withValues(alpha: 0.03) : Colors.black.withValues(alpha: 0.025),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: _hasReminder
-                      ? _selectedColor.withValues(alpha: 0.45)
-                      : (isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder),
-                  width: 1.0,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            Builder(
+              builder: (context) {
+                final bool canUseReminder =
+                    _hasSchedule || _targetMode == TaskTargetMode.hours;
+                final bool isReminderActive = canUseReminder && _hasReminder;
+
+                return Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: canUseReminder ? 0.03 : 0.015)
+                        : Colors.black.withValues(alpha: canUseReminder ? 0.025 : 0.015),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isReminderActive
+                          ? _selectedColor.withValues(alpha: 0.45)
+                          : (isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder),
+                      width: 1.0,
+                    ),
+                  ),
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
@@ -2880,235 +2879,48 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 1.1,
-                                color: _hasReminder
+                                color: isReminderActive
                                     ? _selectedColor
-                                    : (isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary),
+                                    : (isDark
+                                            ? AppTheme.obsidianTextSecondary
+                                            : AppTheme.boneTextSecondary)
+                                        .withValues(alpha: canUseReminder ? 1.0 : 0.6),
                               ),
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              (_hasSchedule || _targetMode == TaskTargetMode.hours)
-                                  ? 'Aviso al finalizar (+10 min si no se ha marcado)'
-                                  : 'Recibe un aviso inteligente si aún no lo has completado hoy',
+                              canUseReminder
+                                  ? 'Aviso 10 min antes de empezar y 10 min después de finalizar'
+                                  : 'Activa el modo 24H y asigna un horario para recibir notificaciones de esta tarea',
                               style: TextStyle(
                                 fontSize: 11.5,
-                                color: textColor?.withValues(alpha: 0.55),
+                                color: textColor?.withValues(
+                                  alpha: canUseReminder ? 0.55 : 0.45,
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
                       Switch.adaptive(
-                        value: _hasReminder,
+                        value: isReminderActive,
                         activeThumbColor: _selectedColor,
-                        onChanged: (val) async {
-                          HapticFeedback.selectionClick();
-                          setState(() => _hasReminder = val);
-                          if (val) {
-                            await NotificationService().requestPermissions(
-                              includeExactAlarms: true,
-                            );
-                          }
-                        },
+                        onChanged: canUseReminder
+                            ? (val) async {
+                                HapticFeedback.selectionClick();
+                                setState(() => _hasReminder = val);
+                                if (val) {
+                                  await NotificationService().requestPermissions(
+                                    includeExactAlarms: true,
+                                  );
+                                }
+                              }
+                            : null,
                       ),
                     ],
                   ),
-                  if (_hasReminder) ...[
-                    const SizedBox(height: 12),
-                    Divider(
-                      height: 1,
-                      color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
-                    ),
-                    const SizedBox(height: 12),
-                    if (_hasSchedule || _targetMode == TaskTargetMode.hours) ...[
-                      Builder(
-                        builder: (context) {
-                          final activeEndTime = _endTime ??
-                              (_schedules.isNotEmpty ? _schedules.first.endTime : null);
-                          String titleText = 'AVISO POST-ACTIVIDAD (+10 MIN)';
-                          if (activeEndTime != null && _schedules.length <= 1) {
-                            final endTotal =
-                                (activeEndTime.hour * 60 + activeEndTime.minute + 10) % 1440;
-                            final postHh =
-                                (endTotal ~/ 60).toString().padLeft(2, '0');
-                            final postMm =
-                                (endTotal % 60).toString().padLeft(2, '0');
-                            titleText = 'AVISO POST-ACTIVIDAD · $postHh:$postMm';
-                          }
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _selectedColor.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: _selectedColor.withValues(alpha: 0.35),
-                                width: 1.0,
-                              ),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(
-                                  Icons.notifications_active_outlined,
-                                  size: 16,
-                                  color: _selectedColor,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        titleText,
-                                        style: AppTheme.monoStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 0.6,
-                                          color: _selectedColor,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        'Te recordaremos 10 min después de finalizar este horario si aún no lo marcaste como completado.',
-                                        style: TextStyle(
-                                          fontSize: 11.5,
-                                          height: 1.35,
-                                          color: isDark
-                                              ? AppTheme.obsidianTextSecondary
-                                              : AppTheme.boneTextSecondary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ] else ...[
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'HORA DEL AVISO',
-                            style: AppTheme.monoStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.8,
-                              color: textColor?.withValues(alpha: 0.5),
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: () async {
-                              HapticFeedback.selectionClick();
-                              final picked = await showTimePicker(
-                                context: context,
-                                initialTime: _reminderTime,
-                                builder: (context, child) => MediaQuery(
-                                  data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-                                  child: Theme(
-                                    data: Theme.of(context).copyWith(
-                                      colorScheme: Theme.of(context).colorScheme.copyWith(primary: _selectedColor),
-                                    ),
-                                    child: child ?? const SizedBox(),
-                                  ),
-                                ),
-                              );
-                              if (picked != null) {
-                                setState(() => _reminderTime = picked);
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: _selectedColor.withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: _selectedColor.withValues(alpha: 0.45),
-                                  width: 1.0,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.access_time_rounded, size: 13, color: _selectedColor),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    '${_reminderTime.hour.toString().padLeft(2, '0')}:${_reminderTime.minute.toString().padLeft(2, '0')}',
-                                    style: AppTheme.monoStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w800,
-                                      color: _selectedColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final preset in const [
-                            TimeOfDay(hour: 8, minute: 0),
-                            TimeOfDay(hour: 14, minute: 0),
-                            TimeOfDay(hour: 20, minute: 0),
-                            TimeOfDay(hour: 22, minute: 0),
-                          ])
-                            Builder(
-                              builder: (context) {
-                                final isSelected = _reminderTime.hour == preset.hour &&
-                                    _reminderTime.minute == preset.minute;
-                                final label =
-                                    '${preset.hour.toString().padLeft(2, '0')}:${preset.minute.toString().padLeft(2, '0')}';
-                                return GestureDetector(
-                                  onTap: () {
-                                    HapticFeedback.selectionClick();
-                                    setState(() => _reminderTime = preset);
-                                  },
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 150),
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: isSelected
-                                          ? _selectedColor.withValues(alpha: 0.16)
-                                          : (isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: isSelected
-                                            ? _selectedColor
-                                            : (isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder),
-                                        width: 1.0,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      label,
-                                      style: AppTheme.monoStyle(
-                                        fontSize: 10.5,
-                                        fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                                        color: isSelected
-                                            ? _selectedColor
-                                            : (isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ],
-              ),
+                );
+              },
             ),
 
             const SizedBox(height: 24),
@@ -3204,6 +3016,8 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                 _startTime = const TimeOfDay(hour: 8, minute: 0);
                 _endTime = const TimeOfDay(hour: 16, minute: 0);
               }
+            } else if (mode != TaskTargetMode.hours && !_hasSchedule) {
+              _hasReminder = false;
             }
           });
         },

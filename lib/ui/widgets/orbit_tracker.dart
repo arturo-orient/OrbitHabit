@@ -225,7 +225,9 @@ class OrbitPainter extends CustomPainter {
     return relatedBlocks.any((b) => b.assignedDates.any((d) => d.startsWith(monthPrefix)));
   }
 
-  bool _isHabitScheduledOnDate(
+  /// Determina si un hábito debe pintarse en opaco (día activo) en [date].
+  @visibleForTesting
+  static bool isHabitScheduledForDate(
     Habit habit,
     DateTime date,
     String dateIso,
@@ -236,13 +238,29 @@ class OrbitPainter extends CustomPainter {
       if (hasAssignedCalendarDates) {
         return relatedBlocks.any((b) => b.assignedDates.contains(dateIso));
       } else {
-        return relatedBlocks.any((b) => b.daysOfWeek.contains(date.weekday));
+        return relatedBlocks.any(
+          (b) => b.daysOfWeek.isEmpty || b.daysOfWeek.contains(date.weekday),
+        );
       }
-    } else if (habit.frequencyType == 0) {
-      return habit.activeWeekdays.contains(date.weekday);
     }
-    return false;
+    return habit.activeWeekdays.isEmpty ||
+        habit.activeWeekdays.contains(date.weekday);
   }
+
+  bool _isHabitScheduledOnDate(
+    Habit habit,
+    DateTime date,
+    String dateIso,
+    List<ScheduleBlock> relatedBlocks,
+    bool hasAssignedCalendarDates,
+  ) =>
+      isHabitScheduledForDate(
+        habit,
+        date,
+        dateIso,
+        relatedBlocks,
+        hasAssignedCalendarDates,
+      );
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -326,6 +344,29 @@ class OrbitPainter extends CustomPainter {
     final now = DateTime.now();
     final isCurrentMonth = currentMonth.year == now.year && currentMonth.month == now.month;
     final today = now.day;
+    final todayDate = DateTime(now.year, now.month, now.day);
+    final accentColor = AppTheme.dynamicAccent(isDark);
+
+    // Precalcular bloques relacionados por hábito y qué días tienen TODAS las tareas completadas
+    final relatedBlocksByHabitId = <String, List<ScheduleBlock>>{
+      for (final habit in habits) habit.id: _getRelatedBlocks(habit),
+    };
+    final fullCompletedDays = <int>{};
+    if (habits.isNotEmpty) {
+      for (int d = 1; d <= daysInMonth; d++) {
+        final date = DateTime(currentMonth.year, currentMonth.month, d);
+        if (date.isAfter(todayDate)) continue;
+        final dateIso = date.toIso8601String().split('T').first;
+        final allDone = habits.every((habit) {
+          final rel = relatedBlocksByHabitId[habit.id] ?? const <ScheduleBlock>[];
+          return habit.completedDates.contains(dateIso) ||
+              rel.any((b) => b.completedDates.contains(dateIso));
+        });
+        if (allDone) {
+          fullCompletedDays.add(d);
+        }
+      }
+    }
 
     // 1. Barrido de rejilla circular progresiva
     final sweepProgress = animationValue.clamp(0.0, 1.0);
@@ -371,6 +412,7 @@ class OrbitPainter extends CustomPainter {
       }
 
       final isToday = isCurrentMonth && d == today;
+      final isFullDay = fullCompletedDays.contains(d);
 
       canvas.save();
       canvas.translate(tx, ty);
@@ -378,7 +420,7 @@ class OrbitPainter extends CustomPainter {
 
       if (isToday) {
         final highlightPaint = Paint()
-          ..color = AppTheme.dynamicAccent(isDark).withValues(alpha: numOpacity)
+          ..color = accentColor.withValues(alpha: numOpacity)
           ..style = PaintingStyle.fill;
         canvas.drawRRect(
           RRect.fromRectAndRadius(
@@ -387,6 +429,20 @@ class OrbitPainter extends CustomPainter {
           ),
           highlightPaint,
         );
+      } else if (isFullDay) {
+        final badgeRect = RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset.zero, width: 20.0, height: 15.5),
+          const Radius.circular(3.5),
+        );
+        final fillPaint = Paint()
+          ..color = accentColor.withValues(alpha: 0.18 * numOpacity)
+          ..style = PaintingStyle.fill;
+        final strokePaint = Paint()
+          ..color = accentColor.withValues(alpha: 0.80 * numOpacity)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0;
+        canvas.drawRRect(badgeRect, fillPaint);
+        canvas.drawRRect(badgeRect, strokePaint);
       }
 
       textPainter.text = TextSpan(
@@ -394,11 +450,13 @@ class OrbitPainter extends CustomPainter {
         style: AppTheme.monoStyle(
           color: isToday
               ? (isDark ? AppTheme.obsidianCanvas : Colors.white)
-              : (isDark
-                  ? gridTextColor.withValues(alpha: 0.75 * numOpacity)
-                  : AppTheme.boneTextPrimary.withValues(alpha: 0.85 * numOpacity)),
-          fontSize: isToday ? 10.0 : 9.0,
-          fontWeight: isToday ? FontWeight.w800 : FontWeight.w600,
+              : isFullDay
+                  ? accentColor.withValues(alpha: numOpacity)
+                  : (isDark
+                      ? gridTextColor.withValues(alpha: 0.75 * numOpacity)
+                      : AppTheme.boneTextPrimary.withValues(alpha: 0.85 * numOpacity)),
+          fontSize: (isToday || isFullDay) ? 10.0 : 9.0,
+          fontWeight: (isToday || isFullDay) ? FontWeight.w800 : FontWeight.w600,
           letterSpacing: 0.0,
         ),
       );
@@ -444,7 +502,12 @@ class OrbitPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = ringThickness
         ..strokeCap = StrokeCap.butt;
+      final borderPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.85;
       final midRect = Rect.fromCircle(center: center, radius: midRadius);
+      final innerRect = Rect.fromCircle(center: center, radius: innerRadius);
+      final outerRect = Rect.fromCircle(center: center, radius: outerRadius);
       
       // Desfase concéntrico entre anillos (el anillo exterior sigue al interior)
       final ringLag = (h / math.max(habits.length, 1)) * 0.10;
@@ -495,11 +558,21 @@ class OrbitPainter extends CustomPainter {
 
         if (isCompleted) {
           cellPaint.color = habit.color.withValues(alpha: cellProgress);
+          canvas.drawArc(midRect, startAngle, animatedSweep, false, cellPaint);
         } else {
-          cellPaint.color = habit.color.withValues(alpha: 0.08 * cellProgress);
-        }
+          cellPaint.color = habit.color.withValues(
+            alpha: (isDark ? 0.16 : 0.18) * cellProgress,
+          );
+          canvas.drawArc(midRect, startAngle, animatedSweep, false, cellPaint);
 
-        canvas.drawArc(midRect, startAngle, animatedSweep, false, cellPaint);
+          // Borde sutil para que la pauta de días activos (ej. L-V) destaque en opaco
+          borderPaint.color = habit.color.withValues(alpha: 0.28 * cellProgress);
+          final cellBorderPath = Path()
+            ..arcTo(innerRect, startAngle, animatedSweep, true)
+            ..arcTo(outerRect, startAngle + animatedSweep, -animatedSweep, false)
+            ..close();
+          canvas.drawPath(cellBorderPath, borderPaint);
+        }
       }
     }
 
@@ -522,54 +595,35 @@ class OrbitPainter extends CustomPainter {
       canvas.drawPath(path, hoverPaint);
     }
 
-    // 4. Glow effect (Apple Watch style) for perfectly completed days
-    final glowPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..color = Colors.white.withValues(alpha: 0.8 * animationValue)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 4.0);
+    // 3b. Remarcado visual de días con TODAS las tareas completadas
+    if (fullCompletedDays.isNotEmpty) {
+      final fullDayGlowPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.2
+        ..color = accentColor.withValues(alpha: 0.55 * animationValue)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 3.5);
+      final fullDayBorderPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4
+        ..color = (isDark ? Colors.white : accentColor)
+            .withValues(alpha: 0.90 * animationValue);
 
-    for (int d = 1; d <= daysInMonth; d++) {
-      final date = DateTime(currentMonth.year, currentMonth.month, d);
-      final dateIso = date.toIso8601String().split('T').first;
-      
-      bool allCompleted = true;
-      bool hasAnyDue = false;
-      
-      for (var habit in habits) {
-        final relatedBlocks = _getRelatedBlocks(habit);
-        final hasAssigned = _hasAssignedCalendarDates(relatedBlocks, currentMonth);
-        final isDueToday = _isHabitScheduledOnDate(habit, date, dateIso, relatedBlocks, hasAssigned);
-        final isDoneOnDate = habit.completedDates.contains(dateIso) ||
-            relatedBlocks.any((b) => b.completedDates.contains(dateIso));
-
-        if (isDueToday) {
-          hasAnyDue = true;
-          if (!isDoneOnDate) {
-            allCompleted = false;
-            break;
-          }
-        } else {
-           if (isDoneOnDate) {
-             hasAnyDue = true;
-           }
-        }
-      }
-
-      if (hasAnyDue && allCompleted && habits.isNotEmpty) {
+      for (final d in fullCompletedDays) {
         final startAngle = startOffsetAngle + ((d - 1) * anglePerDay);
-        final sweepAngle = anglePerDay - 0.04;
+        final sweepAngle = (anglePerDay - 0.04) * animationValue.clamp(0.0, 1.0);
+        if (sweepAngle <= 0.0001) continue;
 
         final path = Path()
           ..arcTo(ringRectInner, startAngle, sweepAngle, true)
           ..arcTo(ringRectOuter, startAngle + sweepAngle, -sweepAngle, false)
           ..close();
 
-        canvas.drawPath(path, glowPaint);
+        canvas.drawPath(path, fullDayGlowPaint);
+        canvas.drawPath(path, fullDayBorderPaint);
       }
     }
 
-    // 5. NÚCLEO CENTRAL TÉCNICO (The Dial Core)
+    // 4. NÚCLEO CENTRAL TÉCNICO (The Dial Core)
     final coreRadius = minRadius * 0.88;
     final corePaint = Paint()
       ..color = gridTextColor.withValues(alpha: 0.10)
@@ -587,7 +641,6 @@ class OrbitPainter extends CustomPainter {
     // Métricas del núcleo (Hábitos de hoy completados)
     int completedToday = 0;
     int totalToday = 0;
-    final todayDate = DateTime(now.year, now.month, now.day);
     final todayIsoStr = todayDate.toIso8601String().split('T').first;
     for (final h in habits) {
       final relatedBlocks = _getRelatedBlocks(h);
