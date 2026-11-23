@@ -821,31 +821,106 @@ class _OrbitClockPainter extends CustomPainter {
       }
     }
 
-    // 4. Current Time Satellite Node (Orbiting Indicator)
+    // 4. Current Time Satellite Node (High-Contrast Needle + Double-Contour Marker + Outer Pointer)
     final currentAngle = -math.pi / 2 + (currentMinutes / 1440.0) * 2 * math.pi;
+    final ur = Offset(math.cos(currentAngle), math.sin(currentAngle));
+    final ut = Offset(-math.sin(currentAngle), math.cos(currentAngle));
 
-    final satelliteCenter = Offset(
-      center.dx + trackRadius * math.cos(currentAngle),
-      center.dy + trackRadius * math.sin(currentAngle),
+    final needleInner = Offset(
+      center.dx + (maxRadius - trackWidth - 5.0) * ur.dx,
+      center.dy + (maxRadius - trackWidth - 5.0) * ur.dy,
+    );
+    final needleOuter = Offset(
+      center.dx + (maxRadius + 4.5) * ur.dx,
+      center.dy + (maxRadius + 4.5) * ur.dy,
     );
 
-    // Glowing halo around the satellite
+    // Aguja radial con contorno oscuro de contraste para destacar sobre cualquier color de bloque
+    canvas.drawLine(
+      needleInner,
+      needleOuter,
+      Paint()
+        ..color = const Color(0xFF0A0A0A).withValues(alpha: 0.85)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.6
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawLine(
+      needleInner,
+      needleOuter,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.95)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.8
+        ..strokeCap = StrokeCap.round,
+    );
+
+    final satelliteCenter = Offset(
+      center.dx + trackRadius * ur.dx,
+      center.dy + trackRadius * ur.dy,
+    );
+
+    // Halo exterior luminoso
     final satelliteHaloPaint = Paint()
-      ..color = const Color(0xFFE6A590).withOpacity(0.4 * pulseValue)
+      ..color = Colors.white.withValues(alpha: 0.55 * pulseValue)
       ..style = PaintingStyle.fill
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
-    canvas.drawCircle(satelliteCenter, 8.0 * pulseValue, satelliteHaloPaint);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+    canvas.drawCircle(satelliteCenter, 10.5 * pulseValue, satelliteHaloPaint);
 
-    // Solid core of the satellite
-    final satellitePaint = Paint()
-      ..color = const Color(0xFFE6A590) // Coral Zen accent
+    // Anillo contorno oscuro (#0A0A0A, grosor 2.5px alrededor del núcleo de 5.5px -> radio 8.0px)
+    final darkContourPaint = Paint()
+      ..color = const Color(0xFF0A0A0A)
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(satelliteCenter, 4.5, satellitePaint);
+    canvas.drawCircle(satelliteCenter, 8.0, darkContourPaint);
 
-    final satelliteInnerDot = Paint()
+    // Núcleo blanco puro (radio 5.5px)
+    final satelliteCorePaint = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(satelliteCenter, 2.0, satelliteInnerDot);
+    canvas.drawCircle(satelliteCenter, 5.5, satelliteCorePaint);
+
+    // Punto central de precisión
+    final satelliteInnerDot = Paint()
+      ..color = const Color(0xFFFF5A36)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(satelliteCenter, 2.2, satelliteInnerDot);
+
+    // Pequeño triángulo/puntero exterior apuntando radialmente hacia el dial
+    final pointerTip = Offset(
+      center.dx + (maxRadius + 1.8) * ur.dx,
+      center.dy + (maxRadius + 1.8) * ur.dy,
+    );
+    final pointerBaseCenter = Offset(
+      center.dx + (maxRadius + 8.8) * ur.dx,
+      center.dy + (maxRadius + 8.8) * ur.dy,
+    );
+    const pointerHalfWidth = 4.6;
+    final pointerPath = Path()
+      ..moveTo(pointerTip.dx, pointerTip.dy)
+      ..lineTo(
+        pointerBaseCenter.dx + ut.dx * pointerHalfWidth,
+        pointerBaseCenter.dy + ut.dy * pointerHalfWidth,
+      )
+      ..lineTo(
+        pointerBaseCenter.dx - ut.dx * pointerHalfWidth,
+        pointerBaseCenter.dy - ut.dy * pointerHalfWidth,
+      )
+      ..close();
+
+    canvas.drawPath(
+      pointerPath,
+      Paint()
+        ..color = const Color(0xFF0A0A0A)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.2
+        ..strokeJoin = StrokeJoin.round,
+    );
+    canvas.drawPath(
+      pointerPath,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.fill,
+    );
   }
 
   void _drawEdgeTimeLabel({
@@ -966,56 +1041,26 @@ class _OrbitClockPainter extends CustomPainter {
   }
 
   /// Devuelve los arcos continuos para dibujar e interactuar en el reloj 24H.
-  /// Para turnos nocturnos (ej. 23:00 -> 07:00) que aplican hoy, devuelve un único
-  /// arco continuo que cruza las 00:00 sin partición artificial.
+  /// Solo incluye los bloques que aplican explícitamente al día `now` (sin arrastrar
+  /// turnos nocturnos del día anterior si hoy no está marcado en el calendario).
   static List<ClockArcSegment> getContinuousArcsForDay(
     List<ScheduleBlock> blocks,
     DateTime now,
   ) {
-    final yesterday = now.subtract(const Duration(days: 1));
     final todayIso = _isoDate(now);
-    final yesterdayIso = _isoDate(yesterday);
-    final currentMinutes = now.hour * 60 + now.minute;
     final segments = <ClockArcSegment>[];
 
     for (final block in blocks) {
-      if (!block.isOvernight) {
-        if (block.appliesToDate(now)) {
-          segments.add(
-            ClockArcSegment(
-              block: block,
-              startMinutes: block.startInMinutes,
-              sweepMinutes: block.durationInMinutes,
-              effectiveDateIso: todayIso,
-            ),
-          );
-        }
-      } else {
-        final appliesToday = block.appliesToDate(now);
-        final appliesYesterday = block.appliesToDate(yesterday);
-        if (appliesToday) {
-          final isMorningTailActive =
-              appliesYesterday && currentMinutes < block.endInMinutes;
-          segments.add(
-            ClockArcSegment(
-              block: block,
-              startMinutes: block.startInMinutes,
-              sweepMinutes: block.durationInMinutes,
-              isForTonight: true,
-              effectiveDateIso: isMorningTailActive ? yesterdayIso : todayIso,
-            ),
-          );
-        } else if (appliesYesterday) {
-          segments.add(
-            ClockArcSegment(
-              block: block,
-              startMinutes: 0,
-              sweepMinutes: block.endInMinutes,
-              isFromYesterday: true,
-              effectiveDateIso: yesterdayIso,
-            ),
-          );
-        }
+      if (block.appliesToDate(now)) {
+        segments.add(
+          ClockArcSegment(
+            block: block,
+            startMinutes: block.startInMinutes,
+            sweepMinutes: block.durationInMinutes,
+            isForTonight: block.isOvernight,
+            effectiveDateIso: todayIso,
+          ),
+        );
       }
     }
     return segments;

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'habit.dart';
@@ -17,9 +18,11 @@ class ScheduleBlock {
   final List<String> completedDates; // Dates in YYYY-MM-DD when this shift was completed
   final List<String> assignedDates; // Specific YYYY-MM-DD dates assigned on the shift calendar
   final Map<String, double> monthlyExtraHours; // 'YYYY-MM' -> extra hours
+  final Map<String, double> extraHoursByDate; // 'YYYY-MM-DD' -> extra hours on specific day
   final double extraHours; // Legacy extra overtime hours logged
   final bool hasReminder; // Whether reminder is enabled before shift starts
   final int reminderOffsetMinutes; // Minutes before startHour:startMinute (e.g. 0, 15, 30, 60)
+  final bool isOneOffDayBlock; // True if created for a specific calendar date only
 
   const ScheduleBlock({
     required this.id,
@@ -36,9 +39,11 @@ class ScheduleBlock {
     this.completedDates = const [],
     this.assignedDates = const [],
     this.monthlyExtraHours = const {},
+    this.extraHoursByDate = const {},
     this.extraHours = 0.0,
     this.hasReminder = false,
     this.reminderOffsetMinutes = 15,
+    this.isOneOffDayBlock = false,
   });
 
   Color get color => Color(colorValue);
@@ -55,6 +60,37 @@ class ScheduleBlock {
       return (1440 - startInMinutes) + endInMinutes;
     }
     return endInMinutes - startInMinutes;
+  }
+
+  /// Exact duration of the block in decimal hours (e.g. 7.5 for 7h 30m)
+  double get durationHours => durationInMinutes / 60.0;
+
+  /// Clean formatter for decimal hours without floating-point noise (e.g. 8 -> "8h", 7.5 -> "7.5h", 7.75 -> "7.75h")
+  static String formatHours(double hours, {bool includeUnit = true}) {
+    final roundedMinutes = (hours * 60).round();
+    final sign = roundedMinutes < 0 ? '-' : '';
+    final absMin = roundedMinutes.abs();
+    final h = absMin ~/ 60;
+    final m = absMin % 60;
+    final unit = includeUnit ? 'h' : '';
+    if (m == 0) {
+      return '$sign$h$unit';
+    }
+    if (m == 30) {
+      return '$sign$h.5$unit';
+    }
+    if (m == 15 || m == 45) {
+      final dec = (absMin / 60.0)
+          .toStringAsFixed(2)
+          .replaceAll(RegExp(r'0+$'), '')
+          .replaceAll(RegExp(r'\.$'), '');
+      return '$sign$dec$unit';
+    }
+    final dec = (absMin / 60.0)
+        .toStringAsFixed(1)
+        .replaceAll(RegExp(r'0+$'), '')
+        .replaceAll(RegExp(r'\.$'), '');
+    return '$sign$dec$unit';
   }
 
   /// Formatted duration in human-readable text (e.g. "8h", "1h 30m")
@@ -85,6 +121,9 @@ class ScheduleBlock {
   /// If [assignedDates] has items, it takes priority; otherwise falls back to weekday.
   bool appliesToDate(DateTime date) {
     final iso = date.toIso8601String().split('T').first;
+    if (isOneOffDayBlock) {
+      return assignedDates.contains(iso);
+    }
     if (assignedDates.isNotEmpty) {
       return assignedDates.contains(iso);
     }
@@ -144,11 +183,25 @@ class ScheduleBlock {
     return set.toList();
   }
 
+  /// Extra hours logged for a specific calendar date ('YYYY-MM-DD')
+  double getExtraHoursForDate(String dateIso) {
+    return extraHoursByDate[dateIso] ?? 0.0;
+  }
+
   /// Extra hours logged for a specific month ('YYYY-MM')
   double getExtraHoursForMonth(DateTime month) {
     final key = '${month.year}-${month.month.toString().padLeft(2, '0')}';
+    double dailySum = 0.0;
+    extraHoursByDate.forEach((dateIso, hours) {
+      if (dateIso.startsWith('$key-')) {
+        dailySum += hours;
+      }
+    });
     if (monthlyExtraHours.containsKey(key)) {
-      return monthlyExtraHours[key]!;
+      return math.max(monthlyExtraHours[key]!, dailySum);
+    }
+    if (dailySum > 0) {
+      return dailySum;
     }
     if (monthlyExtraHours.isEmpty && extraHours > 0) {
       final now = DateTime.now();
@@ -162,7 +215,7 @@ class ScheduleBlock {
   /// Alias for getExtraHoursForMonth
   double getMonthlyExtraHours(DateTime month) => getExtraHoursForMonth(month);
 
-  /// Calculate total worked hours in a specific month (strictly completed or past dates)
+  /// Calculate total worked hours in a specific month (strictly completed dates)
   double getMonthlyWorkedHours(DateTime month, [Habit? linkedHabit]) {
     final prefix = '${month.year}-${month.month.toString().padLeft(2, '0')}';
     final now = DateTime.now();
@@ -172,15 +225,11 @@ class ScheduleBlock {
 
     final Set<String> dates = {};
     for (final d in getEffectiveCompletedDates(linkedHabit)) {
-      if (d.startsWith(prefix)) dates.add(d);
-    }
-    for (final d in assignedDates) {
-      if (d.startsWith(prefix) && d.compareTo(todayIso) < 0) {
+      if (d.startsWith(prefix) && d.compareTo(todayIso) <= 0) {
         dates.add(d);
       }
     }
-    final shiftHours = durationInMinutes / 60.0;
-    return (dates.length * shiftHours) + getExtraHoursForMonth(month);
+    return (dates.length * durationHours) + getExtraHoursForMonth(month);
   }
 
   /// Whether the monthly target has been reached or exceeded
@@ -224,9 +273,11 @@ class ScheduleBlock {
     List<String>? completedDates,
     List<String>? assignedDates,
     Map<String, double>? monthlyExtraHours,
+    Map<String, double>? extraHoursByDate,
     double? extraHours,
     bool? hasReminder,
     int? reminderOffsetMinutes,
+    bool? isOneOffDayBlock,
   }) {
     return ScheduleBlock(
       id: id ?? this.id,
@@ -243,9 +294,11 @@ class ScheduleBlock {
       completedDates: completedDates ?? this.completedDates,
       assignedDates: assignedDates ?? this.assignedDates,
       monthlyExtraHours: monthlyExtraHours ?? this.monthlyExtraHours,
+      extraHoursByDate: extraHoursByDate ?? this.extraHoursByDate,
       extraHours: extraHours ?? this.extraHours,
       hasReminder: hasReminder ?? this.hasReminder,
       reminderOffsetMinutes: reminderOffsetMinutes ?? this.reminderOffsetMinutes,
+      isOneOffDayBlock: isOneOffDayBlock ?? this.isOneOffDayBlock,
     );
   }
 
@@ -265,9 +318,11 @@ class ScheduleBlock {
       'completedDates': completedDates,
       'assignedDates': assignedDates,
       'monthlyExtraHours': monthlyExtraHours,
+      'extraHoursByDate': extraHoursByDate,
       'extraHours': extraHours,
       'hasReminder': hasReminder,
       'reminderOffsetMinutes': reminderOffsetMinutes,
+      'isOneOffDayBlock': isOneOffDayBlock,
     };
   }
 
@@ -278,6 +333,15 @@ class ScheduleBlock {
       rawMap.forEach((k, v) {
         if (k != null && v != null) {
           parsedMonthlyExtraHours[k.toString()] = (v as num).toDouble();
+        }
+      });
+    }
+    final Map<String, double> parsedExtraHoursByDate = {};
+    if (map['extraHoursByDate'] is Map) {
+      final rawMap = map['extraHoursByDate'] as Map;
+      rawMap.forEach((k, v) {
+        if (k != null && v != null) {
+          parsedExtraHoursByDate[k.toString()] = (v as num).toDouble();
         }
       });
     }
@@ -297,9 +361,11 @@ class ScheduleBlock {
       completedDates: (map['completedDates'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       assignedDates: (map['assignedDates'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       monthlyExtraHours: parsedMonthlyExtraHours,
+      extraHoursByDate: parsedExtraHoursByDate,
       extraHours: (map['extraHours'] as num?)?.toDouble() ?? 0.0,
       hasReminder: map['hasReminder'] as bool? ?? false,
       reminderOffsetMinutes: (map['reminderOffsetMinutes'] as num?)?.toInt() ?? 15,
+      isOneOffDayBlock: map['isOneOffDayBlock'] as bool? ?? false,
     );
   }
 }
@@ -369,20 +435,11 @@ class WorkShiftGroup {
     // 2. Fechas en habit vinculado (si aplica a este turno)
     if (habit != null) {
       for (final d in habit!.completedDates) {
-        if (d.startsWith(prefix)) {
+        if (d.startsWith(prefix) && d.compareTo(todayIso) <= 0) {
           if ((s.assignedDates.contains(d) && (isPrimaryShift || !primaryDates.contains(d))) ||
               (!shifts.any((other) => other.assignedDates.contains(d)) && isPrimaryShift)) {
             dates.add(d);
           }
-        }
-      }
-    }
-
-    // 3. Fechas asignadas en cuadrante que ya han transcurrido estrictamente (días pasados)
-    for (final d in s.assignedDates) {
-      if (d.startsWith(prefix) && d.compareTo(todayIso) < 0) {
-        if (isPrimaryShift || !primaryDates.contains(d)) {
-          dates.add(d);
         }
       }
     }

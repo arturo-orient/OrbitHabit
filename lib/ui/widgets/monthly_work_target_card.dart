@@ -78,8 +78,13 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
     final isCompleted = effectiveGroup.isTargetReached(widget.currentMonth);
     final overtime = effectiveGroup.getOvertimeHours(widget.currentMonth);
     final totalShifts = effectiveGroup.getMonthlyShiftsCount(widget.currentMonth);
-    final breakdown = effectiveGroup.getBreakdown(widget.currentMonth);
+    final breakdown = effectiveGroup
+        .getBreakdown(widget.currentMonth)
+        .where((item) => !item.shift.isOneOffDayBlock || item.shiftsCount > 0)
+        .toList();
     final shifts = effectiveGroup.shifts;
+    final recurringShifts = shifts.where((s) => !s.isOneOffDayBlock).toList();
+    final visibleShiftsCount = recurringShifts.isNotEmpty ? recurringShifts.length : shifts.length;
 
     final now = DateTime.now();
     final todayIso = now.toIso8601String().split('T').first;
@@ -183,7 +188,7 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
                               ),
                               child: Text(
                                 overtime > 0
-                                    ? '+${overtime.toStringAsFixed(0)}H EXTRA'
+                                    ? '+${ScheduleBlock.formatHours(overtime, includeUnit: false)}H EXTRA'
                                     : 'OBJETIVO 100%',
                                 style: AppTheme.monoStyle(
                                   fontSize: 9,
@@ -220,9 +225,9 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
                       const SizedBox(height: 1),
                       Text(
                         isFutureMonth
-                            ? '$plannedShifts turnos planificados · ${shifts.length} horarios'
-                            : (shifts.length > 1
-                                ? '$totalShifts turnos · ${shifts.length} horarios configurados'
+                            ? '$plannedShifts turnos planificados · $visibleShiftsCount horarios'
+                            : (visibleShiftsCount > 1
+                                ? '$totalShifts turnos · $visibleShiftsCount horarios configurados'
                                 : '$totalShifts turnos · ${shifts.isNotEmpty ? shifts.first.formattedDuration : ""}/turno'),
                         style: AppTheme.monoStyle(
                           fontSize: 10,
@@ -239,8 +244,8 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
                   children: [
                     Text(
                       isFutureMonth
-                          ? '~${plannedHours.toStringAsFixed(0)} / ${target}H'
-                          : '${workedHours.toStringAsFixed(0)} / ${target}H',
+                          ? '~${ScheduleBlock.formatHours(plannedHours, includeUnit: false)} / ${target}H'
+                          : '${ScheduleBlock.formatHours(workedHours, includeUnit: false)} / ${target}H',
                       style: AppTheme.monoStyle(
                         fontSize: 14.5,
                         fontWeight: FontWeight.w700,
@@ -321,7 +326,7 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            'DESGLOSE DE TURNOS (${shifts.length})',
+                            'DESGLOSE DE TURNOS (${breakdown.length})',
                             style: AppTheme.monoStyle(
                               fontSize: 9.5,
                               fontWeight: FontWeight.w700,
@@ -559,7 +564,7 @@ class _MonthlyWorkTargetCardState extends ConsumerState<MonthlyWorkTargetCard> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '${item.totalHours.toStringAsFixed(0)}h',
+                ScheduleBlock.formatHours(item.totalHours),
                 style: AppTheme.monoStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,

@@ -11,6 +11,8 @@ class HabitProgressCard extends StatefulWidget {
   final int? percentage;
   final int streak;
   final List<bool>? weeklyCompletions;
+  final List<String>? weeklyDateIsos;
+  final ValueChanged<String>? onToggleDate;
   final VoidCallback? onTap;
   final bool isCompletedToday;
   final VoidCallback? onToggleToday;
@@ -26,6 +28,8 @@ class HabitProgressCard extends StatefulWidget {
     this.percentage,
     required this.streak,
     this.weeklyCompletions,
+    this.weeklyDateIsos,
+    this.onToggleDate,
     this.onTap,
     this.isCompletedToday = false,
     this.onToggleToday,
@@ -64,12 +68,26 @@ class _HabitProgressCardState extends State<HabitProgressCard> with SingleTicker
       children: List.generate(7, (i) {
         final isDone = widget.weeklyCompletions![i];
         final isCurrent = i == currentWeekday;
+        final dateIso = (widget.weeklyDateIsos != null && i < widget.weeklyDateIsos!.length)
+            ? widget.weeklyDateIsos![i]
+            : null;
+        final canToggle = dateIso != null &&
+            widget.onToggleDate != null &&
+            i <= currentWeekday;
 
-        return Padding(
-          padding: const EdgeInsets.only(left: 3.5),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: canToggle
+              ? () {
+                  HapticFeedback.selectionClick();
+                  widget.onToggleDate!(dateIso);
+                }
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 3.5),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
               Container(
                 width: 7.0,
                 height: 7.0,
@@ -107,7 +125,8 @@ class _HabitProgressCardState extends State<HabitProgressCard> with SingleTicker
                           : (isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted)),
                 ),
               ),
-            ],
+              ],
+            ),
           ),
         );
       }),

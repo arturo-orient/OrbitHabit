@@ -234,8 +234,8 @@ class ScheduleBlockCard extends ConsumerWidget {
                               children: [
                                 Text(
                                   isCompleted
-                                      ? 'Meta cumplida ✨ ${overtime > 0 ? "(+${overtime.toStringAsFixed(0)}h extras)" : ""}'
-                                      : 'Meta: ${workedHours.toStringAsFixed(0)} / ${target}h al mes',
+                                      ? 'Meta cumplida ✨ ${overtime > 0 ? "(+${ScheduleBlock.formatHours(overtime)} extras)" : ""}'
+                                      : 'Meta: ${ScheduleBlock.formatHours(workedHours, includeUnit: false)} / ${target}h al mes',
                                   style: GoogleFonts.outfit(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,

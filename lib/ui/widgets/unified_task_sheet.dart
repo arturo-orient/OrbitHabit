@@ -221,11 +221,16 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         _linkedHabitId = null;
       }
 
-      // Horario y Franjas asociadas
+      // Horario y Franjas asociadas (excluyendo bloques puntuales de 1 solo día salvo que se edite ese bloque directamente)
       if (habit != null) {
         _subTasks.addAll(habit.subTasks);
         final h = habit;
-        final related = blocks.where((b) => b.habitId == h.id || b.title.trim().toLowerCase() == h.name.trim().toLowerCase()).toList();
+        final related = blocks
+            .where((b) =>
+                !b.isOneOffDayBlock &&
+                (b.habitId == h.id ||
+                    b.title.trim().toLowerCase() == h.name.trim().toLowerCase()))
+            .toList();
         for (final b in related) {
           _schedules.add(_ScheduleItem(
             id: b.id,
@@ -240,10 +245,14 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         }
       } else if (block != null) {
         final blk = block;
-        final related = blocks.where((b) =>
-            b.id == blk.id ||
-            (blk.habitId != null && b.habitId == blk.habitId) ||
-            (b.title.trim().toLowerCase() == blk.title.trim().toLowerCase())).toList();
+        final related = blocks
+            .where((b) =>
+                b.id == blk.id ||
+                (!b.isOneOffDayBlock &&
+                    ((blk.habitId != null && b.habitId == blk.habitId) ||
+                        (b.title.trim().toLowerCase() ==
+                            blk.title.trim().toLowerCase()))))
+            .toList();
         for (final b in related) {
           if (!_schedules.any((s) => s.id == b.id)) {
             _schedules.add(_ScheduleItem(
@@ -269,7 +278,6 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       }
 
       // Fechas completadas y asignadas unificadas desde el Calendario General
-      final todayIso = DateTime.now().toIso8601String().split('T').first;
       final mergedCompletedSet = <String>{};
       final mergedAssignedSet = <String>{};
       if (habit != null) {
@@ -278,9 +286,6 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
       if (block != null) {
         mergedCompletedSet.addAll(block.completedDates);
         mergedAssignedSet.addAll(block.assignedDates);
-        for (final d in block.assignedDates) {
-          if (d.compareTo(todayIso) < 0) mergedCompletedSet.add(d);
-        }
       }
       for (final s in _schedules) {
         final b = blocks.cast<ScheduleBlock?>().firstWhere(
@@ -290,12 +295,8 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
         if (b != null) {
           mergedCompletedSet.addAll(b.completedDates);
           mergedAssignedSet.addAll(b.assignedDates);
-          for (final d in b.assignedDates) {
-            if (d.compareTo(todayIso) < 0) mergedCompletedSet.add(d);
-          }
         }
       }
-      mergedAssignedSet.addAll(mergedCompletedSet);
       _completedDates = mergedCompletedSet.toList();
       _assignedDates = mergedAssignedSet.toList();
 
@@ -834,6 +835,46 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                                           color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
                                         ),
                                       ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [0, 15, 30, 45].map((m) {
+                                          final selected = startTime.minute == m;
+                                          return GestureDetector(
+                                            onTap: () {
+                                              HapticFeedback.selectionClick();
+                                              setDialogState(() {
+                                                startTime = TimeOfDay(hour: startTime.hour, minute: m);
+                                              });
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: selected
+                                                    ? _selectedColor.withValues(alpha: 0.22)
+                                                    : Colors.transparent,
+                                                borderRadius: BorderRadius.circular(4),
+                                                border: Border.all(
+                                                  color: selected
+                                                      ? _selectedColor
+                                                      : (isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder),
+                                                  width: 0.8,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                ':${m.toString().padLeft(2, '0')}',
+                                                style: AppTheme.monoStyle(
+                                                  fontSize: 8.5,
+                                                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                                                  color: selected
+                                                      ? _selectedColor
+                                                      : (isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted),
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -891,6 +932,46 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                                           fontWeight: FontWeight.bold,
                                           color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
                                         ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [0, 15, 30, 45].map((m) {
+                                          final selected = endTime.minute == m;
+                                          return GestureDetector(
+                                            onTap: () {
+                                              HapticFeedback.selectionClick();
+                                              setDialogState(() {
+                                                endTime = TimeOfDay(hour: endTime.hour, minute: m);
+                                              });
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: selected
+                                                    ? _selectedColor.withValues(alpha: 0.22)
+                                                    : Colors.transparent,
+                                                borderRadius: BorderRadius.circular(4),
+                                                border: Border.all(
+                                                  color: selected
+                                                      ? _selectedColor
+                                                      : (isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder),
+                                                  width: 0.8,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                ':${m.toString().padLeft(2, '0')}',
+                                                style: AppTheme.monoStyle(
+                                                  fontSize: 8.5,
+                                                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                                                  color: selected
+                                                      ? _selectedColor
+                                                      : (isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted),
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }).toList(),
                                       ),
                                     ],
                                   ),
@@ -1230,22 +1311,6 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           ),
       ];
 
-      // Calcular fechas ya asignadas en otros bloques de la misma tarea (si tiene múltiples turnos)
-      final allOtherBlocksAssigned = <String>{};
-      final allOtherBlocksCompleted = <String>{};
-      if (effectiveSchedules.length > 1) {
-        for (final s in effectiveSchedules.skip(1)) {
-          final b = blocks.cast<ScheduleBlock?>().firstWhere(
-                (blk) => blk?.id == s.id,
-                orElse: () => null,
-              );
-          if (b != null) {
-            allOtherBlocksAssigned.addAll(b.assignedDates.where((d) => _assignedDates.contains(d)));
-            allOtherBlocksCompleted.addAll(b.completedDates.where((d) => _completedDates.contains(d)));
-          }
-        }
-      }
-
       // Guardar todos los horarios definidos:
       for (int idx = 0; idx < effectiveSchedules.length; idx++) {
         final s = effectiveSchedules[idx];
@@ -1262,31 +1327,13 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           blockAssignedDates = hasHourTarget
               ? List<String>.from(_assignedDates)
               : (existingBlock?.assignedDates ?? const <String>[]);
-        } else if (idx == 0) {
-          blockCompletedDates = _completedDates
-              .where((d) => (existingBlock?.completedDates.contains(d) ?? false) || !allOtherBlocksCompleted.contains(d))
-              .toList();
-          blockAssignedDates = hasHourTarget
-              ? _assignedDates
-                  .where((d) => (existingBlock?.assignedDates.contains(d) ?? false) || !allOtherBlocksAssigned.contains(d))
-                  .toList()
-              : (existingBlock?.assignedDates ?? const <String>[]);
+        } else if (existingBlock != null) {
+          // En tareas con múltiples turnos (Mañana, Tarde, Nocturno), preservar las fechas propias de cada turno
+          blockCompletedDates = List<String>.from(existingBlock.completedDates);
+          blockAssignedDates = List<String>.from(existingBlock.assignedDates);
         } else {
-          final firstBlock = blocks.cast<ScheduleBlock?>().firstWhere(
-                (b) => b?.id == effectiveSchedules.first.id,
-                orElse: () => null,
-              );
-          final firstBlockCompleted = firstBlock?.completedDates.toSet() ?? const <String>{};
-          blockCompletedDates = isNew
-              ? const <String>[]
-              : existingBlock.completedDates
-                  .where((d) => _completedDates.contains(d) && !firstBlockCompleted.contains(d))
-                  .toList();
-          blockAssignedDates = isNew
-              ? const <String>[]
-              : existingBlock.assignedDates
-                  .where((d) => _assignedDates.contains(d) && !firstBlockCompleted.contains(d))
-                  .toList();
+          blockCompletedDates = const <String>[];
+          blockAssignedDates = const <String>[];
         }
 
         final scheduleBlock = ScheduleBlock(
@@ -1304,9 +1351,11 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
           completedDates: blockCompletedDates,
           assignedDates: blockAssignedDates,
           monthlyExtraHours: existingBlock?.monthlyExtraHours ?? const {},
+          extraHoursByDate: existingBlock?.extraHoursByDate ?? const {},
           extraHours: existingBlock?.extraHours ?? _extraHours,
           hasReminder: (_hasSchedule || _targetMode == TaskTargetMode.hours) && _hasReminder,
           reminderOffsetMinutes: _reminderOffsetMinutes,
+          isOneOffDayBlock: existingBlock?.isOneOffDayBlock ?? false,
         );
 
         if (isNew) {
@@ -2543,6 +2592,48 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                                   color: _startTime != null ? textColor : textColor?.withOpacity(0.35),
                                 ),
                               ),
+                              if (_startTime != null) ...[
+                                const SizedBox(height: 6),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [0, 15, 30, 45].map((m) {
+                                    final selected = _startTime!.minute == m;
+                                    return GestureDetector(
+                                      onTap: () {
+                                        HapticFeedback.selectionClick();
+                                        setState(() {
+                                          _startTime = TimeOfDay(hour: _startTime!.hour, minute: m);
+                                        });
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: selected
+                                              ? _selectedColor.withValues(alpha: 0.22)
+                                              : Colors.transparent,
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(
+                                            color: selected
+                                                ? _selectedColor
+                                                : Colors.grey.withValues(alpha: 0.25),
+                                            width: 0.8,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          ':${m.toString().padLeft(2, '0')}',
+                                          style: AppTheme.monoStyle(
+                                            fontSize: 8.5,
+                                            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                                            color: selected
+                                                ? _selectedColor
+                                                : textColor?.withValues(alpha: 0.55),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -2580,6 +2671,48 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
                                   color: _endTime != null ? textColor : textColor?.withOpacity(0.35),
                                 ),
                               ),
+                              if (_endTime != null) ...[
+                                const SizedBox(height: 6),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [0, 15, 30, 45].map((m) {
+                                    final selected = _endTime!.minute == m;
+                                    return GestureDetector(
+                                      onTap: () {
+                                        HapticFeedback.selectionClick();
+                                        setState(() {
+                                          _endTime = TimeOfDay(hour: _endTime!.hour, minute: m);
+                                        });
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: selected
+                                              ? _selectedColor.withValues(alpha: 0.22)
+                                              : Colors.transparent,
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(
+                                            color: selected
+                                                ? _selectedColor
+                                                : Colors.grey.withValues(alpha: 0.25),
+                                            width: 0.8,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          ':${m.toString().padLeft(2, '0')}',
+                                          style: AppTheme.monoStyle(
+                                            fontSize: 8.5,
+                                            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                                            color: selected
+                                                ? _selectedColor
+                                                : textColor?.withValues(alpha: 0.55),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -3069,12 +3202,9 @@ class _UnifiedTaskSheetState extends ConsumerState<UnifiedTaskSheet> {
             (targetHabitId != null && b.habitId == targetHabitId) ||
             _schedules.any((s) => s.id == b.id) ||
             (currentTitle.isNotEmpty && b.title.trim().toLowerCase() == currentTitle);
-        if (matchesBlock) {
+        if (matchesBlock && !b.isOneOffDayBlock) {
           mergedAssigned.addAll(b.assignedDates);
           mergedCompleted.addAll(b.completedDates);
-          for (final d in b.assignedDates) {
-            if (d.compareTo(todayIso) < 0) mergedCompleted.add(d);
-          }
         }
       }
       _assignedDates = mergedAssigned.toList();

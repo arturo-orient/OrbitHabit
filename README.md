@@ -67,22 +67,24 @@
 
 ## 🚀 What's New in v1.2.7.2
 
-OrbitHabit **v1.2.7.2** refines the orbital ring renderer, 24H block cards, and dual-alert scheduling for 24-hour tasks:
+OrbitHabit **v1.2.7.2** upgrades the Shift Calendar, 24H Polar Clock, Orbital Wheel, and Dual-Alert Notification Engine with 1-day custom schedules, per-day extra-hour badges, exact-minute shift durations, high-contrast clock needles, and strict bidirectional past-day synchronization:
 
-* 🔔 **Dual Pre-Start (`-10 min`) & Post-Finish (`+10 min`) 24H Task Notifications (`NotificationService` & `UnifiedTaskSheet`)**:
-  * **Guaranteed Dual Alerts with Disjoint IDs**: Every 24H schedule block with reminders enabled schedules two independent alerts per active day over a 14-day rolling window:
-    1. **Pre-Task Alert (`10 min before start`)**: `'En 10 min empieza: [Tarea]'` (with automatic same-day fallback to `startTime` if scheduled less than 10 minutes before start).
-    2. **Post-Task Alert (`10 min after finish`)**: `'¿Completaste [Tarea]?'` (respecting overnight shifts crossing midnight and automatically skipped once completed).
-  * **24H-Gated Reminder Switch**: Reminders in `UnifiedTaskSheet` are cleanly locked with an informative notice until 24H Mode (`Reloj 24h` or `Por Horas`) is enabled, preventing orphan reminders without a schedule.
-  * **Ultra-Simple Notification Manager (`SettingsScreen`)**: Displays `'Aviso: 10m antes y 10m después'` for active 24H reminders with 1-tap `[ ✕ ]` deletion and automatic permission lock-down (`[ Conceder permisos ]`) when OS notifications are disabled.
-* 🪐 **Orbital Wheel Active-Weekday Pattern & Full-Day Completion Highlight (`OrbitTracker`)**:
-  * **Active Weekday Translucent Pattern**: Habits with specific weekdays (e.g., Monday–Friday excluding weekends) render active pending days in translucent habit color (`0.16–0.18` alpha) with a subtle cell border (`0.28` alpha) across all `frequencyType` modes, while excluded rest days remain in pure negative space.
-  * **True Full-Day Highlight**: When **all tasks in the wheel** are completed on the same day, both the full radial column and the exterior day-number badge (`01..31`) illuminate with a precision highlight—never drawing ghost borders over partially completed weekend columns.
-* ⏰ **Clean, Non-Redundant 24H Block Cards (`ScheduleBlockCard`) & Directional Polar Clock (`OrbitClock24`)**:
+* 📅 **One-Off Day Schedules (`isOneOffDayBlock`), Exact Minutes & Daily Extra-Hour Badges (`ShiftCalendarScreen` & `ScheduleBlock`)**:
+  * **One-Off Specific Day Schedules (`[ + Horario específico solo para este día ]`)**: Tap any day in the Calendar to either assign an existing palette shift (`1. ASIGNAR TURNO EXISTENTE`) or create a custom schedule solely for that date (e.g., Saturday `09:00 – 14:00`, Sunday `16:00 – 22:00`) with custom title, exact minutes, color, and `'Sumar a horas de trabajo mensual'` toggle—without cluttering the top recurring shift palette.
+  * **Exact-Minute Shift Support (`10:30 – 18:15`)**: Full 24H `showTimePicker` plus 1-tap minute pills (`:00`, `:15`, `:30`, `:45`), decimal duration math (`durationHours`), and clean `ScheduleBlock.formatHours` formatting (`7.5h`, `7.75h`, `8h`).
+  * **At-a-Glance Daily Extra-Hour Badges (`extraHoursByDate`)**: Log or adjust overtime on any specific date (`-1h`, `+0.5h`, `+1h`, `+2h`) and see a high-contrast amber badge (`+1.5h`, `+2h`) directly in the top corner of that calendar cell.
+* 🔄 **Bidirectional Past-Day Unmarking & Strict Same-Day 24H Filtering (`HabitNotifier`, `ScheduleNotifier` & `OrbitTracker`)**:
+  * **Instant Past-Day Unmarking**: Unchecking a task on any past date (from `OrbitTracker` / `DayDetailsSheet`, the 7-day weekly LED strip on `HabitProgressCard`, or `ShiftCalendarScreen`) propagates bidirectionally across `Habit`, `SubTask`s, and all linked `ScheduleBlock`s without ghost auto-completing past `assignedDates`.
+  * **Strict Same-Day 24H Clock**: `OrbitClock24` and `HOY // BLOQUES 24H` display only blocks scheduled for **today**, preventing yesterday's overnight shift from bleeding into your day off.
+* ⏰ **High-Contrast Current-Time Needle (`OrbitClock24`) & De-Duplicated 24H Cards (`ScheduleBlockCard`)**:
+  * **Double-Contoured Radial Needle & Pointer**: The live current-time marker renders a radial needle with dark contrast outline, luminous halo, `#0A0A0A` `2.5px` ring, pure white `5.5px` core, and outer triangular pointer so it remains 100% legible even over bright yellow blocks.
   * **Single Completion Indicator**: Removed redundant `[ ✓ COMPLETADO ]` and `Turno Hecho` pills from `ScheduleBlockCard`, keeping a single interactive **`✓ Hecho hoy` / `Marcar hoy`** chip alongside a clean percentage readout (`73%`) on the monthly target bar.
-  * **Continuous Directional Overnight Arcs**: Midnight-crossing shifts (`23:00 → 07:00`) render as a single continuous arc with start (`●`), clockwise flow (`›`), and finish (`▸|`) markers.
-* 📊 **Vector Telemetry Suite (`StatisticsScreen`) & Real-Time Achievement Sync**:
-  * 3 custom `CustomPainter` charts (Completion Evolution, Work Hours Telemetry, Weekly Consistency & Streak Ranking), 10 special-day geometric medals, and real-time achievement unlock/revocation.
+* 🔔 **Dual Pre-Start (`-10 min`) & Post-Finish (`+10 min`) 24H Task Notifications (`NotificationService` & `UnifiedTaskSheet`)**:
+  * **Guaranteed Dual Alerts with Disjoint IDs**: Schedules both `'En 10 min empieza: [Tarea]'` (`-10 min`, with same-day `<10m` fallback to `startTime`) and `'¿Completaste [Tarea]?'` (`+10 min` after finish, respecting overnight shifts) with unique non-colliding IDs.
+  * **24H-Gated Reminder Switch**: Reminders in `UnifiedTaskSheet` remain locked until 24H Mode is enabled.
+* 🪐 **Orbital Wheel Active-Weekday Pattern & Full-Day Completion Highlight (`OrbitTracker`)**:
+  * **Active Weekday Translucent Pattern**: Pending active weekdays (e.g., Mon–Fri) render in translucent habit color (`0.16–0.18` alpha) with a subtle cell border (`0.28` alpha), leaving excluded weekend days in clean negative space.
+  * **True Full-Day Highlight**: When **all tasks in the wheel** are completed on the same day, both the radial column and the exterior day-number badge (`01..31`) illuminate.
 
 ---
 

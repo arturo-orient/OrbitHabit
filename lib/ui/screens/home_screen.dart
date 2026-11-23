@@ -227,7 +227,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
           constraints: const BoxConstraints(maxWidth: 520),
           child: UnifiedTaskSheet(
             habitToEdit: group.habit,
-            blockToEdit: group.shifts.isNotEmpty ? group.shifts.first : null,
+            blockToEdit: group.shifts.isNotEmpty
+                ? group.shifts.firstWhere(
+                    (s) => !s.isOneOffDayBlock,
+                    orElse: () => group.shifts.first,
+                  )
+                : null,
           ),
         ),
       ),
@@ -437,7 +442,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
       builder: (ctx) {
         return Consumer(
           builder: (context, ref, _) {
-            final allBlocks = ref.watch(scheduleProvider);
+            final allBlocks = ref
+                .watch(scheduleProvider)
+                .where((b) => !b.isOneOffDayBlock)
+                .toList();
             return Container(
               height: MediaQuery.of(context).size.height * 0.72,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -678,11 +686,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     final effectiveVacationDates = {...settings.vacationDates, ...heavyDutyShield}.toList();
 
     final now = DateTime.now();
-    final yesterday = now.subtract(const Duration(days: 1));
-    // Filter and sort today's schedule blocks (including overnight shifts from yesterday)
+    // Mostrar en el Modo 24H de hoy únicamente los bloques programados para hoy
     final todayBlocks = scheduleBlocks.where((b) {
-      return b.appliesToDate(now) ||
-          (b.isOvernight && b.appliesToDate(yesterday));
+      return b.appliesToDate(now);
     }).toList()
       ..sort((a, b) => a.startInMinutes.compareTo(b.startInMinutes));
 
@@ -1233,11 +1239,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                                 // Telemetría de los 7 días de la semana en curso (Lunes a Domingo)
                                 final now = DateTime.now();
                                 final todayIso = now.toIso8601String().split('T').first;
-                                final weeklyCompletions = List.generate(7, (i) {
+                                final linkedHabitBlocks = scheduleBlocks
+                                    .where((b) => ScheduleNotifier.blockLinksToHabit(b, habit, habit.id))
+                                    .toList();
+                                final effectiveCompleted = <String>{
+                                  ...habit.completedDates,
+                                  for (final b in linkedHabitBlocks) ...b.completedDates,
+                                };
+                                final weeklyDateIsos = List.generate(7, (i) {
                                   final d = DateTime(now.year, now.month, now.day - (now.weekday - 1) + i);
-                                  final iso = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-                                  return habit.completedDates.contains(iso);
+                                  return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
                                 });
+                                final weeklyCompletions = weeklyDateIsos
+                                    .map((iso) => effectiveCompleted.contains(iso))
+                                    .toList();
 
                                 return KeyedSubtree(
                                   key: index == 0 ? _firstHabitCardTourKey : null,
@@ -1251,10 +1266,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                                       percentage: percentage,
                                       streak: streak,
                                       weeklyCompletions: weeklyCompletions,
-                                      isCompletedToday: habit.completedDates.contains(todayIso),
+                                      weeklyDateIsos: weeklyDateIsos,
+                                      onToggleDate: (dateIso) {
+                                        if (dateIso.compareTo(todayIso) > 0) return;
+                                        SoundService().playCheck();
+                                        ref.read(habitsProvider.notifier).toggleHabitForDate(habit.id, dateIso);
+                                      },
+                                      isCompletedToday: effectiveCompleted.contains(todayIso),
                                       onToggleToday: () {
                                         SoundService().playCheck();
-                                        ref.read(habitsProvider.notifier).toggleDay(habit.id, todayIso);
+                                        ref.read(habitsProvider.notifier).toggleHabitForDate(habit.id, todayIso);
                                       },
                                       onTap: () => _editHabit(habit),
                                       subTasks: habit.subTasks,

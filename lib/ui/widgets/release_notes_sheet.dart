@@ -90,9 +90,9 @@ class _ReleaseNotesSheetState extends ConsumerState<ReleaseNotesSheet> {
       icon: Icons.calendar_month_rounded,
       accentColor: Color(0xFFFFD166),
       badge: 'CALENDARIO',
-      title: 'Calendario Multi-Tarea, Ciclos y Póster PNG',
+      title: 'Horarios Puntuales por Día, Minutos Exactos y Horas Extra',
       description:
-          'Asigna varios turnos el mismo día, desliza el dedo para pintar semanas enteras, aplica ciclos rotativos y descarga tu póster mensual a medida.',
+          'Crea un horario específico para un solo día sin ensuciar tu paleta fija, configura turnos con minutos exactos (10:30 - 18:15) y visualiza las horas extra (+1.5h, +2h) directamente en cada casilla.',
     ),
     ReleaseHighlightItem(
       icon: Icons.shield_moon_rounded,

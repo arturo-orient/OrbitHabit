@@ -70,16 +70,23 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
     await _persist();
   }
 
-  bool _blockMatchesHabit(ScheduleBlock b, Habit? habit, String habitId) {
-    if (b.habitId == habitId) return true;
-    if (b.habitId != null || habit == null) return false;
+  static bool blockLinksToHabit(ScheduleBlock b, Habit? habit, [String? habitId]) {
+    final targetId = habitId ?? habit?.id;
+    if (targetId != null && b.habitId == targetId) return true;
+    if (habit == null) return false;
     final hName = habit.name.trim().toLowerCase();
     final bTitle = b.title.trim().toLowerCase();
     if (hName == bTitle) return true;
-    if (hName.contains('trabaj') && bTitle.contains('trabaj')) return true;
-    if (hName.contains('turno') && bTitle.contains('turno')) return true;
+    final isWorkHabit = hName.contains('trabaj') || hName.contains('turno');
+    final isWorkBlock = b.hasMonthlyHourTarget ||
+        bTitle.contains('trabaj') ||
+        bTitle.contains('turno');
+    if (isWorkHabit && isWorkBlock) return true;
     return false;
   }
+
+  bool _blockMatchesHabit(ScheduleBlock b, Habit? habit, String habitId) =>
+      blockLinksToHabit(b, habit, habitId);
 
   Habit? _findHabitForBlock(ScheduleBlock block, List<Habit> habits) {
     if (block.habitId != null) {
@@ -89,13 +96,8 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
           );
       if (exact != null) return exact;
     }
-    final bTitle = block.title.trim().toLowerCase();
     return habits.cast<Habit?>().firstWhere(
-          (h) =>
-              h != null &&
-              (h.name.trim().toLowerCase() == bTitle ||
-                  (h.name.toLowerCase().contains('trabaj') && bTitle.contains('trabaj')) ||
-                  (h.name.toLowerCase().contains('turno') && bTitle.contains('turno'))),
+          (h) => h != null && blockLinksToHabit(block, h, h.id),
           orElse: () => null,
         );
   }
@@ -175,24 +177,51 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
   }
 
   /// Alias explícito para marcar/desmarcar la ejecución de un turno/bloque en un día concreto.
-  Future<void> toggleShiftCompletion(String blockId, String dateIso) {
+  /// Acepta tanto un String ISO ('YYYY-MM-DD') como un DateTime.
+  Future<void> toggleShiftCompletion(String blockId, dynamic dateOrIso) {
+    final String dateIso = dateOrIso is DateTime
+        ? dateOrIso.toIso8601String().split('T').first
+        : dateOrIso.toString().split('T').first;
     return toggleDateForBlock(blockId, dateIso);
   }
 
   Future<void> toggleDateForBlock(String blockId, String dateIso) async {
-    ScheduleBlock? toggledBlock;
+    final targetBlock = state.cast<ScheduleBlock?>().firstWhere(
+          (b) => b?.id == blockId,
+          orElse: () => null,
+        );
+    if (targetBlock == null) return;
 
+    final habits = ref.read(habitsProvider);
+    final linkedHabit = _findHabitForBlock(targetBlock, habits);
+
+    final isDirectlyDone = targetBlock.completedDates.contains(dateIso);
+    final isHabitDoneWithoutOtherBlock = linkedHabit != null &&
+        linkedHabit.completedDates.contains(dateIso) &&
+        !state.any(
+          (other) =>
+              other.id != blockId &&
+              _blockMatchesHabit(other, linkedHabit, linkedHabit.id) &&
+              other.completedDates.contains(dateIso),
+        );
+    final isCurrentlyDone = isDirectlyDone || isHabitDoneWithoutOtherBlock;
+    final shouldBeCompleted = !isCurrentlyDone;
+
+    ScheduleBlock? toggledBlock;
     state = [
       for (final b in state)
         if (b.id == blockId) ...[
           (() {
-            final isDone = b.completedDates.contains(dateIso);
             // Marcar/desmarcar completado NUNCA modifica assignedDates.
-            final updated = b.copyWith(
-              completedDates: isDone
-                  ? (List<String>.from(b.completedDates)..remove(dateIso))
-                  : (List<String>.from(b.completedDates)..add(dateIso)),
-            );
+            final updatedDates = List<String>.from(b.completedDates);
+            if (shouldBeCompleted) {
+              if (!updatedDates.contains(dateIso)) {
+                updatedDates.add(dateIso);
+              }
+            } else {
+              updatedDates.removeWhere((d) => d == dateIso);
+            }
+            final updated = b.copyWith(completedDates: updatedDates);
             toggledBlock = updated;
             return updated;
           })()
@@ -201,21 +230,21 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
     ];
     await _persist();
 
-    if (toggledBlock != null) {
-      final habits = ref.read(habitsProvider);
-      final linkedHabit = _findHabitForBlock(toggledBlock!, habits);
-      if (linkedHabit != null) {
-        final newDates = Set<String>.from(linkedHabit.completedDates);
-        final anyBlockStillCompleted = state.any(
-          (b) => _blockMatchesHabit(b, linkedHabit, linkedHabit.id) && b.completedDates.contains(dateIso),
-        );
-        if (anyBlockStillCompleted) {
-          newDates.add(dateIso);
-        } else {
-          newDates.remove(dateIso);
-        }
-        await ref.read(habitsProvider.notifier).updateHabit(linkedHabit.copyWith(completedDates: newDates));
+    if (toggledBlock != null && linkedHabit != null) {
+      final newDates = Set<String>.from(linkedHabit.completedDates);
+      final anyBlockStillCompleted = state.any(
+        (b) =>
+            _blockMatchesHabit(b, linkedHabit, linkedHabit.id) &&
+            b.completedDates.contains(dateIso),
+      );
+      if (shouldBeCompleted || anyBlockStillCompleted) {
+        newDates.add(dateIso);
+      } else {
+        newDates.remove(dateIso);
       }
+      await ref
+          .read(habitsProvider.notifier)
+          .updateHabit(linkedHabit.copyWith(completedDates: newDates));
     }
   }
 
@@ -339,36 +368,120 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
 
   /// Asigna o desasigna un turno a una fecha ISO (YYYY-MM-DD) preservando otros turnos del mismo día
   Future<void> toggleShiftOnDate(String blockId, String dateIso) async {
-    state = [
-      for (final b in state)
-        if (b.id == blockId)
-          (() {
-            final isAssigned = b.assignedDates.contains(dateIso);
-            return b.copyWith(
-              assignedDates: isAssigned
-                  ? (List<String>.from(b.assignedDates)..remove(dateIso))
-                  : (List<String>.from(b.assignedDates)..add(dateIso)),
-              completedDates: isAssigned
-                  ? (List<String>.from(b.completedDates)..remove(dateIso))
-                  : b.completedDates,
-            );
-          })()
-        else
-          b,
-    ];
+    ScheduleBlock? affectedBlock;
+    bool wasRemoved = false;
+
+    final nextState = <ScheduleBlock>[];
+    for (final b in state) {
+      if (b.id != blockId) {
+        nextState.add(b);
+        continue;
+      }
+      affectedBlock = b;
+      final isAssigned = b.assignedDates.contains(dateIso);
+      final isCompletedOnly = !isAssigned && b.completedDates.contains(dateIso);
+      if (isAssigned || isCompletedOnly) {
+        wasRemoved = true;
+        final nextAssigned = List<String>.from(b.assignedDates)..remove(dateIso);
+        final nextCompleted = List<String>.from(b.completedDates)..remove(dateIso);
+        final nextByDate = Map<String, double>.from(b.extraHoursByDate);
+        final removedExtra = nextByDate.remove(dateIso) ?? 0.0;
+        final nextMonthly = Map<String, double>.from(b.monthlyExtraHours);
+        if (removedExtra > 0 && dateIso.length >= 7) {
+          final monthKey = dateIso.substring(0, 7);
+          final updatedMonthExtra = ((nextMonthly[monthKey] ?? 0.0) - removedExtra).clamp(0.0, 500.0);
+          nextMonthly[monthKey] = updatedMonthExtra;
+        }
+        // Si era un bloque puntual de un solo día y se ha quitado de ese día, se elimina limpiamente
+        if (b.isOneOffDayBlock && nextAssigned.isEmpty && nextCompleted.isEmpty) {
+          continue;
+        }
+        nextState.add(
+          b.copyWith(
+            assignedDates: nextAssigned,
+            completedDates: nextCompleted,
+            extraHoursByDate: nextByDate,
+            monthlyExtraHours: nextMonthly,
+          ),
+        );
+      } else {
+        nextState.add(
+          b.copyWith(
+            assignedDates: [...b.assignedDates, dateIso],
+          ),
+        );
+      }
+    }
+
+    state = nextState;
     await _persist();
+
+    if (wasRemoved && affectedBlock != null) {
+      final habits = ref.read(habitsProvider);
+      final linkedHabit = _findHabitForBlock(affectedBlock, habits);
+      if (linkedHabit != null && linkedHabit.completedDates.contains(dateIso)) {
+        final anyStillCompleted = state.any(
+          (b) =>
+              _blockMatchesHabit(b, linkedHabit, linkedHabit.id) &&
+              b.completedDates.contains(dateIso),
+        );
+        if (!anyStillCompleted) {
+          final newDates = Set<String>.from(linkedHabit.completedDates)..remove(dateIso);
+          await ref
+              .read(habitsProvider.notifier)
+              .updateHabit(linkedHabit.copyWith(completedDates: newDates));
+        }
+      }
+    }
   }
 
   /// Limpia cualquier turno asignado en una fecha concreta
   Future<void> clearShiftOnDate(String dateIso) async {
-    state = [
-      for (final b in state)
+    final affectedBlocks = state
+        .where((b) =>
+            b.assignedDates.contains(dateIso) || b.completedDates.contains(dateIso))
+        .toList();
+
+    final nextState = <ScheduleBlock>[];
+    for (final b in state) {
+      final nextAssigned = List<String>.from(b.assignedDates)..remove(dateIso);
+      final nextCompleted = List<String>.from(b.completedDates)..remove(dateIso);
+      final nextByDate = Map<String, double>.from(b.extraHoursByDate);
+      final removedExtra = nextByDate.remove(dateIso) ?? 0.0;
+      final nextMonthly = Map<String, double>.from(b.monthlyExtraHours);
+      if (removedExtra > 0 && dateIso.length >= 7) {
+        final monthKey = dateIso.substring(0, 7);
+        nextMonthly[monthKey] =
+            ((nextMonthly[monthKey] ?? 0.0) - removedExtra).clamp(0.0, 500.0);
+      }
+      if (b.isOneOffDayBlock && nextAssigned.isEmpty && nextCompleted.isEmpty) {
+        continue;
+      }
+      nextState.add(
         b.copyWith(
-          assignedDates: List<String>.from(b.assignedDates)..remove(dateIso),
-          completedDates: List<String>.from(b.completedDates)..remove(dateIso),
+          assignedDates: nextAssigned,
+          completedDates: nextCompleted,
+          extraHoursByDate: nextByDate,
+          monthlyExtraHours: nextMonthly,
         ),
-    ];
+      );
+    }
+
+    state = nextState;
     await _persist();
+
+    if (affectedBlocks.isNotEmpty) {
+      final habits = ref.read(habitsProvider);
+      for (final b in affectedBlocks) {
+        final linkedHabit = _findHabitForBlock(b, habits);
+        if (linkedHabit != null && linkedHabit.completedDates.contains(dateIso)) {
+          final newDates = Set<String>.from(linkedHabit.completedDates)..remove(dateIso);
+          await ref
+              .read(habitsProvider.notifier)
+              .updateHabit(linkedHabit.copyWith(completedDates: newDates));
+        }
+      }
+    }
   }
 
   /// Asigna un turno a múltiples fechas a la vez preservando otros turnos en esas fechas
@@ -385,8 +498,27 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
     await _persist();
   }
 
-  Future<void> addExtraHours(String blockId, double hours, [DateTime? targetMonth]) async {
-    final month = targetMonth ?? DateTime.now();
+  /// Registra o ajusta horas extra en un día concreto ('YYYY-MM-DD') y sincroniza el total mensual.
+  Future<void> addExtraHoursForDate(
+    String blockId,
+    String dateIso,
+    double hours, [
+    DateTime? targetMonth,
+  ]) {
+    final parsed = DateTime.tryParse(dateIso);
+    final month = targetMonth ?? parsed ?? DateTime.now();
+    return addExtraHours(blockId, hours, month, dateIso);
+  }
+
+  Future<void> addExtraHours(
+    String blockId,
+    double hours, [
+    DateTime? targetMonth,
+    String? dateIso,
+  ]) async {
+    final month = targetMonth ??
+        (dateIso != null ? DateTime.tryParse(dateIso) : null) ??
+        DateTime.now();
     final key = '${month.year}-${month.month.toString().padLeft(2, '0')}';
 
     state = [
@@ -394,11 +526,28 @@ class ScheduleNotifier extends Notifier<List<ScheduleBlock>> {
         if (b.id == blockId)
           (() {
             final currentMap = Map<String, double>.from(b.monthlyExtraHours);
-            final currentHours = currentMap[key] ?? (currentMap.isEmpty ? b.extraHours : 0.0);
-            final updatedHours = (currentHours + hours).clamp(0.0, 500.0);
+            final currentByDate = Map<String, double>.from(b.extraHoursByDate);
+
+            double effectiveDelta = hours;
+            if (dateIso != null) {
+              final currentDayHours = currentByDate[dateIso] ?? 0.0;
+              final updatedDayHours = (currentDayHours + hours).clamp(0.0, 24.0);
+              effectiveDelta = updatedDayHours - currentDayHours;
+              if (updatedDayHours <= 0.001) {
+                currentByDate.remove(dateIso);
+              } else {
+                currentByDate[dateIso] = updatedDayHours;
+              }
+            }
+
+            final currentHours =
+                currentMap[key] ?? (currentMap.isEmpty ? b.extraHours : 0.0);
+            final updatedHours = (currentHours + effectiveDelta).clamp(0.0, 500.0);
             currentMap[key] = updatedHours;
+
             return b.copyWith(
               monthlyExtraHours: currentMap,
+              extraHoursByDate: currentByDate,
               extraHours: updatedHours,
             );
           })()

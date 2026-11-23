@@ -102,23 +102,76 @@ class HabitNotifier extends Notifier<List<Habit>> {
     _syncNotifications();
   }
 
-  Future<void> toggleDay(String habitId, String dateIso) async {
+  /// Conmuta el estado de completado de un hábito en una fecha dada (acepta DateTime o String YYYY-MM-DD)
+  /// y sincroniza bidireccionalmente todos los ScheduleBlock vinculados.
+  Future<void> toggleHabitForDate(String habitId, dynamic dateOrIso) async {
+    final String dateIso = dateOrIso is DateTime
+        ? dateOrIso.toIso8601String().split('T').first
+        : dateOrIso.toString().split('T').first;
     final habitIndex = state.indexWhere((h) => h.id == habitId);
-    if (habitIndex == -1) return;
-    
+    if (habitIndex == -1) {
+      // Si el ID proviene de un grupo laboral sin hábito persistido, sincroniza los bloques directamente
+      try {
+        final blocks = ref.read(scheduleProvider);
+        final matchingIds = blocks
+            .where((b) => b.habitId == habitId || 'work_${b.title}' == habitId)
+            .map((b) => b.id)
+            .toList();
+        if (matchingIds.isNotEmpty) {
+          await ref
+              .read(scheduleProvider.notifier)
+              .clearCompletedDateForBlocks(matchingIds, dateIso);
+        }
+      } catch (_) {}
+      return;
+    }
+
     final habit = state[habitIndex];
+    List<dynamic> linkedBlocks = const [];
+    try {
+      final allBlocks = ref.read(scheduleProvider);
+      linkedBlocks = allBlocks
+          .where((b) => ScheduleNotifier.blockLinksToHabit(b, habit, habitId))
+          .toList();
+    } catch (_) {}
+
+    final isDoneInHabit = habit.completedDates.contains(dateIso);
+    final isDoneInBlocks =
+        linkedBlocks.any((b) => b.completedDates.contains(dateIso));
+    final isCurrentlyCompleted = isDoneInHabit || isDoneInBlocks;
+    final isAdding = !isCurrentlyCompleted;
+
     final newDates = Set<String>.from(habit.completedDates);
-    final isAdding = !newDates.contains(dateIso);
+    List<SubTask> updatedSubTasks = habit.subTasks;
     if (isAdding) {
       newDates.add(dateIso);
     } else {
       newDates.remove(dateIso);
+      if (habit.subTasks.isNotEmpty) {
+        updatedSubTasks = habit.subTasks.map((st) {
+          if (!st.completedDates.contains(dateIso)) return st;
+          final nextStDates = Set<String>.from(st.completedDates)..remove(dateIso);
+          return st.copyWith(completedDates: nextStDates);
+        }).toList();
+      }
     }
-    await updateHabit(habit.copyWith(completedDates: newDates));
+
+    await updateHabit(
+      habit.copyWith(
+        completedDates: newDates,
+        subTasks: updatedSubTasks,
+      ),
+    );
 
     try {
-      ref.read(scheduleProvider.notifier).syncDateWithHabit(habitId, dateIso, isAdding);
+      await ref
+          .read(scheduleProvider.notifier)
+          .syncDateWithHabit(habitId, dateIso, isAdding);
     } catch (_) {}
+  }
+
+  Future<void> toggleDay(String habitId, String dateIso) {
+    return toggleHabitForDate(habitId, dateIso);
   }
 
   Future<void> updateProgress(String habitId, String dateIso, int delta) async {

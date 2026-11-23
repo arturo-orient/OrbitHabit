@@ -74,22 +74,41 @@ class _DayDetailsSheetState extends ConsumerState<DayDetailsSheet> {
     final allBlocks = ref.watch(scheduleProvider);
     final dateIso = widget.date.toIso8601String().split('T').first;
 
-    // Hábitos activos para este día
+    // Hábitos activos para este día (o que tengan registro/turno en esta fecha)
     final activeHabits = allHabits.where((h) {
-      if (h.frequencyType == 0) {
+      final hasBlockOnDate = allBlocks.any(
+        (b) =>
+            ScheduleNotifier.blockLinksToHabit(b, h, h.id) &&
+            (b.completedDates.contains(dateIso) ||
+                b.assignedDates.contains(dateIso) ||
+                b.appliesToDate(widget.date)),
+      );
+      if (h.completedDates.contains(dateIso) || hasBlockOnDate) {
+        return true;
+      }
+      if (h.activeWeekdays.isNotEmpty) {
         return h.activeWeekdays.contains(widget.date.weekday);
       }
       return true;
     }).toList();
 
-    // Bloques/turnos que aplican a este día concreto del calendario
+    // Bloques/turnos que aplican o fueron registrados en este día concreto del calendario
     final activeBlocks = allBlocks.where((b) {
-      return b.appliesToDate(widget.date);
+      return b.appliesToDate(widget.date) ||
+          b.completedDates.contains(dateIso) ||
+          b.assignedDates.contains(dateIso);
     }).toList();
 
-    final completedHabitsCount = activeHabits
-        .where((h) => h.completedDates.contains(dateIso))
-        .length;
+    bool isHabitDoneOnDate(Habit h) {
+      if (h.completedDates.contains(dateIso)) return true;
+      return allBlocks.any(
+        (b) =>
+            ScheduleNotifier.blockLinksToHabit(b, h, h.id) &&
+            b.completedDates.contains(dateIso),
+      );
+    }
+
+    final completedHabitsCount = activeHabits.where(isHabitDoneOnDate).length;
     final totalHabits = activeHabits.length;
     final habitProgress = totalHabits > 0 ? (completedHabitsCount / totalHabits) : 0.0;
 
@@ -253,7 +272,7 @@ class _DayDetailsSheetState extends ConsumerState<DayDetailsSheet> {
                 children: [
                   if (activeHabits.isNotEmpty) ...[
                     ...activeHabits.map((habit) {
-                      final isCompleted = habit.completedDates.contains(dateIso);
+                      final isCompleted = isHabitDoneOnDate(habit);
                       return _buildHabitItem(
                         context: context,
                         habit: habit,
@@ -278,16 +297,25 @@ class _DayDetailsSheetState extends ConsumerState<DayDetailsSheet> {
                     ),
                     const SizedBox(height: 8),
                     ...activeBlocks.map((block) {
-                      Habit? linkedHabit;
-                      if (block.habitId != null) {
-                        linkedHabit = allHabits.cast<Habit?>().firstWhere(
-                              (h) => h?.id == block.habitId,
-                              orElse: () => null,
-                            );
-                      }
-                      final isCompleted = block
-                          .getEffectiveCompletedDates(linkedHabit)
-                          .contains(dateIso);
+                      final linkedHabit = allHabits.cast<Habit?>().firstWhere(
+                            (h) =>
+                                h != null &&
+                                ScheduleNotifier.blockLinksToHabit(block, h, h.id),
+                            orElse: () => null,
+                          );
+                      final isDirectlyDone =
+                          block.completedDates.contains(dateIso);
+                      final isHabitDoneWithoutSibling = linkedHabit != null &&
+                          linkedHabit.completedDates.contains(dateIso) &&
+                          !allBlocks.any(
+                            (other) =>
+                                other.id != block.id &&
+                                ScheduleNotifier.blockLinksToHabit(
+                                    other, linkedHabit, linkedHabit.id) &&
+                                other.completedDates.contains(dateIso),
+                          );
+                      final isCompleted =
+                          isDirectlyDone || isHabitDoneWithoutSibling;
 
                       return _buildBlockItem(
                         context: context,
@@ -326,7 +354,7 @@ class _DayDetailsSheetState extends ConsumerState<DayDetailsSheet> {
           } else {
             HapticFeedback.lightImpact();
           }
-          ref.read(habitsProvider.notifier).toggleDay(habit.id, dateIso);
+          ref.read(habitsProvider.notifier).toggleHabitForDate(habit.id, widget.date);
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

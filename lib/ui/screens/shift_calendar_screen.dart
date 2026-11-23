@@ -443,27 +443,565 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
     List<Habit> habits,
   ) {
     if (s.completedDates.contains(dateIso)) return true;
-    if (s.habitId != null) {
-      final linked = habits.cast<Habit?>().firstWhere(
-            (h) => h?.id == s.habitId,
-            orElse: () => null,
-          );
-      if (linked != null && linked.completedDates.contains(dateIso)) {
-        return true;
-      }
-    } else {
-      final linkedByName = habits.cast<Habit?>().firstWhere(
-            (h) => h != null && h.name.trim().toLowerCase() == s.title.trim().toLowerCase(),
-            orElse: () => null,
-          );
-      if (linkedByName != null && linkedByName.completedDates.contains(dateIso)) {
-        return true;
-      }
-    }
-    if (s.assignedDates.contains(dateIso) && dateIso.compareTo(todayIso) < 0) {
+    final linked = habits.cast<Habit?>().firstWhere(
+          (h) => h != null && ScheduleNotifier.blockLinksToHabit(s, h, h.id),
+          orElse: () => null,
+        );
+    if (linked != null && linked.completedDates.contains(dateIso)) {
       return true;
     }
     return false;
+  }
+
+  Future<void> _showOneOffScheduleDialog(
+    BuildContext context,
+    String dateIso,
+    int day,
+    bool isDark,
+  ) async {
+    HapticFeedback.selectionClick();
+    final habits = ref.read(habitsProvider);
+    final blocks = ref.read(scheduleProvider);
+    final monthName = _monthNames[_selectedMonth.month - 1];
+
+    // Buscar hábito de trabajo principal o bloque laboral para heredar color y meta mensual
+    final workHabit = habits.cast<Habit?>().firstWhere(
+          (h) =>
+              h != null &&
+              (h.name.toLowerCase().contains('trabaj') ||
+                  h.name.toLowerCase().contains('turno')),
+          orElse: () => null,
+        );
+    final workBlock = blocks.cast<ScheduleBlock?>().firstWhere(
+          (b) => b != null && b.hasMonthlyHourTarget,
+          orElse: () => null,
+        );
+    final defaultColor = workHabit?.color ??
+        workBlock?.color ??
+        const Color(0xFFFBBF24);
+
+    final titleController = TextEditingController(text: 'Turno Especial');
+    TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
+    TimeOfDay endTime = const TimeOfDay(hour: 14, minute: 0);
+    Color selectedColor = defaultColor;
+    bool countTowardsMonthlyWork = true;
+
+    const paletteColors = <Color>[
+      Color(0xFFFBBF24),
+      Color(0xFF84A59D),
+      Color(0xFF9EA1D4),
+      Color(0xFF22C55E),
+      Color(0xFFF4978E),
+      Color(0xFF38BDF8),
+    ];
+
+    final created = await showDialog<ScheduleBlock>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final startM = startTime.hour * 60 + startTime.minute;
+            final endM = endTime.hour * 60 + endTime.minute;
+            final isOvernight = endM <= startM;
+            final durationM =
+                isOvernight ? (1440 - startM) + endM : endM - startM;
+            final durH = durationM ~/ 60;
+            final durMin = durationM % 60;
+            final durationLabel = durH > 0 && durMin > 0
+                ? '${durH}h ${durMin}m'
+                : (durH > 0 ? '${durH}h' : '${durMin}m');
+
+            return Dialog(
+              backgroundColor:
+                  isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: BorderSide(
+                  color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
+                  width: 1.0,
+                ),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'HORARIO PUNTUAL · DÍA $day DE ${monthName.toUpperCase()}',
+                                style: AppTheme.monoStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: selectedColor,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Horario específico para este día',
+                                style: AppTheme.displayStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark
+                                      ? AppTheme.obsidianTextPrimary
+                                      : AppTheme.boneTextPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(dialogCtx),
+                            icon: Icon(
+                              Icons.close_rounded,
+                              size: 20,
+                              color: isDark
+                                  ? AppTheme.obsidianTextMuted
+                                  : AppTheme.boneTextMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'TÍTULO DEL HORARIO',
+                        style: AppTheme.monoStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: isDark
+                              ? AppTheme.obsidianTextSecondary
+                              : AppTheme.boneTextSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: titleController,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: isDark
+                              ? AppTheme.obsidianTextPrimary
+                              : AppTheme.boneTextPrimary,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: 'Ej. Turno Especial, Sábado Mañana...',
+                          filled: true,
+                          fillColor: isDark
+                              ? AppTheme.obsidianSurfaceElevated
+                              : AppTheme.boneSurfaceElevated,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? AppTheme.obsidianBorder
+                                  : AppTheme.boneBorder,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'HORA INICIO Y FIN (CON MINUTOS EXACTOS)',
+                        style: AppTheme.monoStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: isDark
+                              ? AppTheme.obsidianTextSecondary
+                              : AppTheme.boneTextSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () async {
+                                final picked = await showTimePicker(
+                                  context: context,
+                                  initialTime: startTime,
+                                  builder: (ctx, child) => MediaQuery(
+                                    data: MediaQuery.of(ctx)
+                                        .copyWith(alwaysUse24HourFormat: true),
+                                    child: child ?? const SizedBox(),
+                                  ),
+                                );
+                                if (picked != null) {
+                                  setDialogState(() => startTime = picked);
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? AppTheme.obsidianSurfaceElevated
+                                      : AppTheme.boneSurfaceElevated,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: isDark
+                                        ? AppTheme.obsidianBorder
+                                        : AppTheme.boneBorder,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Inicio',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        color: isDark
+                                            ? AppTheme.obsidianTextMuted
+                                            : AppTheme.boneTextMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}',
+                                      style: AppTheme.monoStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w800,
+                                        color: isDark
+                                            ? AppTheme.obsidianTextPrimary
+                                            : AppTheme.boneTextPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [0, 15, 30, 45].map((m) {
+                                        final sel = startTime.minute == m;
+                                        return GestureDetector(
+                                          onTap: () {
+                                            HapticFeedback.selectionClick();
+                                            setDialogState(() {
+                                              startTime = TimeOfDay(
+                                                hour: startTime.hour,
+                                                minute: m,
+                                              );
+                                            });
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 3.5,
+                                              vertical: 1.5,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: sel
+                                                  ? selectedColor.withValues(
+                                                      alpha: 0.22)
+                                                  : Colors.transparent,
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color: sel
+                                                    ? selectedColor
+                                                    : (isDark
+                                                        ? AppTheme.obsidianBorder
+                                                        : AppTheme.boneBorder),
+                                                width: 0.8,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              ':${m.toString().padLeft(2, '0')}',
+                                              style: AppTheme.monoStyle(
+                                                fontSize: 8.5,
+                                                fontWeight: sel
+                                                    ? FontWeight.w800
+                                                    : FontWeight.w600,
+                                                color: sel
+                                                    ? selectedColor
+                                                    : (isDark
+                                                        ? AppTheme.obsidianTextMuted
+                                                        : AppTheme.boneTextMuted),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 14,
+                            color: isDark
+                                ? AppTheme.obsidianTextMuted
+                                : AppTheme.boneTextMuted,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () async {
+                                final picked = await showTimePicker(
+                                  context: context,
+                                  initialTime: endTime,
+                                  builder: (ctx, child) => MediaQuery(
+                                    data: MediaQuery.of(ctx)
+                                        .copyWith(alwaysUse24HourFormat: true),
+                                    child: child ?? const SizedBox(),
+                                  ),
+                                );
+                                if (picked != null) {
+                                  setDialogState(() => endTime = picked);
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? AppTheme.obsidianSurfaceElevated
+                                      : AppTheme.boneSurfaceElevated,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: isDark
+                                        ? AppTheme.obsidianBorder
+                                        : AppTheme.boneBorder,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Fin',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        color: isDark
+                                            ? AppTheme.obsidianTextMuted
+                                            : AppTheme.boneTextMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}',
+                                      style: AppTheme.monoStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w800,
+                                        color: isDark
+                                            ? AppTheme.obsidianTextPrimary
+                                            : AppTheme.boneTextPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [0, 15, 30, 45].map((m) {
+                                        final sel = endTime.minute == m;
+                                        return GestureDetector(
+                                          onTap: () {
+                                            HapticFeedback.selectionClick();
+                                            setDialogState(() {
+                                              endTime = TimeOfDay(
+                                                hour: endTime.hour,
+                                                minute: m,
+                                              );
+                                            });
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 3.5,
+                                              vertical: 1.5,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: sel
+                                                  ? selectedColor.withValues(
+                                                      alpha: 0.22)
+                                                  : Colors.transparent,
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color: sel
+                                                    ? selectedColor
+                                                    : (isDark
+                                                        ? AppTheme.obsidianBorder
+                                                        : AppTheme.boneBorder),
+                                                width: 0.8,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              ':${m.toString().padLeft(2, '0')}',
+                                              style: AppTheme.monoStyle(
+                                                fontSize: 8.5,
+                                                fontWeight: sel
+                                                    ? FontWeight.w800
+                                                    : FontWeight.w600,
+                                                color: sel
+                                                    ? selectedColor
+                                                    : (isDark
+                                                        ? AppTheme.obsidianTextMuted
+                                                        : AppTheme.boneTextMuted),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: selectedColor.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'Duración: $durationLabel${isOvernight ? " · 🌙 Nocturno" : ""}',
+                          style: AppTheme.monoStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: selectedColor,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          for (final c in paletteColors)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: GestureDetector(
+                                onTap: () {
+                                  HapticFeedback.selectionClick();
+                                  setDialogState(() => selectedColor = c);
+                                },
+                                child: Container(
+                                  width: 24,
+                                  height: 24,
+                                  decoration: BoxDecoration(
+                                    color: c,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: selectedColor.toARGB32() ==
+                                              c.toARGB32()
+                                          ? (isDark
+                                              ? Colors.white
+                                              : Colors.black)
+                                          : Colors.transparent,
+                                      width: 2.0,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        activeThumbColor: selectedColor,
+                        title: Text(
+                          'Sumar a horas de trabajo mensual',
+                          style: AppTheme.bodyStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: isDark
+                                ? AppTheme.obsidianTextPrimary
+                                : AppTheme.boneTextPrimary,
+                          ),
+                        ),
+                        value: countTowardsMonthlyWork,
+                        onChanged: (val) => setDialogState(
+                          () => countTowardsMonthlyWork = val,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(dialogCtx),
+                              child: const Text('Cancelar'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                final rawTitle = titleController.text.trim();
+                                final finalTitle = rawTitle.isEmpty
+                                    ? 'Turno Especial'
+                                    : rawTitle;
+                                final linkedHabitId = countTowardsMonthlyWork
+                                    ? (workHabit?.id ?? workBlock?.habitId)
+                                    : null;
+                                final targetHours =
+                                    workBlock?.monthlyTargetHours ?? 120;
+                                Navigator.pop(
+                                  dialogCtx,
+                                  ScheduleBlock(
+                                    id: 'oneoff_${DateTime.now().millisecondsSinceEpoch}',
+                                    title: finalTitle,
+                                    startHour: startTime.hour,
+                                    startMinute: startTime.minute,
+                                    endHour: endTime.hour,
+                                    endMinute: endTime.minute,
+                                    colorValue: selectedColor.toARGB32(),
+                                    habitId: linkedHabitId,
+                                    daysOfWeek: const [],
+                                    hasMonthlyHourTarget:
+                                        countTowardsMonthlyWork,
+                                    monthlyTargetHours: targetHours,
+                                    assignedDates: [dateIso],
+                                    completedDates: const [],
+                                    isOneOffDayBlock: true,
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: selectedColor,
+                                foregroundColor: const Color(0xFF0A0A0A),
+                                elevation: 0,
+                              ),
+                              child: const Text(
+                                'Guardar día',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    titleController.dispose();
+    if (created != null && mounted) {
+      HapticFeedback.mediumImpact();
+      await ref.read(scheduleProvider.notifier).addBlock(created);
+    }
   }
 
   void _showDayTasksSheet(
@@ -475,6 +1013,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
   ) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: isDark ? AppTheme.obsidianSurface : AppTheme.boneSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -486,233 +1025,512 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
             final liveHabits = ref.watch(habitsProvider);
             final todayIso = DateTime.now().toIso8601String().split('T').first;
             final dayShifts = _getShiftsForDate(liveBlocks, dateIso);
+            final paletteShifts =
+                liveBlocks.where((b) => !b.isOneOffDayBlock).toList();
             final monthName = _monthNames[_selectedMonth.month - 1];
 
             return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 36,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
-                          borderRadius: BorderRadius.circular(2),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.84,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 36,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? AppTheme.obsidianBorder
+                                : AppTheme.boneBorder,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'DÍA $day DE $monthName'.toUpperCase(),
-                              style: AppTheme.monoStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: AppTheme.dynamicAccent(isDark),
-                                letterSpacing: 1.0,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${dayShifts.length} ${dayShifts.length == 1 ? "tarea asignada" : "tareas asignadas"}',
-                              style: AppTheme.displayStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (dayShifts.isNotEmpty)
-                          TextButton.icon(
-                            onPressed: () {
-                              HapticFeedback.mediumImpact();
-                              ref.read(scheduleProvider.notifier).clearShiftOnDate(dateIso);
-                              Navigator.of(ctx).pop();
-                            },
-                            icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: Colors.redAccent),
-                            label: Text(
-                              'Borrar todo',
-                              style: AppTheme.monoStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.redAccent,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Divider(
-                      height: 1,
-                      color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
-                    ),
-                    const SizedBox(height: 10),
-                    if (dayShifts.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 20),
-                        child: Center(
-                          child: Text(
-                            'No quedan tareas asignadas a este día.',
-                            style: AppTheme.bodyStyle(
-                              fontSize: 13,
-                              color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
-                            ),
-                          ),
-                        ),
-                      )
-                    else
-                      Flexible(
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: dayShifts.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 8),
-                          itemBuilder: (context, index) {
-                            final s = dayShifts[index];
-                            final shiftColor = s.color;
-                            final isDone = _isShiftCompletedOnDate(s, dateIso, todayIso, liveHabits);
-
-                            return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: shiftColor.withValues(alpha: isDone ? (isDark ? 0.16 : 0.12) : (isDark ? 0.06 : 0.04)),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: shiftColor.withValues(alpha: isDone ? 0.65 : 0.25),
-                                  width: isDone ? 1.3 : 1.0,
+                      const SizedBox(height: 14),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'DÍA $day DE $monthName'.toUpperCase(),
+                                style: AppTheme.monoStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppTheme.dynamicAccent(isDark),
+                                  letterSpacing: 1.0,
                                 ),
                               ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Container(
-                                        width: 10,
-                                        height: 10,
-                                        decoration: BoxDecoration(
-                                          color: isDone ? shiftColor : shiftColor.withValues(alpha: 0.35),
-                                          shape: BoxShape.circle,
-                                        ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${dayShifts.length} ${dayShifts.length == 1 ? "horario asignado" : "horarios asignados"}',
+                                style: AppTheme.displayStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark
+                                      ? AppTheme.obsidianTextPrimary
+                                      : AppTheme.boneTextPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (dayShifts.isNotEmpty)
+                            TextButton.icon(
+                              onPressed: () {
+                                HapticFeedback.mediumImpact();
+                                ref
+                                    .read(scheduleProvider.notifier)
+                                    .clearShiftOnDate(dateIso);
+                                Navigator.of(ctx).pop();
+                              },
+                              icon: const Icon(
+                                Icons.delete_sweep_rounded,
+                                size: 16,
+                                color: Colors.redAccent,
+                              ),
+                              label: Text(
+                                'Borrar todo',
+                                style: AppTheme.monoStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.redAccent,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // OPCIÓN 1: Asignar un turno existente de la paleta
+                      if (paletteShifts.isNotEmpty) ...[
+                        Text(
+                          '1. ASIGNAR TURNO EXISTENTE',
+                          style: AppTheme.monoStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.7,
+                            color: isDark
+                                ? AppTheme.obsidianTextSecondary
+                                : AppTheme.boneTextSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: paletteShifts.map((p) {
+                            final isAssigned =
+                                p.assignedDates.contains(dateIso) ||
+                                    p.completedDates.contains(dateIso);
+                            return GestureDetector(
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                ref
+                                    .read(scheduleProvider.notifier)
+                                    .toggleShiftOnDate(p.id, dateIso);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isAssigned
+                                      ? p.color.withValues(alpha: 0.22)
+                                      : (isDark
+                                          ? AppTheme.obsidianSurfaceElevated
+                                          : AppTheme.boneSurfaceElevated),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: isAssigned
+                                        ? p.color
+                                        : (isDark
+                                            ? AppTheme.obsidianBorder
+                                            : AppTheme.boneBorder),
+                                    width: isAssigned ? 1.4 : 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isAssigned
+                                          ? Icons.check_circle_rounded
+                                          : Icons.add_circle_outline_rounded,
+                                      size: 13,
+                                      color: p.color,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      '${p.title} (${p.formattedTimeRange})',
+                                      style: AppTheme.monoStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: isAssigned
+                                            ? FontWeight.w800
+                                            : FontWeight.w600,
+                                        color: isDark
+                                            ? AppTheme.obsidianTextPrimary
+                                            : AppTheme.boneTextPrimary,
                                       ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              s.title,
-                                              style: AppTheme.displayStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w700,
-                                                color: isDark ? AppTheme.obsidianTextPrimary : AppTheme.boneTextPrimary,
-                                              ),
-                                            ),
-                                            Text(
-                                              '${s.formattedTimeRange} · ${s.formattedDuration}',
-                                              style: AppTheme.monoStyle(
-                                                fontSize: 11,
-                                                color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      GestureDetector(
-                                        onTap: () {
-                                          HapticFeedback.mediumImpact();
-                                          if (!isDone) {
-                                            SoundService().playCheck();
-                                          }
-                                          ref.read(scheduleProvider.notifier).toggleDateForBlock(s.id, dateIso);
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+
+                      // OPCIÓN 2: Crear horario puntual solo para este día
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _showOneOffScheduleDialog(
+                            context,
+                            dateIso,
+                            day,
+                            isDark,
+                          ),
+                          icon: Icon(
+                            Icons.more_time_rounded,
+                            size: 16,
+                            color: AppTheme.dynamicAccent(isDark),
+                          ),
+                          label: Text(
+                            '[ + Horario específico solo para este día ]',
+                            style: AppTheme.monoStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.dynamicAccent(isDark),
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            side: BorderSide(
+                              color: AppTheme.dynamicAccent(isDark)
+                                  .withValues(alpha: 0.55),
+                              width: 1.1,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Divider(
+                        height: 1,
+                        color: isDark
+                            ? AppTheme.obsidianBorder
+                            : AppTheme.boneBorder,
+                      ),
+                      const SizedBox(height: 10),
+                      if (dayShifts.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Center(
+                            child: Text(
+                              'No hay turnos asignados a este día. Elige uno arriba o crea un horario puntual.',
+                              textAlign: TextAlign.center,
+                              style: AppTheme.bodyStyle(
+                                fontSize: 12.5,
+                                color: isDark
+                                    ? AppTheme.obsidianTextMuted
+                                    : AppTheme.boneTextMuted,
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        Flexible(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: dayShifts.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, index) {
+                              final s = dayShifts[index];
+                              final shiftColor = s.color;
+                              final isDone = _isShiftCompletedOnDate(
+                                s,
+                                dateIso,
+                                todayIso,
+                                liveHabits,
+                              );
+                              final dayExtra = s.getExtraHoursForDate(dateIso);
+                              final monthExtra =
+                                  s.getMonthlyExtraHours(_selectedMonth);
+
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: shiftColor.withValues(
+                                    alpha: isDone
+                                        ? (isDark ? 0.16 : 0.12)
+                                        : (isDark ? 0.06 : 0.04),
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: shiftColor.withValues(
+                                      alpha: isDone ? 0.65 : 0.25,
+                                    ),
+                                    width: isDone ? 1.3 : 1.0,
+                                  ),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 10,
+                                          height: 10,
                                           decoration: BoxDecoration(
                                             color: isDone
-                                                ? shiftColor.withValues(alpha: 0.22)
-                                                : (isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.05)),
-                                            borderRadius: AppTheme.radiusXs,
-                                            border: Border.all(
-                                              color: isDone ? shiftColor : (isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder),
-                                              width: AppTheme.borderPrecision,
-                                            ),
+                                                ? shiftColor
+                                                : shiftColor.withValues(
+                                                    alpha: 0.35),
+                                            shape: BoxShape.circle,
                                           ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
-                                              Icon(
-                                                isDone ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-                                                size: 12,
-                                                color: isDone ? shiftColor : (isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted),
+                                              Row(
+                                                children: [
+                                                  Flexible(
+                                                    child: Text(
+                                                      s.title,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style:
+                                                          AppTheme.displayStyle(
+                                                        fontSize: 14,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: isDark
+                                                            ? AppTheme
+                                                                .obsidianTextPrimary
+                                                            : AppTheme
+                                                                .boneTextPrimary,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  if (s.isOneOffDayBlock) ...[
+                                                    const SizedBox(width: 6),
+                                                    Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                        horizontal: 5,
+                                                        vertical: 1.5,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        color: shiftColor
+                                                            .withValues(
+                                                                alpha: 0.18),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(4),
+                                                      ),
+                                                      child: Text(
+                                                        'PUNTUAL',
+                                                        style:
+                                                            AppTheme.monoStyle(
+                                                          fontSize: 8.5,
+                                                          fontWeight:
+                                                              FontWeight.w800,
+                                                          color: shiftColor,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
                                               ),
-                                              const SizedBox(width: 5),
                                               Text(
-                                                isDone ? 'Completado' : 'Pendiente',
+                                                '${s.formattedTimeRange} · ${s.formattedDuration}',
                                                 style: AppTheme.monoStyle(
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: isDone ? shiftColor : (isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary),
+                                                  fontSize: 11,
+                                                  color: isDark
+                                                      ? AppTheme
+                                                          .obsidianTextSecondary
+                                                      : AppTheme
+                                                          .boneTextSecondary,
                                                 ),
                                               ),
                                             ],
                                           ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      IconButton(
-                                        icon: const Icon(Icons.close_rounded, size: 18),
-                                        tooltip: 'Quitar de este día',
-                                        onPressed: () {
-                                          HapticFeedback.selectionClick();
-                                          ref.read(scheduleProvider.notifier).toggleShiftOnDate(s.id, dateIso);
-                                          if (dayShifts.length <= 1) {
-                                            Navigator.of(ctx).pop();
-                                          }
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                  if (s.hasMonthlyHourTarget) ...[
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        Text(
-                                          'Extra mes: ${s.getMonthlyExtraHours(_selectedMonth).toStringAsFixed(0)}h',
-                                          style: AppTheme.monoStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w600,
-                                            color: isDark ? AppTheme.obsidianTextSecondary : AppTheme.boneTextSecondary,
+                                        GestureDetector(
+                                          onTap: () {
+                                            HapticFeedback.mediumImpact();
+                                            if (!isDone) {
+                                              SoundService().playCheck();
+                                            }
+                                            ref
+                                                .read(scheduleProvider.notifier)
+                                                .toggleDateForBlock(
+                                                    s.id, dateIso);
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 9,
+                                              vertical: 5,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: isDone
+                                                  ? shiftColor.withValues(
+                                                      alpha: 0.22)
+                                                  : (isDark
+                                                      ? Colors.white.withValues(
+                                                          alpha: 0.06)
+                                                      : Colors.black.withValues(
+                                                          alpha: 0.05)),
+                                              borderRadius: AppTheme.radiusXs,
+                                              border: Border.all(
+                                                color: isDone
+                                                    ? shiftColor
+                                                    : (isDark
+                                                        ? AppTheme.obsidianBorder
+                                                        : AppTheme.boneBorder),
+                                                width: AppTheme.borderPrecision,
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  isDone
+                                                      ? Icons
+                                                          .check_circle_rounded
+                                                      : Icons
+                                                          .radio_button_unchecked_rounded,
+                                                  size: 12,
+                                                  color: isDone
+                                                      ? shiftColor
+                                                      : (isDark
+                                                          ? AppTheme
+                                                              .obsidianTextMuted
+                                                          : AppTheme
+                                                              .boneTextMuted),
+                                                ),
+                                                const SizedBox(width: 5),
+                                                Text(
+                                                  isDone
+                                                      ? 'Completado'
+                                                      : 'Pendiente',
+                                                  style: AppTheme.monoStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: isDone
+                                                        ? shiftColor
+                                                        : (isDark
+                                                            ? AppTheme
+                                                                .obsidianTextSecondary
+                                                            : AppTheme
+                                                                .boneTextSecondary),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         ),
-                                        const Spacer(),
-                                        _buildSheetExtraHourChip(s.id, -1.0, '-1h', isDark),
                                         const SizedBox(width: 4),
-                                        _buildSheetExtraHourChip(s.id, 1.0, '+1h', isDark),
-                                        const SizedBox(width: 4),
-                                        _buildSheetExtraHourChip(s.id, 2.0, '+2h', isDark),
-                                        const SizedBox(width: 4),
-                                        _buildSheetExtraHourChip(s.id, 4.0, '+4h', isDark),
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.close_rounded,
+                                            size: 18,
+                                          ),
+                                          tooltip: 'Quitar de este día',
+                                          onPressed: () {
+                                            HapticFeedback.selectionClick();
+                                            ref
+                                                .read(scheduleProvider.notifier)
+                                                .toggleShiftOnDate(
+                                                    s.id, dateIso);
+                                          },
+                                        ),
                                       ],
                                     ),
+                                    if (s.hasMonthlyHourTarget) ...[
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Text(
+                                            'Extra día: +${ScheduleBlock.formatHours(dayExtra)} · Mes: ${ScheduleBlock.formatHours(monthExtra)}',
+                                            style: AppTheme.monoStyle(
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: dayExtra > 0
+                                                  ? const Color(0xFFF59E0B)
+                                                  : (isDark
+                                                      ? AppTheme
+                                                          .obsidianTextSecondary
+                                                      : AppTheme
+                                                          .boneTextSecondary),
+                                            ),
+                                          ),
+                                          const Spacer(),
+                                          _buildSheetExtraHourChip(
+                                            s.id,
+                                            dateIso,
+                                            -1.0,
+                                            '-1h',
+                                            isDark,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          _buildSheetExtraHourChip(
+                                            s.id,
+                                            dateIso,
+                                            0.5,
+                                            '+0.5h',
+                                            isDark,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          _buildSheetExtraHourChip(
+                                            s.id,
+                                            dateIso,
+                                            1.0,
+                                            '+1h',
+                                            isDark,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          _buildSheetExtraHourChip(
+                                            s.id,
+                                            dateIso,
+                                            2.0,
+                                            '+2h',
+                                            isDark,
+                                          ),
+                                        ],
+                                      ),
+                                    ],
                                   ],
-                                ],
-                              ),
-                            );
-                          },
+                                ),
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );
@@ -722,16 +1540,26 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
     );
   }
 
-  Widget _buildSheetExtraHourChip(String blockId, double delta, String label, bool isDark) {
+  Widget _buildSheetExtraHourChip(
+    String blockId,
+    String dateIso,
+    double delta,
+    String label,
+    bool isDark,
+  ) {
     return GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick();
-        ref.read(scheduleProvider.notifier).addExtraHours(blockId, delta, _selectedMonth);
+        ref
+            .read(scheduleProvider.notifier)
+            .addExtraHoursForDate(blockId, dateIso, delta, _selectedMonth);
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 6.5, vertical: 3),
         decoration: BoxDecoration(
-          color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.black.withValues(alpha: 0.06),
           borderRadius: AppTheme.radiusXs,
           border: Border.all(
             color: isDark ? AppTheme.obsidianBorder : AppTheme.boneBorder,
@@ -741,9 +1569,11 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
         child: Text(
           label,
           style: AppTheme.monoStyle(
-            fontSize: 10,
+            fontSize: 9.5,
             fontWeight: FontWeight.w700,
-            color: delta > 0 ? (isDark ? Colors.white : Colors.black87) : Colors.redAccent,
+            color: delta > 0
+                ? (isDark ? Colors.white : Colors.black87)
+                : Colors.redAccent,
           ),
         ),
       ),
@@ -821,9 +1651,10 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
     final now = DateTime.now();
     final todayIso = now.toIso8601String().split('T').first;
 
-    // Si no hay ningún turno activo seleccionado, preseleccionamos el primero si existe
-    if (_activeShiftId == null && !_isEraseMode && blocks.isNotEmpty) {
-      _activeShiftId = blocks.first.id;
+    // Bloques fijos de la paleta (excluyendo horarios puntuales de un solo día)
+    final paletteBlocks = blocks.where((b) => !b.isOneOffDayBlock).toList();
+    if (_activeShiftId != null && !paletteBlocks.any((b) => b.id == _activeShiftId)) {
+      _activeShiftId = null;
     }
 
     final daysInMonth = DateUtils.getDaysInMonth(_selectedMonth.year, _selectedMonth.month);
@@ -989,7 +1820,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Elige un horario y toca los días:',
+                        'Toca un día para opciones/horario puntual o elige un pincel para pintar:',
                         style: AppTheme.bodyStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
@@ -1003,8 +1834,8 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                   physics: const BouncingScrollPhysics(),
                   child: Row(
                     children: [
-                      // Opciones de turnos existentes
-                      ...blocks.map((block) {
+                      // Opciones de turnos existentes (sin bloques puntuales de 1 solo día)
+                      ...paletteBlocks.map((block) {
                         final isSelected = !_isEraseMode && _activeShiftId == block.id;
                         final shiftColor = block.color;
 
@@ -1015,7 +1846,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                               HapticFeedback.selectionClick();
                               setState(() {
                                 _isEraseMode = false;
-                                _activeShiftId = block.id;
+                                _activeShiftId = isSelected ? null : block.id;
                               });
                             },
                             onLongPress: () => _confirmDeleteShift(block),
@@ -1260,6 +2091,10 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                               assignedShifts.every(
                                 (s) => _isShiftCompletedOnDate(s, dateIso, todayIso, habits),
                               );
+                          double dayExtraHours = 0.0;
+                          for (final b in blocks) {
+                            dayExtraHours += b.getExtraHoursForDate(dateIso);
+                          }
 
                           return GestureDetector(
                             onTap: () {
@@ -1268,14 +2103,14 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                 ref.read(scheduleProvider.notifier).clearShiftOnDate(dateIso);
                               } else if (_activeShiftId != null) {
                                 ref.read(scheduleProvider.notifier).toggleShiftOnDate(_activeShiftId!, dateIso);
+                              } else {
+                                _showDayTasksSheet(context, dateIso, day, assignedShifts, isDark);
                               }
                             },
-                            onLongPress: hasShifts
-                                ? () {
-                                    HapticFeedback.mediumImpact();
-                                    _showDayTasksSheet(context, dateIso, day, assignedShifts, isDark);
-                                  }
-                                : null,
+                            onLongPress: () {
+                              HapticFeedback.mediumImpact();
+                              _showDayTasksSheet(context, dateIso, day, assignedShifts, isDark);
+                            },
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 140),
                               decoration: BoxDecoration(
@@ -1311,7 +2146,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  // Fila superior: Número de día + Indicador de estado (Completado vs Pendiente)
+                                  // Fila superior: Número de día + Badge de Horas Extra + Indicador de estado
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
@@ -1333,7 +2168,36 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                                                       : AppTheme.boneTextPrimary)),
                                         ),
                                       ),
-                                      if (!hasShifts)
+                                      if (dayExtraHours > 0)
+                                        Flexible(
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 2.5,
+                                              vertical: 0.5,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFF59E0B),
+                                              borderRadius:
+                                                  BorderRadius.circular(3.0),
+                                              border: Border.all(
+                                                color: const Color(0xFF0A0A0A)
+                                                    .withValues(alpha: 0.45),
+                                                width: 0.6,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              '+${ScheduleBlock.formatHours(dayExtraHours)}',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: AppTheme.monoStyle(
+                                                fontSize: 7.0,
+                                                fontWeight: FontWeight.w900,
+                                                color: const Color(0xFF0A0A0A),
+                                              ),
+                                            ),
+                                          ),
+                                        )
+                                      else if (!hasShifts)
                                         const SizedBox.shrink()
                                       else if (!isMulti)
                                         isDayCompleted
@@ -1493,8 +2357,11 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                       ),
                       const SizedBox(height: 10),
                       // Leyenda de estados (Completado vs Pendiente por completar)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 12,
+                        runSpacing: 6,
                         children: [
                           Row(
                             mainAxisSize: MainAxisSize.min,
@@ -1547,7 +2414,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                             ],
                           ),
                           Text(
-                            'Mantén pulsado para detalles',
+                            'Toca o mantén pulsado para detalles',
                             style: AppTheme.monoStyle(
                               fontSize: 9.5,
                               color: isDark ? AppTheme.obsidianTextMuted : AppTheme.boneTextMuted,
@@ -1591,7 +2458,7 @@ class _ShiftCalendarScreenState extends ConsumerState<ShiftCalendarScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                '${totalCompletedHours.toStringAsFixed(0)}h completadas de ~${totalEstimatedHours.toStringAsFixed(0)}h planificadas',
+                                '${ScheduleBlock.formatHours(totalCompletedHours)} completadas de ~${ScheduleBlock.formatHours(totalEstimatedHours)} planificadas',
                                 style: AppTheme.monoStyle(
                                   fontSize: 11,
                                   color: isDark

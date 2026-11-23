@@ -27,6 +27,7 @@ import 'package:orbithabit/ui/widgets/release_notes_sheet.dart';
 import 'package:orbithabit/ui/widgets/unified_task_sheet.dart';
 import 'package:orbithabit/ui/widgets/orbit_tracker.dart';
 import 'package:orbithabit/ui/screens/settings_screen.dart';
+import 'package:orbithabit/ui/screens/shift_calendar_screen.dart';
 import 'package:orbithabit/ui/screens/statistics_screen.dart';
 import 'package:orbithabit/services/notification_service.dart';
 import 'package:orbithabit/core/app_version.dart';
@@ -957,7 +958,7 @@ void main() {
       // Verifica los bloques de novedades destacados
       expect(find.text('Nuevo Tutorial Guiado Paso a Paso'), findsOneWidget);
       expect(find.text('Subtareas Micro-Segmentadas y Duplicación'), findsOneWidget);
-      expect(find.text('Calendario Multi-Tarea, Ciclos y Póster PNG'), findsOneWidget);
+      expect(find.text('Horarios Puntuales por Día, Minutos Exactos y Horas Extra'), findsOneWidget);
       expect(find.text('Escudo de Guardia Pesada (+12h) y Nuevo Icono'), findsOneWidget);
 
       // Verifica que el botón inferior persiste la versión vista
@@ -1864,6 +1865,157 @@ void main() {
       expect(find.text('DOBLE AVISO MODO 24H'), findsNothing);
       final switchesWith24H = tester.widgetList<Switch>(find.byType(Switch)).toList();
       expect(switchesWith24H.last.onChanged, isNotNull);
+    });
+
+    test('Bidirectional unmarking of past dates removes completion from both Habit and ScheduleBlock without ghost auto-complete', () async {
+      final fakeDb = FakeDatabaseService();
+      final container = ProviderContainer(
+        overrides: [databaseProvider.overrideWithValue(fakeDb)],
+      );
+      addTearDown(container.dispose);
+
+      final now = DateTime.now();
+      final yesterday = DateTime(now.year, now.month, now.day - 1);
+      final yesterdayIso = yesterday.toIso8601String().split('T').first;
+
+      await container.read(habitsProvider.notifier).addHabit(
+        Habit(
+          id: 'h_work',
+          name: 'Trabajar',
+          colorValue: 0xFFFBBF24,
+          targetDays: 20,
+          orderIndex: 0,
+          completedDates: {yesterdayIso},
+        ),
+      );
+      await container.read(scheduleProvider.notifier).addBlock(
+        ScheduleBlock(
+          id: 'b_work',
+          title: 'Turno Mañana',
+          startHour: 10,
+          startMinute: 30,
+          endHour: 18,
+          endMinute: 15,
+          colorValue: 0xFFFBBF24,
+          habitId: 'h_work',
+          daysOfWeek: const [1, 2, 3, 4, 5],
+          hasMonthlyHourTarget: true,
+          monthlyTargetHours: 120,
+          assignedDates: [yesterdayIso],
+          completedDates: [yesterdayIso],
+        ),
+      );
+
+      // Exact minutes duration: 10:30 -> 18:15 = 7h 45m = 7.75h
+      final blockInitial = container.read(scheduleProvider).first;
+      expect(blockInitial.durationHours, 7.75);
+      expect(blockInitial.formattedDuration, '7h 45m');
+      expect(ScheduleBlock.formatHours(7.5), '7.5h');
+      expect(ScheduleBlock.formatHours(7.75), '7.75h');
+      expect(ScheduleBlock.formatHours(8.0), '8h');
+
+      // 1. Unmark past date from HabitNotifier.toggleHabitForDate
+      await container.read(habitsProvider.notifier).toggleHabitForDate('h_work', yesterday);
+      var habit = container.read(habitsProvider).first;
+      var block = container.read(scheduleProvider).first;
+      expect(habit.completedDates.contains(yesterdayIso), isFalse);
+      expect(block.completedDates.contains(yesterdayIso), isFalse);
+
+      // Even though yesterdayIso is in assignedDates, worked hours must now be 0.0 (not ghost-completed)
+      final group = WorkShiftGroup(
+        title: 'Trabajar',
+        habitId: habit.id,
+        habit: habit,
+        shifts: [block],
+      );
+      expect(group.getEffectiveWorkedDatesForShift(block, yesterday), isEmpty);
+      expect(block.getMonthlyWorkedHours(yesterday, habit), 0.0);
+
+      // 2. Re-mark only on Habit, then unmark via ScheduleNotifier.toggleShiftCompletion
+      await container.read(habitsProvider.notifier).updateHabit(
+        habit.copyWith(completedDates: {yesterdayIso}),
+      );
+      await container.read(scheduleProvider.notifier).toggleShiftCompletion('b_work', yesterday);
+      habit = container.read(habitsProvider).first;
+      block = container.read(scheduleProvider).first;
+      expect(habit.completedDates.contains(yesterdayIso), isFalse);
+      expect(block.completedDates.contains(yesterdayIso), isFalse);
+    });
+
+    testWidgets('ShiftCalendarScreen supports one-off day blocks, daily extra hours badge, and hides one-off blocks from top palette', (WidgetTester tester) async {
+      final fakeDb = FakeDatabaseService();
+      final container = ProviderContainer(
+        overrides: [databaseProvider.overrideWithValue(fakeDb)],
+      );
+      addTearDown(container.dispose);
+
+      final now = DateTime.now();
+      final day10Iso = '${now.year}-${now.month.toString().padLeft(2, '0')}-10';
+
+      await container.read(scheduleProvider.notifier).addBlock(
+        const ScheduleBlock(
+          id: 'b_fixed',
+          title: 'Mañana Fijo',
+          startHour: 8,
+          startMinute: 0,
+          endHour: 15,
+          endMinute: 30,
+          colorValue: 0xFF84A59D,
+          daysOfWeek: [1, 2, 3, 4, 5],
+          hasMonthlyHourTarget: true,
+        ),
+      );
+      await container.read(scheduleProvider.notifier).addBlock(
+        ScheduleBlock(
+          id: 'b_oneoff',
+          title: 'Sábado Especial',
+          startHour: 9,
+          startMinute: 0,
+          endHour: 14,
+          endMinute: 0,
+          colorValue: 0xFFFBBF24,
+          daysOfWeek: const [],
+          hasMonthlyHourTarget: true,
+          assignedDates: [day10Iso],
+          isOneOffDayBlock: true,
+        ),
+      );
+
+      // Add +1.5h daily extra hours on day 10
+      await container
+          .read(scheduleProvider.notifier)
+          .addExtraHoursForDate('b_oneoff', day10Iso, 1.5, DateTime(now.year, now.month, 1));
+
+      final updatedOneOff =
+          container.read(scheduleProvider).firstWhere((b) => b.id == 'b_oneoff');
+      expect(updatedOneOff.getExtraHoursForDate(day10Iso), 1.5);
+      expect(updatedOneOff.getExtraHoursForMonth(DateTime(now.year, now.month, 1)), 1.5);
+      expect(ScheduleBlock.fromMap(updatedOneOff.toMap()).isOneOffDayBlock, isTrue);
+      expect(ScheduleBlock.fromMap(updatedOneOff.toMap()).getExtraHoursForDate(day10Iso), 1.5);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: ThemeData.dark(),
+            home: const ShiftCalendarScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 'Mañana Fijo' appears in top palette; 'Sábado Especial' ONLY appears inside day 10 cell (once), not in top palette
+      expect(find.text('Mañana Fijo'), findsOneWidget);
+      expect(find.text('Sábado Especial'), findsOneWidget);
+      // High-contrast daily extra hours badge '+1.5h' is visible on the calendar grid
+      expect(find.text('+1.5h'), findsOneWidget);
+
+      // Tapping day 10 opens the day actions sheet with both options
+      await tester.tap(find.text('Sábado Especial'));
+      await tester.pumpAndSettle();
+      expect(find.text('1. ASIGNAR TURNO EXISTENTE'), findsOneWidget);
+      expect(find.text('[ + Horario específico solo para este día ]'), findsOneWidget);
+      expect(find.text('PUNTUAL'), findsOneWidget);
     });
   });
 }
